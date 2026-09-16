@@ -1,0 +1,23 @@
+# 跨平台
+.DS_Store
+Thumbs.db
+
+# Python（代码开工后用）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地数据（永不入库）
+data/
+assets/audio/
+*.wav
+*.opus
+*.mp3
+!docs/**/*.wav
+
+# 日志与临时
+*.log
+/tmp/
+.idea/
+.vscode/
