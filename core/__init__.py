@@ -1,0 +1,56 @@
+# core/__init__.py
+# 内核公共接口导出
+
+from .protocol import (
+    PRIMITIVES,
+    VALID_RATES,
+    ProtocolError,
+    PlanUnit,
+    Plan,
+    parse_plan,
+    resolve_params,
+    validate_primitive,
+)
+from .metrics_spec import (
+    HIT,
+    MISS,
+    FALLBACK,
+    REASON,
+    KEY,
+    PART,
+    RATE,
+    VARIANT,
+    FIRST_AUDIO_MS,
+    PACK_VERSION,
+    TS,
+    TURN_ID,
+    PLAN_ID,
+    HIT_RATE,
+    PRECAST_RATIO,
+)
+
+__all__ = [
+    "PRIMITIVES",
+    "VALID_RATES",
+    "ProtocolError",
+    "PlanUnit",
+    "Plan",
+    "parse_plan",
+    "resolve_params",
+    "validate_primitive",
+    "HIT",
+    "MISS",
+    "FALLBACK",
+    "REASON",
+    "KEY",
+    "PART",
+    "RATE",
+    "VARIANT",
+    "FIRST_AUDIO_MS",
+    "PACK_VERSION",
+    "TS",
+    "TURN_ID",
+    "PLAN_ID",
+    "HIT_RATE",
+    "PRECAST_RATIO",
+]
