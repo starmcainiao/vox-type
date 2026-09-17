@@ -85,9 +85,9 @@ class TestSynthesizeNegative(unittest.TestCase):
             # 空格文本不是空字符串，adapter 层不拦截
             # 实际 say 可能成功也可能失败，这里只验证不触发空文本检查
             self.tts.synthesize("  ", tmp)
-        except TtsError:
+        except TtsError as e:
             # say 可能失败（合理行为），但错误不应是"空文本"
-            pass
+            self.assertNotIn("空文本", str(e), "空白文本不应触发空文本检查")
         finally:
             tmp.unlink(missing_ok=True)
 
@@ -162,10 +162,11 @@ class TestSynthesizePositive(unittest.TestCase):
 
     def test_synthesize_uses_tempfile(self):
         """合成过程不留下临时文件（tempfile 已清理）。"""
+        tmp_dir = Path(tempfile.gettempdir())
+        before = len([f for f in tmp_dir.iterdir() if f.name.startswith("tmp") and f.suffix == ".wav"])
         self.tts.synthesize("临时文件", self.out_path)
-        # 检查 out_path 同级目录无残留的临时文件（tmp* 或 tmpp* 模式）
-        temp_files = [f for f in Path(self.tmp_dir).iterdir() if f.name.startswith("tmp")]
-        self.assertEqual(len(temp_files), 0, "不应有临时文件残留")
+        after = len([f for f in tmp_dir.iterdir() if f.name.startswith("tmp") and f.suffix == ".wav"])
+        self.assertEqual(after, before, "合成后不应多出临时文件")
 
 
 # ============================================================

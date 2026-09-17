@@ -5,12 +5,13 @@ adapters.tts_macsay.adapter — macOS say 命令薄适配器
 不负责：不含业务逻辑；不做拼接与判定；不做预铸调度。
 """
 
-import os
 import shutil
 import subprocess
 import tempfile
 import wave
 from pathlib import Path
+
+_TIMEOUT_SECONDS: int = 60
 
 
 class TtsError(RuntimeError):
@@ -100,12 +101,23 @@ class MacSayTts:
                 "--data-format=LEI16@16000",
                 text,
             ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=_TIMEOUT_SECONDS,
+                )
+            except FileNotFoundError as e:
+                raise TtsError(
+                    f"say 命令不可用: {e}"
+                ) from e
+            except subprocess.TimeoutExpired as e:
+                raise TtsError(
+                    f"say 命令超时（{_TIMEOUT_SECONDS} 秒）"
+                ) from e
+
             if result.returncode != 0:
                 stderr_snippet = result.stderr.strip()[:500]
                 raise TtsError(
@@ -114,6 +126,11 @@ class MacSayTts:
 
             if not tmp_path.exists() or tmp_path.stat().st_size == 0:
                 raise TtsError("say 命令未产出有效文件（文件不存在或 0 字节）")
+
+            if out.exists() and out.is_dir():
+                raise TtsError(
+                    f"目标路径是已存在的目录而非文件: {out}"
+                )
 
             # shutil.move 自动处理跨设备：先尝试 rename，失败则复制+删除
             try:

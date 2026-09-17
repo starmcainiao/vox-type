@@ -14,8 +14,6 @@ import unittest
 import wave
 from pathlib import Path
 
-import shutil as _shutil
-
 from adapters.tts_macsay.adapter import MacSayTts, TtsError
 
 
@@ -42,9 +40,7 @@ class TestCrossVolumeSynthesize(unittest.TestCase):
     def setUp(self):
         self.tts = MacSayTts()
         self.work_dir = _make_cross_device_tmpdir()
-
-    def tearDown(self):
-        shutil.rmtree(self.work_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.work_dir)
 
     def test_cross_volume_wav_params(self):
         """跨设备落盘后 WAV 必须满足 16kHz/单声道/16-bit/帧数>0。"""
@@ -71,9 +67,7 @@ class TestCrossVolumeMkdirConflict(unittest.TestCase):
         # 在临时目录下放一个同名普通文件，阻止 mkdir
         self.blocker_file = Path(self.work_dir) / "blocker"
         self.blocker_file.write_text("block")
-
-    def tearDown(self):
-        shutil.rmtree(self.work_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.work_dir)
 
     def test_mkdir_conflict_raises_tts_error(self):
         """同名普通文件阻挡 mkdir → TtsError 而非 OSError。"""
