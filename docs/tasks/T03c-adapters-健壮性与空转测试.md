@@ -135,4 +135,4 @@ opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03c-adapters-健壮�
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过 / [ ] 退回
+- [x] 已派发（2026-09-17）→ [x] 已回收 → 验收 8/9（标准 5 未过 → T03d 补做后通过）

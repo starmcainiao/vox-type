@@ -92,4 +92,4 @@ opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T04-assets-包格式�
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过 / [ ] 退回
+- [x] 已派发（2026-09-17）→ [x] 已回收 → [x] 部分退回（AssetPack.lookup 缺失 + 指纹口径不一致 → T04b 已修，经 T04c 后整体验收通过）

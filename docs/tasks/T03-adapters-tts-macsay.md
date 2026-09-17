@@ -91,4 +91,4 @@ opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03-adapters-tts-macsa
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过 / [ ] 退回
+- [x] 已派发（2026-09-17）→ [x] 已回收 → [x] 退回（跨卷落盘裸 OSError → T03b 已修，经 T03c/T03d 后整体验收通过）
