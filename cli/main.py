@@ -4,7 +4,8 @@ cli.main — 参数解析与分派（docs/08 §8.1 / §8.3）
 职责：argparse 分派到三个命令，把各层异常统一翻译成冻结退出码。
      **本文件一行判定逻辑都不写**——命中判定 / 四属性 / 质检阈值 / 统计口径
      一律由对应层实现，CLI 只做「解析 → 调用 → 打印 → 定退出码」。
-不负责：不实现 bench / verify（T10b），不在这里 import 任何具体适配器。
+不负责：不实现 bench / verify 的内部逻辑（分别落在 cli/commands/bench.py 与
+      verify.py，只调 eval/ 与 assets//compiler/ 的公开 API），不在这里 import 任何具体适配器。
 
 退出码约定（docs/08 §8.2，逐条照做）：
   0 成功 / 2 用法与参数 / 3 运行期失败（stderr 必带异常类型名）/
@@ -13,44 +14,37 @@ cli.main — 参数解析与分派（docs/08 §8.1 / §8.3）
 WHY「3 必须打印异常类型名」：调用者只看类型名就能定位该查哪一层
     （TypeError/AttributeError → 适配器契约；AudioError → runtime/audio），
     把内部缺陷折叠成 2 会让人去查命令行参数，定位方向直接错掉。
-WHY bench/verify 明确报「未实现」而不是 argparse 的 unrecognized：
-    命令名已在根 AGENTS.md §四冻结，跑出来不能像「你打错了」——
-    要让调用者知道这是已知缺口（T10b），而不是自己去猜命令名。
+WHY bench / verify 走各自的 handler 而不是 argparse 的 unrecognized：
+    四个命令名已在根 AGENTS.md §四冻结，跑出来不能像「你打错了」；
+    命令内的参数校验（如 bench 缺 --corpus / --out）由 argparse 报错 → 退出码 2。
 """
 
 import argparse
 import sys
 import traceback
 
-from cli.commands import pack_build, pack_check, run as run_cmd
+from cli.commands import (
+    bench as bench_cmd,
+    pack_build,
+    pack_check,
+    run as run_cmd,
+    verify as verify_cmd,
+)
 from cli.errors import (
     CLIError,
     EXIT_OK,
     EXIT_RUNTIME,
     EXIT_USAGE,
-    UsageError,
     describe,
     format_runtime_line,
 )
 
 
 # ---------------------------------------------------------------------------
-# 未实现子命令（T10b）
-# ---------------------------------------------------------------------------
-def _not_implemented(args: argparse.Namespace) -> int:
-    """`vox bench` / `vox verify` 本卡不实现 → 明确报「未实现」→ 退出码 2。"""
-    name = getattr(args, "command_name", "unknown")
-    raise UsageError(
-        f"`vox {name}` 未实现（本卡 T10 只做 pack check / pack build / run；"
-        f"bench 与 verify 留 T10b）"
-    )
-
-
-# ---------------------------------------------------------------------------
 # 参数解析
 # ---------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
-    """构造命令树：pack{check,build} / run / bench(未实现) / verify(未实现)。"""
+    """构造命令树：pack{check,build} / run / bench / verify。"""
     parser = argparse.ArgumentParser(
         prog="vox",
         description="vox — 预铸语音资产 CLI（薄壳：解析 → 调用各层公开 API → 打印 → 退出码）",
@@ -78,14 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_arguments(run_p)
     run_p.set_defaults(handler=run_cmd.run)
 
-    # --- bench / verify：目录结构预留，本卡不实现 ---
-    bench_p = sub.add_parser("bench", help="离线对拍（未实现，T10b）")
-    bench_p.add_argument("pack", nargs="?", default=None, help=argparse.SUPPRESS)
-    bench_p.set_defaults(handler=_not_implemented, command_name="bench")
+    # --- bench / verify ---
+    bench_p = sub.add_parser("bench", help="离线对拍：快路（命中资产）vs 慢路（现场合成），出可复现报告")
+    bench_cmd.add_arguments(bench_p)
+    bench_p.set_defaults(handler=bench_cmd.run)
 
-    verify_p = sub.add_parser("verify", help="对任意产物跑质检（未实现，T10b）")
-    verify_p.add_argument("artifact", nargs="?", default=None, help=argparse.SUPPRESS)
-    verify_p.set_defaults(handler=_not_implemented, command_name="verify")
+    verify_p = sub.add_parser("verify", help="对任意产物跑质检（已铸包 / 包源 / eval 报告，只读）")
+    verify_cmd.add_arguments(verify_p)
+    verify_p.set_defaults(handler=verify_cmd.run)
 
     return parser
 

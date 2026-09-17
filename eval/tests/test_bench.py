@@ -63,7 +63,7 @@ from eval.bench import (
     run_bench_cli,
 )
 from eval.offline_tts import OfflineTts
-from eval.report import CALIBER, render_summary, write_report
+from eval.report import CALIBER, check_raw_on_disk, render_summary, write_report
 
 # 语料文件位置：测试文件在 eval/tests/，语料在 eval/corpus/
 CORPUS_FILE = Path(__file__).resolve().parents[1] / "corpus" / "demo_broadcast.json"
@@ -159,6 +159,16 @@ def read_jsonl(path: Path) -> list:
             if stripped:
                 out.append(json.loads(stripped))
     return out
+
+
+def deterministic_raw_part(raw: dict) -> dict:
+    """取 raw 块里跨运行可比的子集：路径指针 + `*_lines` 行数。
+
+    排除 `*_sha256`（文件字节摘要）：raw 文件含 first_audio_ms / total_duration_ms /
+    ts 等挂钟字段，字节必然随运行变化——这与 timing_metrics.machine_dependent=True
+    是同一个事实，不是本次改动引入的不确定性。
+    """
+    return {k: v for k, v in raw.items() if not k.endswith("_sha256")}
 
 
 class FlakyOfflineTts:
@@ -512,8 +522,15 @@ class DeterminismTest(BenchCase):
         first, _ = self.bench()
         second, _ = self.bench()
         for key in ("schema_version", "seed", "repeats", "warmup_runs", "command",
-                    "caliber", "corpus", "raw"):
+                    "caliber", "corpus"):
             self.assertEqual(first[key], second[key], f"{key} 两次运行不一致")
+        # raw 只比对确定性子集（路径指针 + 行数）：*_sha256 是文件字节摘要，
+        # 而 raw 里的 first_audio_ms / total_duration_ms / ts 都是挂钟字段
+        # （与 timing_metrics.machine_dependent=True 同源），跨运行必然不同。
+        self.assertEqual(
+            deterministic_raw_part(first["raw"]), deterministic_raw_part(second["raw"]),
+            "raw 的路径指针与行数两次运行不一致",
+        )
         self.assertEqual(first["env"]["adapter"], second["env"]["adapter"])
         self.assertEqual(first["env"]["pack"], second["env"]["pack"])
 
@@ -583,11 +600,20 @@ class RawIntegrityTest(BenchCase):
             events = read_jsonl(config.out_dir / "raw" / f"{arm}_events.jsonl")
             self.assertEqual(len(samples), REPEATS)
             self.assertEqual(len(events), REPEATS * len(self.units))
+        # raw 块是追加式的：既有 4 个路径指针 + 每份文件追加 sha256/lines 指纹
+        # （docs/08 §8.7 欠账 1）——断言完整键集，防止字段被改名或缺项
         self.assertEqual(
             set(report["raw"].keys()),
-            {"fast_samples", "fast_events", "slow_samples", "slow_events"},
+            {
+                "fast_samples", "fast_events", "slow_samples", "slow_events",
+                "fast_samples_sha256", "fast_samples_lines",
+                "fast_events_sha256", "fast_events_lines",
+                "slow_samples_sha256", "slow_samples_lines",
+                "slow_events_sha256", "slow_events_lines",
+            },
         )
-        for key, rel in report["raw"].items():
+        for key in ("fast_samples", "fast_events", "slow_samples", "slow_events"):
+            rel = report["raw"][key]
             self.assertTrue((config.out_dir / rel).is_file(), f"{key} → {rel} 未落盘")
 
     def test_sample_index_continuous(self):
@@ -637,6 +663,89 @@ class RawIntegrityTest(BenchCase):
         self.assertIn(f"{FAST_ARM}_samples.jsonl", blob)
         self.assertIn("行数", blob)
         self.assertEqual(first_path, second_path)
+
+    def test_raw_fingerprints_written_and_match_disk(self):
+        """落盘后每份 raw 都追加 sha256（文件字节摘要）与 lines；既有路径键原样保留。
+
+        WHY 指纹必须是文件字节 sha256：值级篡改不改行数也不改 index，
+        只有逐字节摘要才能反映「文件内容被换过」（docs/08 §8.7 欠账 1）。
+        """
+        import hashlib
+
+        report, config = self.bench()
+        raw = report["raw"]
+        expected_lines = {
+            f"{FAST_ARM}_samples": REPEATS,
+            f"{FAST_ARM}_events": REPEATS * len(self.units),
+            f"{SLOW_ARM}_samples": REPEATS,
+            f"{SLOW_ARM}_events": REPEATS * len(self.units),
+        }
+        for name, want_lines in expected_lines.items():
+            path = config.out_dir / raw[name]
+            actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(len(raw[f"{name}_sha256"]), 64, f"{name} 指纹长度不是 64")
+            self.assertEqual(raw[f"{name}_sha256"], actual_hash, f"{name} 指纹与磁盘字节不符")
+            self.assertEqual(raw[f"{name}_lines"], want_lines, f"{name} 行数记录不符")
+
+    def test_value_tampering_detected_by_fingerprint(self):
+        """核心回归：行数与 index 不动、只把 first_audio_ms 除以 1000 → 必须被抓出。
+
+        这正是 T08b 审计 #5 留下的破口：旧的行数/index 核对对此完全失明。
+        测试真的改了文件字节（不是模拟文件缺失）。
+        """
+        report, config = self.bench()
+        target = config.out_dir / "raw" / f"{SLOW_ARM}_samples.jsonl"
+        records = read_jsonl(target)
+        for record in records:
+            record[FIRST_AUDIO_MS] = record[FIRST_AUDIO_MS] / 1000.0
+        with target.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+        reasons = check_raw_on_disk(json.loads(json.dumps(report)), config.out_dir)
+        self.assertTrue(
+            any(f"{SLOW_ARM}_samples.jsonl" in r and "sha256" in r for r in reasons),
+            f"值级篡改未被指纹核对拦下，reasons={reasons}",
+        )
+        self.assertEqual(len(read_jsonl(target)), REPEATS, "篡改不应改变行数")
+
+
+# ---------------------------------------------------------------------------
+# 11b. --out 越界拦截（docs/08 §8.7 欠账 2）
+# ---------------------------------------------------------------------------
+class OutDirGuardTest(BenchCase):
+    """对拍产物不得写进资产包目录——检查必须在建工作目录之前完成。"""
+
+    def test_out_dir_inside_pack_rejected(self):
+        """out_dir 落在包目录内 → BenchReportError，且消息含两个路径、不产生任何文件。"""
+        nested = self.pack_root / "sub"
+        with self.assertRaises(BenchReportError) as ctx:
+            run_bench(make_config(self.pack, self.units, nested))
+        msg = str(ctx.exception)
+        self.assertIn(str(nested), msg, "消息必须含 out_dir 路径")
+        self.assertIn(str(self.pack_root), msg, "消息必须含包目录路径")
+        self.assertFalse(nested.exists(), "抛错前不得建目录（否则包目录已被污染）")
+        self.assertEqual(
+            sorted(p.name for p in self.pack_root.iterdir()),
+            ["audio", "manifest.json"],
+            "包目录内容不得因越界的 --out 而改变",
+        )
+
+    def test_out_dir_escape_via_dotdot_rejected(self):
+        """带 .. 的相对路径解析后落在包内 → 同样拦下（字符串前缀比较会漏掉它）。"""
+        escaped = self.pack_root / "audio" / ".." / "nested"
+        with self.assertRaises(BenchReportError) as ctx:
+            run_bench(make_config(self.pack, self.units, escaped))
+        self.assertIn(str(escaped), str(ctx.exception))
+        self.assertFalse((self.pack_root / "nested").exists())
+
+    def test_out_dir_outside_pack_allowed(self):
+        """包外的正常输出目录不受影响（不得把防护做成误杀）。"""
+        out_dir = self.fresh_out_dir()
+        report, config = self.bench(out_dir)
+        self.assertTrue((config.out_dir / "raw").is_dir())
+        self.assertTrue((config.out_dir / "audio").is_dir())
+        self.assertFalse(report["incomplete"])
 
 
 # ---------------------------------------------------------------------------
@@ -904,9 +1013,15 @@ class CliTest(BenchCase):
         written = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
         for key in ("schema_version", "seed", "repeats", "warmup_runs", "incomplete",
                     "incomplete_reasons", "deterministic_metrics", "arms", "caliber",
-                    "reference_gate", "raw", "timing_metrics_meaningful"):
+                    "reference_gate", "timing_metrics_meaningful"):
             self.assertEqual(written[key], reference[key],
                              f"{key} 与 run_bench 返回值不一致（CLI 改动了口径）")
+        # raw 只比确定性子集：reference 与 CLI 是两次独立运行，raw 里的挂钟字段不同，
+        # 字节 sha256 自然不同（路径与行数必须逐值一致）。
+        self.assertEqual(
+            deterministic_raw_part(written["raw"]), deterministic_raw_part(reference["raw"]),
+            "raw 的路径与行数与 run_bench 返回值不一致（CLI 改动了口径）",
+        )
         self.assertEqual(written["timing_metrics"]["fast"]["n"],
                          reference["timing_metrics"]["fast"]["n"])
         command = written["command"]

@@ -15,6 +15,7 @@ eval.tests.test_report — 报告组装 / 落盘 / 原始数据核对 / 人读�
       不在测试里重实现报告结构；负例断言异常类型 + 消息含关键值。
 """
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -505,6 +506,130 @@ class RenderSummaryTest(unittest.TestCase):
                           "unit": "ms", "machine_dependent": True}
         summary = render_summary(make_report(timing=timing))
         self.assertIn("无有效样本", summary)
+
+
+# ---------------------------------------------------------------------------
+# 5. 原始数据指纹核对（docs/08 §8.7 欠账 1）
+# ---------------------------------------------------------------------------
+def _write_samples_with_values(out_dir: Path) -> None:
+    """写一份带数值字段的 raw（slow_samples 里放 first_audio_ms，供值级篡改用例）。"""
+    raw = out_dir / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    for arm in ("fast", "slow"):
+        with (raw / f"{arm}_samples.jsonl").open("w", encoding="utf-8") as f:
+            for i in range(REPEATS):
+                f.write(json.dumps({"index": i, "arm": arm, FIRST_AUDIO_MS: 1000.0},
+                                   ensure_ascii=False) + "\n")
+        total = UNITS * REPEATS
+        with (raw / f"{arm}_events.jsonl").open("w", encoding="utf-8") as f:
+            for i in range(total):
+                f.write(json.dumps({"index": i, "arm": arm}, ensure_ascii=False) + "\n")
+
+
+def _append_fingerprints(report: dict, out_dir: Path) -> dict:
+    """把已落盘文件的字节 sha256 与行数追加进报告 raw 块（与 bench 落盘同口径）。
+
+    只追加 `*_sha256` / `*_lines`，既有路径键原样保留。
+    """
+    raw = dict(report["raw"])
+    for name, rel in report["raw"].items():
+        path = out_dir / rel
+        raw[f"{name}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with path.open("r", encoding="utf-8") as f:
+            raw[f"{name}_lines"] = sum(1 for line in f if line.strip())
+    stamped = dict(report)
+    stamped["raw"] = raw
+    return stamped
+
+
+class RawFingerprintCheckTest(unittest.TestCase):
+    """check_raw_on_disk 的指纹核对：值级篡改必须可见；老报告必须向后兼容。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="vox-eval-fp-")
+        self.out = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_old_report_without_fingerprints_still_passes(self):
+        """向后兼容：无指纹的老报告走原行数/index 逻辑，不得因缺指纹而报错。"""
+        write_raw(self.out)
+        self.assertEqual(check_raw_on_disk(make_report(), self.out), [])
+
+    def test_old_report_value_tamper_is_not_a_false_positive(self):
+        """无指纹的老报告改数值 → 不报「指纹不符」（不得美化，也不得误报）。"""
+        _write_samples_with_values(self.out)
+        target = self.out / "raw" / "slow_samples.jsonl"
+        records = []
+        with target.open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        for record in records:
+            record[FIRST_AUDIO_MS] = 1.0
+        with target.open("w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self.assertEqual(check_raw_on_disk(make_report(), self.out), [])
+
+    def test_value_tampering_detected_when_fingerprint_present(self):
+        """核心回归：行数与 index 不动、只改 first_audio_ms → sha256 核对必须拦下。"""
+        _write_samples_with_values(self.out)
+        report = _append_fingerprints(make_report(), self.out)
+
+        target = self.out / "raw" / "slow_samples.jsonl"
+        records = []
+        with target.open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        for record in records:
+            record[FIRST_AUDIO_MS] = 1.0          # 1000.0 → 1.0（值级篡改）
+        with target.open("w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        reasons = check_raw_on_disk(report, self.out)
+        hits = [r for r in reasons if "slow_samples.jsonl" in r]
+        self.assertTrue(hits, f"值级篡改未被拦下，reasons={reasons}")
+        self.assertTrue(any("sha256" in r for r in hits), "消息必须点出是 sha256 不符")
+        self.assertTrue(any("期望" in r and "实际" in r for r in hits),
+                        "消息必须含期望值与实际值")
+        self.assertFalse(any("行数" in r for r in hits),
+                         "行数没变，不该报行数不符（证明不是靠行数抓到的）")
+
+    def test_line_count_change_detected_via_fingerprint(self):
+        """抽掉一行后指纹核对给出「文件名 + 期望/实际」的行数差异。"""
+        _write_samples_with_values(self.out)
+        report = _append_fingerprints(make_report(), self.out)
+        target = self.out / "raw" / "fast_samples.jsonl"
+        lines = target.read_text(encoding="utf-8").splitlines()
+        target.write_text("\n".join(lines[1:]) + "\n", encoding="utf-8")
+        reasons = check_raw_on_disk(report, self.out)
+        self.assertTrue(
+            any("fast_samples.jsonl" in r and "行数" in r and "20" in r for r in reasons),
+            f"行数差异未被点名，reasons={reasons}",
+        )
+
+    def test_missing_file_with_fingerprint_reports_missing_only(self):
+        """文件被删（而非被改）→ 报缺失，指纹核对不得抛异常。"""
+        _write_samples_with_values(self.out)
+        report = _append_fingerprints(make_report(), self.out)
+        (self.out / "raw" / "slow_events.jsonl").unlink()
+        reasons = check_raw_on_disk(report, self.out)
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("slow_events.jsonl", reasons[0])
+        self.assertIn("缺失", reasons[0])
+
+    def test_fingerprint_keys_are_additive(self):
+        """追加指纹键不得改既有路径键（报告 schema 只追加、不改名不缺项）。"""
+        _write_samples_with_values(self.out)
+        before = make_report()["raw"]
+        after = _append_fingerprints(make_report(), self.out)["raw"]
+        for key, value in before.items():
+            self.assertEqual(after[key], value, f"既有键 {key} 被改动")
+        self.assertEqual(len(after), len(before) * 3, "应恰好追加 sha256 与 lines 各一份")
 
 
 if __name__ == "__main__":

@@ -166,21 +166,25 @@ class TestExitCode2(_BuiltPackBase):
         self.assertEqual(rc, 2)
         self.assertIn("duplx", err)
 
-    def test_bench_unimplemented_returns_2(self):
-        """vox bench 本卡未实现 → 明确报「未实现」→ rc 2。"""
+    def test_bench_missing_required_args_returns_2(self):
+        """vox bench 缺 --corpus / --out（T10 的「未实现」占位已由 T10b 替换）→ rc 2。"""
         rc, _, err = run_cli(["bench", str(self.pack_dir)])
 
         self.assertEqual(rc, 2)
-        self.assertIn("未实现", err)
+        self.assertIn("--corpus", err)
+        self.assertIn("--out", err)
         self.assertIn("bench", err)
 
-    def test_verify_unimplemented_returns_2(self):
-        """vox verify 本卡未实现 → 明确报「未实现」→ rc 2。"""
-        rc, _, err = run_cli(["verify", str(self.pack_dir)])
+    def test_verify_unknown_artifact_returns_2(self):
+        """vox verify 遇到不认识的产物 → rc 2，stderr 说明支持的三类形态。"""
+        txt = self.tmp / "notes.txt"
+        txt.write_text("这不是产物", encoding="utf-8")
+        rc, _, err = run_cli(["verify", str(txt)])
 
         self.assertEqual(rc, 2)
-        self.assertIn("未实现", err)
         self.assertIn("verify", err)
+        for kind in ("asset_pack", "pack_source", "eval_report"):
+            self.assertIn(kind, err, f"stderr 必须列出支持的形态 {kind}")
 
 
 # ============================================================
@@ -313,8 +317,8 @@ class TestExitCodeDiscipline(_BuiltPackBase):
         ("缺必填参数", ["pack", "check"], EXIT_USAGE),
         ("路径不存在", ["pack", "check", "NOPE"], EXIT_USAGE),
         ("未知适配器", ["run", "PLAN", "--pack", "PACK", "--adapter", "nope:Nope", "--json"], EXIT_USAGE),
-        ("bench未实现", ["bench", "PACK"], EXIT_USAGE),
-        ("verify未实现", ["verify", "PACK"], EXIT_USAGE),
+        ("bench 缺必填参数", ["bench", "PACK"], EXIT_USAGE),
+        ("verify 缺必填参数", ["verify"], EXIT_USAGE),
     ]
 
     def _argv(self, raw: list, plan: Path) -> list:
@@ -339,7 +343,7 @@ class TestExitCodeDiscipline(_BuiltPackBase):
 
         cases = [
             ("路径不存在", ["pack", "check", str(self.tmp / "nope")], EXIT_USAGE),
-            ("bench 未实现", ["bench", str(self.pack_dir)], EXIT_USAGE),
+            ("bench 缺必填参数", ["bench", str(self.pack_dir)], EXIT_USAGE),
             ("fail-closed", ["run", str(ghost), "--pack", str(self.pack_dir), "--json"],
              EXIT_FAIL_CLOSED),
             ("质检不通过", ["pack", "check", str(bad_src), "--json"], EXIT_QUALITY),

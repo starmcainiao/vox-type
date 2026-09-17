@@ -454,15 +454,34 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return records
 
 
+def _sha256_of_file(path: Path) -> str:
+    """按文件字节流计算 sha256（全文分块读，不假设编码/行结构）。
+
+    WHY 是「文件字节 sha256」而不是内容语义哈希（T08b 审计 #5 留给 T10b 的破口）：
+      行数与 index 都在、只把 first_audio_ms 除以 1000 的「值级篡改」不改变任何计数结构，
+      语义哈希（按记录语义聚合）抓不到它；只有逐字节摘要才能反映「文件内容被换过」。
+      用 sha256 而不是内建 hash()：后者字符串种子随进程变化，同一文件两次跑会算出不同值。
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _build_raw_files(
     runs: Dict[str, _ArmRun], raw_dir: Path, work_dir: Path
-) -> Tuple[Dict[str, str], Dict[str, Dict[str, Any]]]:
-    """写 4 份原始 JSONL，并回读核对（存在性 / 行数 / index 连续性）。
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    """写 4 份原始 JSONL，并回读核对（存在性 / 行数 / index 连续性）+ 记指纹。
+
+    报告 raw 块是**追加式**的：既有 4 个「名字 → 相对路径」指针原样保留，
+    再为每份文件追加 `{name}_sha256`（文件字节 sha256）与 `{name}_lines`（应有行数），
+    供 eval.report.check_raw_on_disk 做值级核对（docs/08 §8.7 欠账 1）。
 
     返回：
-        (相对路径指针, raw_checks)
+        (raw 块指针+指纹, raw_checks)
     """
-    pointers: Dict[str, str] = {}
+    pointers: Dict[str, Any] = {}
     checks: Dict[str, Dict[str, Any]] = {}
 
     for arm in _ARMS:
@@ -481,6 +500,9 @@ def _build_raw_files(
             _write_jsonl(path, records)
             rel = path.relative_to(work_dir).as_posix()
             pointers[name] = rel
+            # 追加指纹：路径键原样保留，新字段只加不改名（报告 schema 可追加不得改名）
+            pointers[f"{name}_sha256"] = _sha256_of_file(path)
+            pointers[f"{name}_lines"] = len(records)
             # 回读核对：落盘后立即验证，报告不引用自己写不出来的文件
             existing = _read_jsonl(path) if path.is_file() else []
             indices = [r["index"] for r in existing if isinstance(r.get("index"), int)]
@@ -627,6 +649,26 @@ def _delta(fast_agg: Dict[str, Any], slow_agg: Dict[str, Any],
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
+def _assert_out_dir_outside_pack(out_dir: Any, pack_root: Any) -> None:
+    """断言 out_dir 不落在资产包目录内，否则抛 BenchReportError（docs/08 §8.7 欠账 2）。
+
+    WHY **必须在建工作目录之前**检查：一旦 `mkdir(audio_dir)` 执行，`audio/`、`raw/`
+      就已经写进冻结的资产包目录——即使随后抛错，污染也已经发生（assets/AGENTS.md ②
+      资产包是只读契约），回滚要人工删。先检查则完全不产生任何文件。
+    WHY 用 resolve() 的绝对路径做子路径判定而不是字符串前缀比较：字符串比较会被
+      `../` 逃逸与 `pack-evil` 这类同名前缀绕过。
+    消息含两个路径（out 与 pack），调用方一眼能看出是哪条被拦下。
+    """
+    pack_abs = Path(pack_root).resolve()
+    out_abs = Path(out_dir).resolve()
+    if out_abs == pack_abs or pack_abs in out_abs.parents:
+        raise BenchReportError(
+            f"--out {out_dir} 落在资产包目录 {pack_root} 内"
+            f"（解析后 out={out_abs}，pack={pack_abs}）——"
+            f"对拍产物不得写进包目录（包是只读契约，assets/AGENTS.md ②）"
+        )
+
+
 def run_bench(config: BenchConfig) -> Dict[str, Any]:
     """跑两臂对拍并组装报告字典（**不写盘**）。
 
@@ -654,6 +696,13 @@ def run_bench(config: BenchConfig) -> Dict[str, Any]:
     units = len(config.corpus)
     if units == 0:
         raise BenchReportError("corpus 为空：至少需要 1 个播报单元，实际为 0 个")
+
+    # --out 越界拦截（docs/08 §8.7 欠账 2）：**必须在建目录之前**执行，
+    # 否则 mkdir 已经污染冻结的包目录。包 root 取不到时（非 assets.load_pack 的产物）
+    # 不拦——此时没有可保护的包目录。
+    pack_root = getattr(config.pack, "root", None)
+    if config.out_dir is not None and pack_root is not None:
+        _assert_out_dir_outside_pack(config.out_dir, pack_root)
 
     # 工作目录：音频写 audio/，原始数据写 raw/（绝不写进包目录，包是只读契约）
     work_dir = (

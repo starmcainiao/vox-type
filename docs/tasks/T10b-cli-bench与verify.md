@@ -45,7 +45,14 @@ eval/tests/test_report.py             补：值级篡改可见 / 老报告（无
 
 - 判据顺序照表（目录+manifest → 资产包；目录+pack.json/phrases.json → 包源；JSON 文件且 `schema_version == "vox-eval-report/1"` → eval 报告；其它 → 2 并说明支持哪三类）；
 - **只读**：不得修复、不得写盘；
-- 退出码 0（三类都过）/ 4（有 issues 或 violations）/ 2（类型不认或装载失败）。
+- 退出码 0（三类都过）/ 4（有 issues 或 violations）/ 2（**仅限**：产物类型不认识、路径不存在）。
+- **装载失败必须报 4，不是 2**（2026-09-17 我实测到的缺口）：已铸包删掉一个 `audio/*.wav` 后，
+  `assets.load_pack` 会抛 `AssetPackError`（fail-closed），当前实现把它映射成 `2 资产包装载失败`
+  —— 但按 `docs/08 §8.6`，"产物坏了"是 `verify` 要**发现**的结论（`assets.validate_pack` 本来就会
+  把"音频文件不存在"当 issue 返回），不是"你参数用错了"。改法：资产包分支**先跑 `validate_pack` 收 issues**，
+  再试 `load_pack`；`load_pack` 抛错 → 把异常消息并入 `issues` 并返回 **4**。
+  同理 `pack_source` 分支：`load_source`/`load_script` 抛错时，若是**产物自身不合规**（`SourceError`/`ScriptError`）
+  → 4 且消息进 `violations`/`issues`；只有"路径不存在"才 2。
 
 ### 3. 欠账 ①：raw 指纹（`eval/bench.py` + `eval/report.py`）
 
@@ -63,6 +70,10 @@ eval/tests/test_report.py             补：值级篡改可见 / 老报告（无
 允许新增：cli/commands/bench.py, cli/commands/verify.py,
           cli/tests/test_bench.py, cli/tests/test_verify.py
 允许修改：cli/main.py（**只**改 bench/verify 的分派，不许动其他命令的既有行为）
+         cli/tests/test_exit_codes.py（**卡的更正（2026-09-17）**：T10 写的那两条「bench/verify 未实现 → rc 2」
+         断言被本卡必然作废——实现之后它们不再成立。**是卡漏列了这个文件**，不是越界；
+         允许把这两条改写成新语义，但**不许删测试、不许放宽**：改成「bench 缺必填参数 → rc 2，
+         stderr 含 --corpus/--out」与「verify 遇不认识产物 → rc 2，stderr 列出三类支持形态」）
          eval/bench.py, eval/report.py, eval/tests/test_bench.py, eval/tests/test_report.py
 禁止触碰：其余一切文件（含 core/**、rules/**、assets/**、adapters/**、runtime/**、compiler/**、
           packs/**、cli/commands/run.py、cli/commands/pack_check.py、cli/commands/pack_build.py、
@@ -86,7 +97,7 @@ eval/tests/test_report.py             补：值级篡改可见 / 老报告（无
 2. **`vox bench` 端到端（我手跑）**：用 T10 铸出来的包 + `eval/corpus/demo_broadcast.json` + `--repeats 20`（离线替身适配器即可）→ 退出码 **0**；`--json` 是纯 JSON（我 `json.loads`）；`report_path` 指到的 `report.json` 里 `incomplete is False`；`arms` 与报告内同名块**逐字段相等**（我比对，证明是透传不是重算）；
 3. **`vox bench` 的退出码 4**（我手跑）：把 `--repeats 5` → 应**2**（低于 `MIN_REPEATS`，参数错误）；用只覆盖部分 key 的包造出 `incomplete=True` 的报告 → 退出码 **4** 且报告**照样写出**；
 4. **`vox verify` 三类产物（我手跑）**：
-   - 已铸包目录 → `kind="asset_pack"`、退出码 0、`issues==[]`；把包里一个 `audio/*.wav` 删掉 → **4** 且 `issues` 非空；
+   - 已铸包目录 → `kind="asset_pack"`、退出码 0、`issues==[]`；把包里一个 `audio/*.wav` 删掉 → **必须 4**（**不得 2**）且 `issues` 非空、消息含缺失文件名；
    - `packs/repair`（源目录）→ `kind="pack_source"`、退出码 0、`violations==[]`；把剧本改成连续 4 次 `error_retry` → **4** 且 `violations` 含 `retry_unbounded`；
    - 一份 eval 报告 → `kind="eval_report"`、退出码 0；**值级篡改**：把报告 `raw/slow_samples.jsonl` 里所有 `first_audio_ms` 除以 1000（行数与 index 不动）→ 退出码 **4** 且 `issues` 点名该文件（**这正是 T08b 遗留的破口，本卡必须关上**）；
    - 不认识的产物（随便一个 .txt）→ 退出码 **2**，stderr 说明支持哪三类；

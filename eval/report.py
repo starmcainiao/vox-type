@@ -12,6 +12,7 @@ eval.report — 报告组装（JSON + 人读摘要）
       本文件内不出现这些字符串字面量作为字典键（改了常量 = 破坏性变更，测试必须失败）。
 """
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -336,16 +337,66 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return records
 
 
+# ---------------------------------------------------------------------------
+# 3b. 原始数据指纹（追加式字段，docs/08 §8.7 欠账 1）
+# ---------------------------------------------------------------------------
+# raw 块的指纹元数据键后缀：`{name}_sha256` / `{name}_lines`。
+# 命名与既有 `{arm}_samples` / `{arm}_events` 路径键并列，只追加不改名。
+_SHA256_SUFFIX: str = "_sha256"
+_LINES_SUFFIX: str = "_lines"
+
+
+def _sha256_of_file(path: Path) -> str:
+    """按文件字节流计算 sha256（分块读，不假设编码与行结构）。
+
+    WHY 是文件字节摘要而不是内容语义摘要：值级篡改（把 first_audio_ms 全部除以 1000）
+      不改变行数与 index，任何按计数/结构聚合的比对都抓不到它；只有逐字节摘要会变。
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _raw_fingerprints(report: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """从报告 raw 块提取每份原始数据的指纹：{name: {"sha256": …, "lines": …}}。
+
+    老报告（T08/T08b 产出的，raw 块只有路径键）→ 返回空 dict；
+    调用方据此退回原有的行数/index 核对，**不得**因缺指纹而报错（向后兼容）。
+    """
+    fingerprints: Dict[str, Dict[str, Any]] = {}
+    for key, value in (report.get("raw") or {}).items():
+        if not isinstance(key, str):
+            continue
+        if key.endswith(_SHA256_SUFFIX):
+            fingerprints.setdefault(key[: -len(_SHA256_SUFFIX)], {})["sha256"] = value
+        elif key.endswith(_LINES_SUFFIX):
+            fingerprints.setdefault(key[: -len(_LINES_SUFFIX)], {})["lines"] = value
+    return fingerprints
+
+
 def check_raw_on_disk(report: Dict[str, Any], out_dir: Any) -> List[str]:
-    """核对 out_dir 下 report['raw'] 指向的 JSONL：存在性 / 行数 / index 连续性。
+    """核对 out_dir 下 report['raw'] 指向的 JSONL：存在性 / 行数 / index 连续性 / 指纹。
 
     WHY：报告落盘时再核一次磁盘状态，防事后抽改原始数据却仍声称 complete。
+
+    指纹核对（docs/08 §8.7 欠账 1，T08b 审计 #5 留的破口）：raw 块里带
+      `{name}_sha256` / `{name}_lines` 时，逐文件比对**文件字节 sha256** 与行数——
+      这样「行数与 index 都在、只把数值改掉」的值级篡改才可见（计数结构抓不到它）。
+    老报告兼容：不带指纹的老报告（T08/T08b 产的）**沿用**原有行数/index 核对，
+      不得因缺指纹而报错——报告 schema 是追加式的，旧报告必须仍能被 verify。
     """
     reasons: List[str] = []
     out = Path(out_dir)
     expected = _expected_raw_counts(report)
+    fingerprints = _raw_fingerprints(report)
 
     for name, rel in sorted((report.get("raw") or {}).items()):
+        # 指纹元数据键（*_sha256 / *_lines）不是文件指针，跳过；它们在下文参与核对。
+        # 老报告没有这些键，循环行为与改造前完全一致。
+        if not isinstance(rel, str) or name.endswith((_SHA256_SUFFIX, _LINES_SUFFIX)):
+            continue
         path = out / rel
         if not path.is_file():
             reasons.append(f"{rel} 缺失（原始数据不存在，报告不得用估算值填补）")
@@ -370,6 +421,25 @@ def check_raw_on_disk(report: Dict[str, Any], out_dir: Any) -> List[str]:
         missing = sorted(set(range(len(records))) - set(indices))
         if missing:
             reasons.append(f"{rel} 缺 index={missing}（样本/事件编号不连续）")
+
+        # 指纹核对：报告里带了指纹才做；不带则上面的行数/index 逻辑就是全部核对。
+        fp = fingerprints.get(name) or {}
+        if fp:
+            want_hash = fp.get("sha256")
+            if isinstance(want_hash, str) and want_hash:
+                actual_hash = _sha256_of_file(path)
+                if actual_hash != want_hash:
+                    # 消息含文件名 + 期望/实际，「点名单个文件」是验收硬要求
+                    reasons.append(
+                        f"{rel} sha256 不符（期望 {want_hash}，实际 {actual_hash}）"
+                        f"——原始数据被改过（值级篡改，计数结构抓不到它）"
+                    )
+            want_lines = fp.get("lines")
+            if want_lines is not None and len(records) != int(want_lines):
+                reasons.append(
+                    f"{rel} 行数 {len(records)} ≠ 指纹记录 {int(want_lines)}"
+                    f"（差 {abs(int(want_lines) - len(records))} 条）"
+                )
     return reasons
 
 
@@ -476,8 +546,14 @@ def render_summary(report: Dict[str, Any]) -> str:
         )
 
     raw = report.get("raw") or {}
-    if raw:
-        lines.append("原始数据: " + ", ".join(f"{k}={v}" for k, v in sorted(raw.items())))
+    # 人读摘要只列文件指针；*_sha256 / *_lines 是机器核对用的指纹元数据（64 位摘要），
+    # 印出来只会把摘要撑成噪声——需要核对时读 report.json 的 raw 块即可。
+    pointers = {
+        k: v for k, v in raw.items()
+        if isinstance(v, str) and not k.endswith((_SHA256_SUFFIX, _LINES_SUFFIX))
+    }
+    if pointers:
+        lines.append("原始数据: " + ", ".join(f"{k}={v}" for k, v in sorted(pointers.items())))
 
     lines.append("可复现: " + str(report.get("caliber", {}).get("reproducibility")))
     if report.get("command"):
