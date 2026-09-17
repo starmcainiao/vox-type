@@ -1,0 +1,90 @@
+{
+  "phrases": [
+    {
+      "key": "greeting_welcome",
+      "variants": [
+        "您好，这里是报修服务热线。",
+        "您好，报修服务为您服务。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_fault_type",
+      "variants": ["请问您要报修的是什么设备？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_fault_detail",
+      "variants": ["请简单描述一下故障现象。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_fault_urgency",
+      "variants": ["请问这个问题影响正常使用吗？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_address",
+      "variants": ["请问设备所在的地址是哪里？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_contact",
+      "variants": ["请留下您的联系电话。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_time_window",
+      "variants": ["请问师傅什么时间上门比较方便？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "confirm_summary",
+      "variants": ["我再和您确认一下，地址和联系方式都已经记下了。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "confirm_again",
+      "variants": ["麻烦您再确认一下，这样填写可以吗？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ticket_created",
+      "variants": ["您的报修单已经创建，稍后会有师傅与您联系。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "promise_visit",
+      "variants": ["师傅会在约定时间前与您电话联系。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "error_retry",
+      "variants": [
+        "抱歉，我没听清，请您再说一次。",
+        "不好意思，麻烦您再说一遍。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "asr_clarify",
+      "variants": ["这边信号不太好，您能再说一遍吗？"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "off_script_reply",
+      "variants": ["这个问题我需要转给人工同事帮您处理。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "handoff_human",
+      "variants": ["好的，我为您转接人工客服，请稍等。"],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "closing_thank_you",
+      "variants": ["感谢您的来电，祝您生活愉快。"],
+      "rates": ["normal", "slow", "fast"]
+    }
+  ]
+}

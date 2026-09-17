@@ -79,6 +79,9 @@ packs/repair/script.json      剧本（线性 plan，含终态声明与直播白
    {"key": "ask_fault_type", "rate": "normal"},
    {"key": "asr_clarify", "rate": "normal"},
    {"action": "SAY_LIVE", "text": "不好意思，刚才没听清，请您再说一次要报修的设备。", "reason": "asr_low_confidence", "rate": "normal"},
+   {"key": "error_retry", "rate": "normal"},
+   {"key": "error_retry", "rate": "normal"},
+   {"key": "error_retry", "rate": "normal"},
    {"key": "ask_fault_detail", "rate": "normal"},
    {"key": "ask_fault_urgency", "rate": "normal"},
    {"key": "ask_address", "rate": "normal"},
@@ -86,22 +89,20 @@ packs/repair/script.json      剧本（线性 plan，含终态声明与直播白
    {"key": "ask_time_window", "rate": "normal"},
    {"key": "confirm_summary", "rate": "normal", "slots": {"address": "北京市朝阳区示范路 1 号", "contact": "13800000000"}},
    {"key": "confirm_again", "rate": "normal"},
-   {"key": "error_retry", "rate": "normal"},
-   {"key": "error_retry", "rate": "normal"},
-   {"key": "error_retry", "rate": "normal"},
-   {"key": "handoff_human", "rate": "normal"},
    {"key": "ticket_created", "rate": "normal", "slots": {"ticket_id": "R20260917001"}},
    {"key": "promise_visit", "rate": "normal"},
    {"key": "closing_thank_you", "rate": "normal"}
  ]}
 ```
 
+> **更正（2026-09-17，第一轮执行后被 C1b 拦下，是卡的错）**：初版把 `handoff_human`（∈ `terminal_keys`）排在第 15 个单元、后面还接 3 个单元 → 四属性校验器报 3 条 `orphan_branch`（终态之后永远执行不到），人读也不通（刚说"转人工"又继续走流程）。根因是**一条线性 plan 只能走一条路径**（这条约束已补进 `docs/07 §7.3` 的 C1b 注）：追问耗尽转人工与继续成功路径**不能共存于同一条 plan**。更正后的排法 = 只保留**成功路径**，三个 `error_retry` 紧跟在第一个提问之后（**连着 3 次 = R-3 上限边界，校验器必须放行**）；`handoff_human` **不再出现在 plan 里**，但**仍留在 `terminal_keys` 与话术库中**（它是另一条路径的合法出口，也是"库比剧本大"的第二个示例）。
+
 **为什么这样排**（这几处是刻意的，别"优化"掉）：
-- **三个 `error_retry` 连着**：正好 3 次 = R-3 的追问上限**边界**，四属性校验器必须**放行**（第 4 次才会拦）；紧跟一个终态 `handoff_human`，演示"追问有出口"；
+- **三个 `error_retry` 连着**：正好 3 次 = R-3 的追问上限**边界**，四属性校验器必须**放行**（第 4 次才会拦）；它们之后接的是继续追问流程（而不是"转人工"），因为一条 plan 只能走一条路径；
 - **一条 `SAY_LIVE` 带白名单内的 reason**：演示 R-5 的降级留痕（机器可判）；
 - **两个带槽位的单元**：槽值是示例占位（`13800000000` 这种明显是占位号，**不得**换成看起来真实的号码），演示"槽值现场合成、不入包"；
-- **末单元是 `closing_thank_you`**（∈ `terminal_keys`）：演示"有出口"；
-- **`off_script_reply` 故意只出现在话术表、不进剧本**：演示"库比剧本大"是合法的（C3 只要求剧本引用的 key 都在库里与包里，不要求反向）。**不要**为了"都用上"把它塞进剧本。
+- **末单元是 `closing_thank_you`**（∈ `terminal_keys`）：演示"有出口"；plan 里**只有这一个终态**，且它在末尾 —— 这是 C1b 的要求（首个终态之后不得再有单元）；
+- **`off_script_reply` 与 `handoff_human` 故意只出现在话术表、不进剧本**：演示"库比剧本大"是合法的（C3 只要求剧本引用的 key 都在库里与包里，不要求反向）。**不要**为了"都用上"把它们塞进剧本 —— 塞 `handoff_human` 会直接触发 `orphan_branch`。
 
 ## 允许修改的文件（白名单）
 
@@ -132,7 +133,7 @@ packs/repair/script.json      剧本（线性 plan，含终态声明与直播白
 7. **四属性校验带上真包**：`check_properties(script, source, pack)` → `violations == ()` 且 `skipped == ()`（C3c 真跑过：剧本引用的每个 key 都在包里）；
 8. **端到端播两条 plan（我手跑）**：
    - **纯命中臂**：取剧本里**全是 key** 的 5 个单元（`greeting_welcome`(variant=auto) / `ask_fault_type` / `ask_fault_detail` / `ask_fault_urgency` / `closing_thank_you`）→ `Executor(pack, MacSayTts())`（默认 `allow_fallback=False`）→ `hit_count == 5`、`miss_count == 0`、**`tts_calls == 0`**（命中零调用）、输出 WAV 存在且时长 > 0；
-   - **含直播单元臂**：取剧本前 6 个单元（第 4 个是那条 `SAY_LIVE`）→ `Executor(..., allow_fallback=True)` → `hit_count == 5`、`miss_count == 1` 且该事件 `reason == "say_live_text"`、`tts_calls == 1`（只来自那条 SAY_LIVE）；
+   - **含直播单元臂**：取剧本前 6 个单元（第 4 个是那条 `SAY_LIVE`；剧本新排法下前 6 个单元 = greeting_welcome / ask_fault_type / asr_clarify / SAY_LIVE / error_retry / error_retry）→ `Executor(..., allow_fallback=True)` → `hit_count == 5`、`miss_count == 1` 且该事件 `reason == "say_live_text"`、`tts_calls == 1`（只来自那条 SAY_LIVE）；
    - 注：`confirm_summary` 带 2 个槽位，若把含槽位的单元放进 plan，则 `tts_calls` 应等于**槽位数**（槽值现场合成，不算破"命中零调用"）；
 9. **无个人数据**：我人工读一遍全部话术 + grep 手机号/身份证/邮箱模式，只允许出现卡里给定的占位值；
 10. `git status --porcelain -uall` 仅 3 个新文件（+ 本卡）；仓内无 `.py`/`.wav` 混入 `packs/`。
