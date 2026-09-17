@@ -1,0 +1,6 @@
+[
+  {"key": "greeting_welcome", "rate": "normal"},
+  {"text": "请告诉我您要办理什么业务？", "rate": "normal"},
+  {"text": "抱歉没听清，请再告诉我一次您要办理什么？", "rate": "normal"},
+  {"text": "还是没听清，请再告诉我一次您要办理什么？", "rate": "normal"}
+]

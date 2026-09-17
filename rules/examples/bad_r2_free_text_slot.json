@@ -1,0 +1,4 @@
+[
+  {"key": "greeting_welcome", "rate": "normal"},
+  {"key": "step_confirm_amount", "rate": "slow", "slots": {"amount": "用户刚才说他想转500块钱给他的朋友"}}
+]

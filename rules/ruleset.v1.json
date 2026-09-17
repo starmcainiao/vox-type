@@ -1,0 +1,55 @@
+{
+  "ruleset_version": "v1",
+  "rules": [
+    {
+      "id": "R-1",
+      "name": "可用词表",
+      "statement": "每个 literal 必须引用话术库中已存在的 key，禁止自造文案",
+      "judge": "machine",
+      "examples": {
+        "ok": "rules/examples/ok_intake.json",
+        "violations": ["rules/examples/bad_r1_unknown_key.json"]
+      }
+    },
+    {
+      "id": "R-2",
+      "name": "槽位边界",
+      "statement": "槽值只能来自声明字段；槽值不得进入资产库；不得整段自由文本入槽",
+      "judge": "machine",
+      "examples": {
+        "ok": "rules/examples/ok_intake.json",
+        "violations": ["rules/examples/bad_r2_free_text_slot.json"]
+      }
+    },
+    {
+      "id": "R-3",
+      "name": "流程边界",
+      "statement": "剧本必须有出口（无死锁）；追问有上限；无孤立枝",
+      "judge": "machine+human",
+      "examples": {
+        "ok": "rules/examples/ok_intake.json",
+        "violations": ["rules/examples/bad_r3_deadlock.json"]
+      }
+    },
+    {
+      "id": "R-4",
+      "name": "节奏边界",
+      "statement": "语速档只能取已预铸的档位（slow/normal/fast）；关键信息（数字/金额/地址）强制 slow",
+      "judge": "machine+human",
+      "examples": {
+        "ok": "rules/examples/ok_intake.json",
+        "violations": ["rules/examples/bad_r4_wrong_rate.json"]
+      }
+    },
+    {
+      "id": "R-5",
+      "name": "降级规则",
+      "statement": "SAY_LIVE 只能在白名单场景使用，必须带 reason；禁止静默降级",
+      "judge": "machine+human",
+      "examples": {
+        "ok": "rules/examples/ok_intake.json",
+        "violations": ["rules/examples/bad_r5_silent_fallback.json"]
+      }
+    }
+  ]
+}
