@@ -149,10 +149,12 @@ packs/repair/script.json      剧本（线性 plan，含终态声明与直播白
 
 ```
 cd /Volumes/macos/newProject/vox-type
-rm -rf packs/repair
+git rm -r --cached packs/repair && rm -rf packs/repair          # 若要整体删除
+# 或只回滚剧本到某次提交：
+git checkout <commit> -- packs/repair/script.json
 ```
 
-（本卡只新增 `packs/repair/` 一个目录，未跟踪 → `git clean -fd packs/repair` 等价可用。）
+（**事实更正（2026-09-17）**：三个 JSON 已随 `8a7bcd4` 入库（`git add -A` 扫入），因此 `git clean` 不再适用；回滚用 `git checkout -- <path>` 或 `git rm`。）
 
 ## 执行方式
 
@@ -169,4 +171,5 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T09-packs-
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发（2026-09-17，回落路径 `opencode run`；**第一轮 12–14 分钟被 C1b 拦下——是卡的剧本排法写错**，执行方按"逐字照抄"未擅改、把冲突顶回；更正卡后**续会话 4 分 56 秒**完成）→ [x] 已回收 → [x] **验收通过**（10/10；54 条资产真机预铸 clean，端到端两臂 plan 均符合预期）
+- **事实更正**：三个 JSON 已随 `8a7bcd4` 入库（`git add -A` 扫入），回滚用 `git checkout -- <path>` 而非 `git clean`。
