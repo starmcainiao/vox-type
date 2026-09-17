@@ -86,6 +86,36 @@
    - 口径补进 `docs/06 §6.1.2`（带日期）。
 2. **`--out` 越界拦截**：`vox pack build --out` 与 `vox run --out` 落在包/源目录内 → 退出码 2（不许污染冻结区）。`vox bench --out` 的同名防护留给 T10b（它归 eval 的 `run_bench`/CLI 一起做）。
 
-## 8.6 本卡不做（留给 T10b）
+## 8.6 T10b：`vox bench` 与 `vox verify`（本节的字段名冻结）
 
-`vox bench`（复用 `eval.run_bench`，含"报告 raw 指纹 + 值级复核"）、`vox verify`（按产物类型分派：资产包 / 剧本源 / eval 报告；并把 raw 指纹核对接上）。**四个命令名先冻结在这里，T10b 只补两个子命令文件**。
+### `vox bench <pack_dir> --corpus <corpus.json> --out <dir> [--adapter …] [--repeats N] [--seed N] [--required-hit-rate F] [--warmup N] [--json]`
+
+- **必须复用 `eval.run_bench`**（`eval.bench.BenchConfig` + `run_bench` + `eval.report.write_report`）——**不得重写对拍逻辑**（统计口径属 `eval/` 契约，CLI 只传参）。
+- `<pack_dir>` 是**已预铸包**（含 `manifest.json`）→ `assets.load_pack`；语料用 `eval.bench.load_corpus`。
+- `--out` 落在 `<pack_dir>` 内 → **参数错误（2）**。
+- 退出码：报告 `incomplete is False` → `0`；`incomplete is True` → **4**（"数据不完整"是结论不是崩溃，**报告照样写出**）；参数/装载错 → 2；执行期异常 → 3。
+- `--json` 输出：`{"command":"bench","report_path":"…","incomplete":false,"repeats":20,"seed":…,"arms":{"fast":{…},"slow":{…}},"timing_metrics_meaningful":true}`（`arms` 直接透传 `eval` 报告里的同名块，**不得改名或重算**）。
+
+### `vox verify <artifact> [--json]`（按产物类型分派，**不猜**）
+
+| 产物形态（判据按顺序） | 走哪条 | 不过时 |
+|---|---|---|
+| 目录且有 `manifest.json` | `assets.load_pack` + `assets.validate_pack` | 退出码 4，`issues` 为 `validate_pack` 的返回 |
+| 目录且有 `pack.json` 与 `phrases.json` | `compiler.load_source` + `load_script` + `check_properties(script, source, pack=None)` | 4，`violations` 为四属性返回 |
+| 文件且 JSON 顶层 `schema_version == "vox-eval-report/1"` | `eval.report` 的完整性字段核对 + **raw 指纹核对**（见 §8.7） | 4，`issues` 列出缺失/不符项 |
+| 其它 | —— | **2**，stderr 说明支持的三类产物形态 |
+
+- 三类都过 → `0`；`--json` 输出 `{"command":"verify","kind":"asset_pack|pack_source|eval_report","passed":true,"issues":[],"violations":[]}`（未涉及的键给空列表）。
+- **不许**对产物做任何修复或写入（只读）。
+
+## 8.7 T10b 顺带要收的两笔欠账
+
+1. **raw 值级篡改可见**（T08b 明确留给 T10 的那条）：
+   - `eval/bench.py` 落盘 raw 时，把每份 raw 的 **`sha256` 与 `expected_lines`** 写进报告 `raw` 块（**只追加字段**，不改名不缺项）；
+   - `eval/report.py` 的 `check_raw_on_disk` 增加**指纹核对**：报告里带指纹 → 逐文件比对 sha256 与行数（值级篡改因此可见）；报告里**不带**指纹（老报告）→ 退回原有的行数/index 核对（向后兼容，**不得**因此报错）；
+   - `vox verify` 对 eval 报告走这条核对。
+2. **eval 的 `--out` 越界防护**（T08 审计 #7）：`eval/bench.py` 建工作目录前检查 `out_dir` 是否落在 `pack.root` 内（含 `..` 逃逸）→ 命中即 `BenchReportError`（消息含两个路径）。
+
+## 8.8 本卡不做
+
+历史基线重跑、盲测/golden set（`eval/` 的后续卡）、`vox` 的 shell 补全与帮助美化。
