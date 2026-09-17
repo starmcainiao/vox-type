@@ -46,6 +46,8 @@ vox verify       <artifact> 对任意产物跑质检（资产包/报告/剧本�
 
 ## 五、任务卡派发流程（本项目工作方式）
 
+> **新会话入口**：`docs/tasks/01-接手指南-新会话入口.md`（现状 / 纪律 / 下一批卡 / 开场步骤）——接手先读它。
+
 1. **我（策划）**：按层拆任务卡 → `docs/tasks/NN-*.md`（模板见 `docs/tasks/_模板.md`），写明：目标 / 产物路径 / **文件白名单** / 禁止事项 / 验收标准 / 回滚方式 / 依赖。
 2. **写手（`blackiron-opencode-writer` 子智能体）**：三项拦截检查（数据分级 / 文件白名单 / 回滚基线）→ 调 `opencode run`（免费模型）→ 跑完用 `git status` 核对越界改动 → **只回事实，不做达标判定**。
 3. **验收（我）**：逐条对验收标准 + 本层 AGENTS.md；必要时调只读审查员（`blackiron-code-reviewer` / `blackiron-rule-auditor` / `blackiron-silent-failure-hunter`）做源码级审计。
