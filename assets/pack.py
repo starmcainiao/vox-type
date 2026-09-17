@@ -82,6 +82,66 @@ class AssetPack:
     assets: List[AssetEntry] = field(default_factory=list)
     root: Optional[Path] = None
 
+    def lookup(
+        self,
+        key: str,
+        part_index: int,
+        rate_key: str,
+        variant: int,
+        expected_text: str,
+        engine_meta: Optional[Dict[str, Any]] = None,
+    ) -> Optional[AssetEntry]:
+        """在包中查找匹配的资产条目。
+
+        匹配条件：key + part_index + rate_key + variant + 指纹校验。
+        指纹不匹配 / 文件不存在 → 返回 None（由调用方决定降级；这里只做判定，不做降级）。
+
+        参数：
+            key:           话术 key
+            part_index:    分片序号
+            rate_key:      语速档位（slow/normal/fast）
+            variant:       变体编号
+            expected_text: 期望的话术文本（用于指纹校验）
+            engine_meta:   引擎元数据（保留字段，暂不使用）
+
+        返回：
+            匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在）
+        """
+        # 1. 遍历条目找到 key + part_index + rate_key + variant 匹配的条目
+        candidate = None
+        for entry in self.assets:
+            if (
+                entry.key == key
+                and entry.part_index == part_index
+                and entry.rate_key == rate_key
+                and entry.variant == variant
+            ):
+                candidate = entry
+                break
+
+        if candidate is None:
+            return None
+
+        # 2. 指纹校验——用 expected_text 重算指纹并与条目指纹比对
+        # WHY：即使 key/part/rate/variant 全部匹配，文本内容变了也必须视为未命中，
+        #       否则会念错版本，这是静默降级的根源。
+        expected_fp = fingerprint(
+            text=expected_text,
+            voice=self.voice,
+            rate_value=rate_key,
+            model_version=self.model_version,
+        )
+        if candidate.fingerprint != expected_fp:
+            return None
+
+        # 3. 音频文件存在性校验
+        if self.root is not None:
+            audio_path = self.root / candidate.path
+            if not audio_path.exists():
+                return None
+
+        return candidate
+
 
 # ---------------------------------------------------------------------------
 # 3. manifest 必填字段清单
@@ -211,12 +271,12 @@ def _validate_asset_entry(
 
     # 5. 指纹校验——重算指纹并与包内值比对
     # WHY：指纹不一致 = 话术被改但资产没重铸，这是静默降级的根源，必须拦截。
-    # 条目可携带自己的 voice/model_version，缺省时继承 manifest 级别的值。
+    # 指纹四要素中的 voice / model_version 一律取 manifest 级——格式冻结里没有条目级字段。
     expected_fp = fingerprint(
         text=raw["text"],
-        voice=raw.get("voice", manifest_voice),
+        voice=manifest_voice,
         rate_value=rate_key,
-        model_version=raw.get("model_version", manifest_model_version),
+        model_version=manifest_model_version,
     )
     actual_fp = raw["fingerprint"]
     if actual_fp != expected_fp:
@@ -324,7 +384,7 @@ def load_pack(root: Path) -> AssetPack:
 
 
 # ---------------------------------------------------------------------------
-# 6. lookup API
+# 6. lookup API（薄委托——保留模块级接口以兼容现有调用）
 # ---------------------------------------------------------------------------
 def lookup(
     pack: AssetPack,
@@ -335,10 +395,7 @@ def lookup(
     expected_text: str,
     engine_meta: Optional[Dict[str, Any]] = None,
 ) -> Optional[AssetEntry]:
-    """在包中查找匹配的资产条目。
-
-    匹配条件：key + part_index + rate_key + variant + 指纹校验。
-    指纹不匹配 / 文件不存在 → 返回 None（由调用方决定降级；这里只做判定，不做降级）。
+    """在包中查找匹配的资产条目（委托 AssetPack.lookup 方法）。
 
     参数：
         pack:          已装载的 AssetPack 实例
@@ -352,40 +409,14 @@ def lookup(
     返回：
         匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在）
     """
-    # 1. 遍历条目找到 key + part_index + rate_key + variant 匹配的条目
-    candidate = None
-    for entry in pack.assets:
-        if (
-            entry.key == key
-            and entry.part_index == part_index
-            and entry.rate_key == rate_key
-            and entry.variant == variant
-        ):
-            candidate = entry
-            break
-
-    if candidate is None:
-        return None
-
-    # 2. 指纹校验——用 expected_text 重算指纹并与条目指纹比对
-    # WHY：即使 key/part/rate/variant 全部匹配，文本内容变了也必须视为未命中，
-    #       否则会念错版本，这是静默降级的根源。
-    expected_fp = fingerprint(
-        text=expected_text,
-        voice=pack.voice,
-        rate_value=rate_key,
-        model_version=pack.model_version,
+    return pack.lookup(
+        key=key,
+        part_index=part_index,
+        rate_key=rate_key,
+        variant=variant,
+        expected_text=expected_text,
+        engine_meta=engine_meta,
     )
-    if candidate.fingerprint != expected_fp:
-        return None
-
-    # 3. 音频文件存在性校验
-    if pack.root is not None:
-        audio_path = pack.root / candidate.path
-        if not audio_path.exists():
-            return None
-
-    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -496,9 +527,9 @@ def validate_pack(root: Path) -> List[str]:
         # 6e. 指纹校验
         expected_fp = fingerprint(
             text=raw_entry["text"],
-            voice=raw_entry.get("voice", manifest.get("voice", "")),
+            voice=manifest.get("voice", ""),
             rate_value=raw_entry["rate_key"],
-            model_version=raw_entry.get("model_version", manifest.get("model_version", "")),
+            model_version=manifest.get("model_version", ""),
         )
         if raw_entry["fingerprint"] != expected_fp:
             issues.append(

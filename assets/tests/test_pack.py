@@ -530,5 +530,170 @@ class TestAPIConsistency(unittest.TestCase):
         self.assertIs(api_validate, core_validate)
 
 
+# ============================================================
+# 8. 口径一致性负例（条目级 voice/model_version 不再被允许）
+# ============================================================
+class TestFingerprintCaliberConsistency(unittest.TestCase):
+    """条目自带不同 voice 时，重算指纹与包内指纹不符 → 拒绝（fail-closed）。"""
+
+    def test_entry_level_voice_rejected_by_load_pack(self):
+        """load_pack：条目自带不同 voice → AssetPackError 且消息含指纹不匹配。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            # 篡改：给条目注入一个与 manifest 不同的 voice
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            different_voice = "zh-CN-Yunxi"
+            manifest["assets"][0]["voice"] = different_voice
+            # 重算指纹——用条目级 voice（模拟编译器按条目级 voice 出包）
+            fp = fingerprint(
+                text=manifest["assets"][0]["text"],
+                voice=different_voice,
+                rate_value=manifest["assets"][0]["rate_key"],
+                model_version=manifest["model_version"],
+            )
+            manifest["assets"][0]["fingerprint"] = fp
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            self.assertIn("指纹不匹配", str(ctx.exception))
+
+    def test_entry_level_voice_rejected_by_validate_pack(self):
+        """validate_pack：条目自带不同 voice → 问题列表非空且含指纹不匹配。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            different_voice = "zh-CN-Yunxi"
+            manifest["assets"][0]["voice"] = different_voice
+            fp = fingerprint(
+                text=manifest["assets"][0]["text"],
+                voice=different_voice,
+                rate_value=manifest["assets"][0]["rate_key"],
+                model_version=manifest["model_version"],
+            )
+            manifest["assets"][0]["fingerprint"] = fp
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            issues = validate_pack(root)
+            self.assertTrue(
+                any("指纹不匹配" in issue for issue in issues),
+                f"validate_pack 未检测到条目级 voice 导致的指纹不匹配: {issues}",
+            )
+
+    def test_entry_level_model_version_rejected_by_load_pack(self):
+        """load_pack：条目自带不同 model_version → AssetPackError 且消息含指纹不匹配。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            different_version = "v2.0"
+            manifest["assets"][0]["model_version"] = different_version
+            fp = fingerprint(
+                text=manifest["assets"][0]["text"],
+                voice=manifest["voice"],
+                rate_value=manifest["assets"][0]["rate_key"],
+                model_version=different_version,
+            )
+            manifest["assets"][0]["fingerprint"] = fp
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            self.assertIn("指纹不匹配", str(ctx.exception))
+
+
+# ============================================================
+# 9. 方法可用性正例（AssetPack.lookup 方法）
+# ============================================================
+class TestAssetPackMethodLookup(unittest.TestCase):
+    """AssetPack.lookup 方法与模块级 lookup 行为一致。"""
+
+    def _get_pack(self) -> tuple:
+        """创建合法包并返回 (pack, entry)。"""
+        tmp = tempfile.mkdtemp()
+        root = Path(tmp)
+        _create_valid_pack(root)
+        pack = load_pack(root)
+        entry = pack.assets[0]
+        return pack, entry
+
+    def test_method_lookup_hit(self):
+        """正例：pack.lookup(...) 命中 → 返回 AssetEntry。"""
+        pack, _ = self._get_pack()
+        result = pack.lookup(
+            key="greeting",
+            part_index=0,
+            rate_key="normal",
+            variant=0,
+            expected_text="你好，欢迎使用语音系统",
+        )
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, AssetEntry)
+        self.assertEqual(result.key, "greeting")
+
+    def test_method_lookup_text_changed(self):
+        """expected_text 改一个字 → pack.lookup 返回 None。"""
+        pack, _ = self._get_pack()
+        result = pack.lookup(
+            key="greeting",
+            part_index=0,
+            rate_key="normal",
+            variant=0,
+            expected_text="你好，欢迎使用语音系统！",  # 多了一个感叹号
+        )
+        self.assertIsNone(result)
+
+    def test_method_lookup_audio_deleted(self):
+        """删掉音频文件 → pack.lookup 返回 None。"""
+        pack, entry = self._get_pack()
+        audio_path = pack.root / entry.path
+        audio_path.unlink()
+        result = pack.lookup(
+            key="greeting",
+            part_index=0,
+            rate_key="normal",
+            variant=0,
+            expected_text="你好，欢迎使用语音系统",
+        )
+        self.assertIsNone(result)
+
+    def test_method_matches_module_level_lookup(self):
+        """AssetPack.lookup 与 assets.pack.lookup 行为一致。"""
+        pack, _ = self._get_pack()
+        args = dict(
+            key="greeting",
+            part_index=0,
+            rate_key="normal",
+            variant=0,
+            expected_text="你好，欢迎使用语音系统",
+        )
+        method_result = pack.lookup(**args)
+        module_result = lookup(pack, **args)
+        self.assertEqual(method_result, module_result)
+
+    def test_method_matches_module_level_lookup_miss(self):
+        """未命中时两者都返回 None。"""
+        pack, _ = self._get_pack()
+        args = dict(
+            key="nonexistent",
+            part_index=0,
+            rate_key="normal",
+            variant=0,
+            expected_text="你好，欢迎使用语音系统",
+        )
+        method_result = pack.lookup(**args)
+        module_result = lookup(pack, **args)
+        self.assertIsNone(method_result)
+        self.assertIsNone(module_result)
+
+
 if __name__ == "__main__":
     unittest.main()
