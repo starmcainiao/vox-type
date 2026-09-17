@@ -135,7 +135,8 @@ def prebake(source: PackSource, adapter, out_root: Path, *, allow_partial: bool 
 1. `python3 -m unittest discover -s compiler -v` **全绿**；无 `say` 环境下依赖真合成的用例 `skip` 而非失败（用 `shutil.which("say")` 判断）；
 2. **产物过资产层校验**（我在真实预铸产物上跑）：`assets.load_pack(out)` 成功、`assets.validate_pack(out) == []`、`out/manifest.json` 里 `assets` 非空且每条 `path` 形如 `audio/<16位hex>.wav`；
 3. **幂等**：同一源连续 `prebake` 两次 → 第二次 `synthesized == 0`、`reused == total`、`clean is True`；两次 manifest 的指纹集合相同（我会实测两次调用的返回值）；
-4. **差量生效**：改一个 variant 的文本后重铸 → `synthesized == 1`、`reused == total-1`，且**只有该条的指纹变化**（我比对两次 manifest 的条目集合）；
+4. **差量生效**：改一个 variant 的文本后重铸 → **只有该 variant 的条目重铸**：`synthesized == 该 variant 的语速档数`、`reused == total - synthesized`，且**只有该 variant 各档的指纹变化**（我比对两次 manifest 的条目集合）。
+   > 口径更正（2026-09-17 验收时）：本卡初版写的是 `synthesized == 1`，**写错了**——改动一个 variant 的文本会让该 variant 的**每一档语速**都失效，所以正确判据是"等于该 variant 的档数"。实现行为正确，是卡数错。
 5. **质检门真会拦**（我手跑）：自造一条头静音 500 ms 的 WAV → `check_quality` 返回非空、消息含判据名与实际值；把它塞进流水线 → `clean is False`，且 fail-closed 下 `manifest.json` **不存在**、抛 `PrebakeError` 且 `e.report.quality_issues` 含该条；
 6. **失败不静默**（我手跑）：用 mock 让某条 `synthesize` 抛错 → 该条进 `failed`（`reason` 非空）；`allow_partial=True` 时写包但 `report.clean is False`，且 `manifest.json` 里**没有**那条；
 7. **Loudness 标记**：产物 `prebake_ledger.json` 里 `loudness_normalized is False`；
