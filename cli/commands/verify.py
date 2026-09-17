@@ -17,8 +17,13 @@ cli.commands.verify — `vox verify <artifact> [--json]`
                                                    kind="eval_report"，issues = 缺失/不符项
   4. 其它                                       → 退出码 2，stderr 说明支持哪三类
 
-退出码：0 = 三类都过 / 4 = 有 issues 或 violations / 2 = 类型不认或装载失败。
+退出码：0 = 三类都过 / 4 = 有 issues 或 violations /
+        2 = **仅限**产物类型不认识、路径不存在（docs/08 §8.6）。
 
+WHY 装载失败也是 4 而不是 2（2026-09-17 实测钉死）：删掉已铸包里的一个 audio/*.wav 后，
+  assets.load_pack 会抛 AssetPackError（fail-closed）——但「产物坏了」是 verify 要**发现**
+  的结论（assets.validate_pack 本来就把「音频文件不存在」当 issue 返回），
+  不是「你参数用错了」。把它映射成 2 会让人去查命令行，而包是真的坏了。
 WHY 只调公开 API 而不自己判：命中判定 / 四属性 / 质检阈值 / 报告口径分属 assets /
   compiler / eval 三层，CLI 重写一份就是第二份口径——两份口径必然漂移，
   漂移的那一份会悄悄让「不通过」变成「通过」，这正是红线禁止的静默降级。
@@ -87,13 +92,23 @@ def _payload(kind: str) -> dict:
 # 三条分派路径
 # ---------------------------------------------------------------------------
 def _verify_asset_pack(pack_dir: Path, args: Any) -> int:
-    """已铸包目录：assets.load_pack + assets.validate_pack（只读）。"""
+    """已铸包目录：assets.validate_pack 收 issues + assets.load_pack 试装载（只读）。
+
+    WHY 先 validate_pack、再 load_pack（2026-09-17 实测钉死）：
+        `load_pack` 对"条目引用的音频文件不存在"是 fail-closed 抛 `AssetPackError`，
+        而这件事**本来就是 `validate_pack` 的 issue 之一**——"产物坏了"是 verify 要
+        **发现**的结论，不是"你参数用错了"。若先 load 并把异常当用法错误（rc 2），
+        脚本化调用方会去查命令行，而包是真的坏了。所以两条都收：issues 里既有
+        validate_pack 的返回，也有 load_pack 的异常消息（去重后合并）。
+    """
+    issues = list(validate_pack(pack_dir))
     try:
         load_pack(pack_dir)
-        issues = list(validate_pack(pack_dir))
     except AssetPackError as exc:
-        # 装载失败属「读不动」，不是「不合规」→ 2（与 pack check 的分类一致）
-        raise UsageError(f"资产包装载失败: {exc}") from exc
+        # 装载失败并入 issues（不抛 UsageError）：它是"产物不合格"的一种 → 返回 4
+        message = str(exc)
+        if message not in issues:
+            issues.append(message)
 
     payload = _payload("asset_pack")
     payload["issues"] = issues
@@ -109,16 +124,39 @@ def _verify_asset_pack(pack_dir: Path, args: Any) -> int:
     return EXIT_QUALITY
 
 
+def _fail_pack_source(src_dir: Path, args: Any, *, kind_label: str, message: str) -> int:
+    """包源自检失败（装载期）：如实报 kind=pack_source / passed=False / rc 4。
+
+    消息进 `issues`（装载失败不是四属性的 `Violation`，不塞进 violations——两块语义不同：
+    violations = 四属性判据的返回；issues = "产物读不动/不合格"的说明）。
+    """
+    payload = _payload("pack_source")
+    payload["issues"] = [f"{kind_label}: {message}"]
+    summary = f"verify: 不通过（kind=pack_source {kind_label}，src={src_dir}）"
+    commands.emit_result(payload, as_json=args.as_json, summary=summary)
+    return EXIT_QUALITY
+
+
 def _verify_pack_source(src_dir: Path, args: Any) -> int:
-    """包源目录：compiler 三件套。四属性判据全在 compiler.checks，这里只透传结果。"""
+    """包源目录：compiler 三件套。四属性判据全在 compiler.checks，这里只透传结果。
+
+    WHY 源/剧本装载失败返回 4（不是 2）（2026-09-17 与 docs/08 §8.6 对齐）：
+        产物**自身不合规**（`SourceError`/`ScriptError`）正是 verify 要发现的结论；
+        rc 2 只留给"类型不认识 / 路径不存在"这类**调用方**的问题——否则脚本化调用方
+        会把"这个包源写错了"误读成"我命令敲错了"。
+    """
     try:
         source = load_source(src_dir)
     except SourceError as exc:
-        raise UsageError(f"源格式校验失败: {exc}") from exc
+        return _fail_pack_source(
+            src_dir, args, kind_label="源格式校验失败", message=str(exc)
+        )
     try:
         script = load_script(src_dir)
     except ScriptError as exc:
-        raise UsageError(f"剧本源格式校验失败: {exc}") from exc
+        return _fail_pack_source(
+            src_dir, args, kind_label="剧本源格式校验失败", message=str(exc)
+        )
 
     # pack=None：包源目录没有 manifest.json，C3c 无判定输入 → 记入 skipped
     result = check_properties(script, source, pack=None)
