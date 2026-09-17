@@ -6,6 +6,7 @@ adapters.tts_macsay.adapter — macOS say 命令薄适配器
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 import wave
@@ -76,7 +77,11 @@ class MacSayTts:
             raise TtsError("空文本无法合成语音（禁止合成静音）")
 
         out = Path(out_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise TtsError(f"创建输出目录失败: {out.parent} ({e})") from e
 
         rate = self.rate_value(rate_key)
 
@@ -110,7 +115,11 @@ class MacSayTts:
             if not tmp_path.exists() or tmp_path.stat().st_size == 0:
                 raise TtsError("say 命令未产出有效文件（文件不存在或 0 字节）")
 
-            tmp_path.replace(out)
+            # shutil.move 自动处理跨设备：先尝试 rename，失败则复制+删除
+            try:
+                shutil.move(str(tmp_path), str(out))
+            except OSError as e:
+                raise TtsError(f"落盘移动失败: {tmp_path} -> {out} ({e})") from e
         finally:
             if tmp_path.exists():
                 tmp_path.unlink(missing_ok=True)
