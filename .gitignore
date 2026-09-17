@@ -21,3 +21,7 @@ assets/audio/
 /tmp/
 .idea/
 .vscode/
+
+# 工具链会话/计划产物（不进仓：ZCode 会话计划、OpenCode 计划目录）
+.zcode/
+.hermes/

@@ -7,6 +7,10 @@
 
 依赖：`core/`（T01/T01b 已验收）。必读：`AGENTS.md`、`adapters/AGENTS.md`、`core/AGENTS.md`。**不得修改这些文件。**
 
+## 数据分级（派发前置检查项）
+
+**分级：公开。** 本卡内容只有接口规格与合成命令参数，**不含**用户录音、真实会话、个人身份信息、内网地址或 token。可派发免费模型执行。
+
 ## 目标（产物）
 
 1. `adapters/tts_macsay/__init__.py` — 导出 `MacSayTts`
@@ -32,6 +36,12 @@ class MacSayTts:
 - 调用 `say -v <voice> -r <rate> -o <tmp> --file-format=WAVE --data-format=LEI16@16000 <text>`，产出 **16kHz / 单声道 / 16-bit WAV**；
 - **空文本 → 抛错**（不得合成静音）；`say` 非零退出 → 抛错并带 stderr 摘要；产物不存在或 0 字节 → 抛错；
 - 产出目录不存在时自动创建；临时文件用 `tempfile`，不落仓。
+
+### 口径澄清（策划 2026-09-17 增补，派发前实测确认）
+
+- 本机（macOS 26.3.1 / Python 3.14.6）**实测通过**：`say -v Tingting -o <真实临时文件> --file-format=WAVE --data-format=LEI16@16000 "<文本>"` 退出码 0，产物为 **1 声道 / 16 bit / 16000 Hz** 的合法 WAV（`wave` 可读，39483 帧）。
+  → **一条 `say` 命令直出即可**。**不要**引入 `afconvert`、重采样逻辑或任何"格式不达标就转换"的分支；Python 3.14 已移除 `audioop`，手写重采样只会把适配器撑爆 150 行上限。
+- 已知易踩坑：`-o /dev/null`、`-o /dev/stdout` 会被 `say` 拒绝（`Speaking failed: -241` / `Opening output file failed: -54`），并可能伴随 `This synthesizer does not support data format specifications.` 的误导性报错。这是 `say` 对**特殊文件**的限制，**不是** data-format 不支持——产物必须写到普通临时文件路径。
 
 ### 错误类型
 

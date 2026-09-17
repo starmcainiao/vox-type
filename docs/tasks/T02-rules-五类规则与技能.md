@@ -8,6 +8,10 @@
 依赖：`core/`（T01/T01b 已验收：`core/protocol.py` 的 `parse_plan` / `PlanUnit` / `PRIMITIVES` / `VALID_RATES`）。
 必读：`AGENTS.md`、`rules/AGENTS.md`。**不得修改这两个文件。**
 
+## 数据分级（派发前置检查项）
+
+**分级：公开。** 本卡内容只有规则陈述、接口规格与示例话术文本，**不含**用户录音、真实会话、个人身份信息、内网地址或 token。可派发免费模型执行。
+
 ## 目标（产物）
 
 1. `rules/README.md` — 规则文档（人读）：五类规则逐条陈述 + 正例 + 反例 + 判法（机器/人）。
@@ -34,6 +38,13 @@
 | R-5 | 降级规则 | `SAY_LIVE` 只能在白名单场景使用，必须带 `reason`；**禁止静默降级** | 自由文本单元使用 `action="SAY"`（伪装成命中资产，无 reason） |
 
 补充：还需生成 `rules/examples/keylist.json`（该示例业务已预铸的 key 清单，≥6 个 key），供 R-1 反例引用"不存在的 key"。
+
+### 口径澄清（策划 2026-09-17 增补，派发前补钉）
+
+**`rules/examples/*.json` 的文件根一律是 JSON 数组（不是包装对象）。**
+理由：验收标准 3 要求反例能被 `core.protocol.parse_plan` **直接**解析，而 `parse_plan` 只接受列表、且拒绝空列表。
+所以**不要**写成 `{"plan_id": "...", "utterances": [...]}` 这种包装结构，直接写 `[ {...}, {...} ]`。
+`keylist.json` 不受此约束（它不是 plan，结构自定，但必须是合法 JSON）。
 
 ## 允许修改的文件（白名单）
 

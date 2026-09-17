@@ -7,6 +7,10 @@
 
 依赖：`core/`（T01/T01b 已验收）。必读：`AGENTS.md`、`assets/AGENTS.md`。**不得修改这两个文件。**
 
+## 数据分级（派发前置检查项）
+
+**分级：公开。** 本卡内容只有包格式规格与指纹算法定义，**不含**用户录音、真实会话、个人身份信息、内网地址或 token。可派发免费模型执行。
+
 ## 目标（产物）
 
 1. `assets/__init__.py` — 导出 `fingerprint` / `AssetPack` / `load_pack` / `validate_pack` 等公共 API
