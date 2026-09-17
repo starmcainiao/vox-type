@@ -93,8 +93,9 @@ class PercentileTest(unittest.TestCase):
 
     def test_q_boolean_rejected(self):
         """bool 是 int 子类，必须显式拒绝（True == 1 会绕过 (0,1) 校验）。"""
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             percentile([1.0, 2.0, 3.0], True)
+        self.assertIn("True", str(ctx.exception))
 
     def test_string_rejected(self):
         """字符串逐字符迭代会被误当数值序列，必须显式拒绝。"""
@@ -104,8 +105,9 @@ class PercentileTest(unittest.TestCase):
 
     def test_non_numeric_rejected(self):
         """序列含非数值元素时报 TypeError 并带原始值。"""
-        with self.assertRaises(TypeError):
+        with self.assertRaises(TypeError) as ctx:
             percentile([1.0, "x", 3.0], 0.5)
+        self.assertIn("非数值", str(ctx.exception))
 
 
 class RequireMinSamplesTest(unittest.TestCase):
@@ -136,8 +138,9 @@ class RequireMinSamplesTest(unittest.TestCase):
 
     def test_empty_name_rejected(self):
         """name 为空会让报错失去定位能力，必须拒绝。"""
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             require_min_samples([], name="")
+        self.assertIn("name", str(ctx.exception))
 
     def test_non_sized_rejected(self):
         """没有 len() 的对象报 TypeError 并带实际类型名。"""

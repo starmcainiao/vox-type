@@ -23,6 +23,7 @@ from pathlib import Path
 from core.metrics_spec import FALLBACK, FIRST_AUDIO_MS, HIT, HIT_RATE, MISS, PRECAST_RATIO
 
 from eval.report import (
+    BenchReportError,
     CALIBER,
     REQUIRED_TOP_LEVEL,
     SCHEMA_VERSION,
@@ -188,12 +189,14 @@ class BuildReportTest(unittest.TestCase):
         self.assertIn("美化", str(ctx.exception))
 
     def test_non_bool_incomplete_rejected(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(TypeError) as ctx:
             make_report(incomplete="yes")
+        self.assertIn("bool", str(ctx.exception))
 
     def test_non_bool_meaningful_rejected(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(TypeError) as ctx:
             make_report(meaningful="false")
+        self.assertIn("bool", str(ctx.exception))
 
     def test_empty_arms_rejected(self):
         with self.assertRaises(ValueError) as ctx:
@@ -201,8 +204,45 @@ class BuildReportTest(unittest.TestCase):
         self.assertIn("arms", str(ctx.exception))
 
     def test_empty_timing_rejected(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             make_report(timing={})
+        self.assertIn("timing_metrics", str(ctx.exception))
+
+    def test_synthetic_marker_cross_validation(self):
+        """build_report 硬校验：env.adapter.synthetic=True 时 timing_metrics_meaningful 必须为 False。
+
+        WHY: 替身适配器的时序数字不得被报告背书为真机数据（T08 卡 §224 明令禁止）。
+        """
+        env = {
+            "platform": "darwin", "python": "3.11", "cpu_count": 8,
+            "adapter": {"name": "test", "voice": "Tingting",
+                        "model_version": "macos-say", "synthetic": True},
+            "pack": {"pack_version": "1.0.0", "voice": "Tingting",
+                     "model_version": "macos-say", "asset_count": 12,
+                     "path": "/tmp/p"},
+        }
+        with self.assertRaises(BenchReportError) as ctx:
+            build_report(
+                command="",
+                seed=DEFAULT_SEED,
+                repeats=REPEATS,
+                warmup_runs=0,
+                incomplete=False,
+                incomplete_reasons=[],
+                env=env,
+                corpus={"path": "/tmp/c.json", "corpus_id": "demo-broadcast-v1",
+                        "units": 12, "sha256": "0123456789abcdef"},
+                arms=make_arms(),
+                delta={},
+                deterministic_metrics=make_arms(),
+                timing_metrics=make_timing(),
+                timing_metrics_meaningful=True,
+                raw={},
+                reference_gate={},
+            )
+        msg = str(ctx.exception)
+        self.assertIn("env.adapter.synthetic", msg)
+        self.assertIn("timing_metrics_meaningful", msg)
 
     def test_reasons_preserved_in_order(self):
         reasons = ["r1", "r2", "r3"]

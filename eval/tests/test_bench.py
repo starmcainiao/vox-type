@@ -84,15 +84,16 @@ DENOM_NOTE_KEY = PRECAST_RATIO + "_denominator_note"
 # ---------------------------------------------------------------------------
 # 夹具：真实合成 + 真实指纹 + 真实 manifest
 # ---------------------------------------------------------------------------
-def build_pack(root: Path, units, skip_keys=(), ms_per_char=10.0) -> object:
+def build_pack(root: Path, units, skip_keys=(), ms_per_char=10.0, adapter=None) -> object:
     """在 root 下真合成音频、真算指纹、写 manifest.json 并 load_pack 装载。
 
     skip_keys 里的 key 不出资产条目（用于"包缺 key"的负面用例）。
     ms_per_char 调小只为让纯 Python 替身适配器跑得快，不改变任何口径。
+    adapter 可选：自定义 TTS 适配器（用于测试特殊场景，如 0 帧音频）。
     """
     audio_dir = root / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    tts = OfflineTts(voice=VOICE, model_version=MODEL_VERSION, ms_per_char=ms_per_char)
+    tts = adapter if adapter is not None else OfflineTts(voice=VOICE, model_version=MODEL_VERSION, ms_per_char=ms_per_char)
 
     assets = []
     for unit in units:
@@ -158,6 +159,48 @@ def read_jsonl(path: Path) -> list:
             if stripped:
                 out.append(json.loads(stripped))
     return out
+
+
+class FlakyOfflineTts:
+    """模拟执行期失败的适配器：第一次 synthesize 抛异常，后续正常。
+
+    用于测试"某一次 execute() 抛错 → 仍产出报告"的路径。
+    类变量 _calls 跨实例共享（模拟真实场景中全局状态的适配器）。
+    """
+    name = "flaky-adapter"
+    voice = VOICE
+    model_version = MODEL_VERSION
+    _calls = 0
+
+    def __init__(self, ms_per_char=10.0):
+        self._tts = OfflineTts(voice=VOICE, model_version=MODEL_VERSION, ms_per_char=ms_per_char)
+
+    def synthesize(self, text, out_path, rate_key="normal"):
+        FlakyOfflineTts._calls += 1
+        if FlakyOfflineTts._calls == 1:
+            raise RuntimeError("注入的失败")
+        return self._tts.synthesize(text, out_path, rate_key)
+
+    @classmethod
+    def reset(cls):
+        cls._calls = 0
+
+
+class FakeAdapterNoSynthetic:
+    """没有 synthetic 属性的假适配器（模拟忘记打标记的第三方适配器）。
+
+    本类定义在 eval/tests/test_bench.py 内，__module__ 以 eval. 开头，
+    因此 bench.py 的模块路径检查会将其识别为替身。
+    """
+    name = "fake-no-synthetic"
+
+    def __init__(self, voice, model_version, ms_per_char=10.0):
+        self.voice = voice
+        self.model_version = model_version
+        self._tts = OfflineTts(voice=voice, model_version=model_version, ms_per_char=ms_per_char)
+
+    def synthesize(self, text, out_path, rate_key="normal"):
+        return self._tts.synthesize(text, out_path, rate_key)
 
 
 class BenchCase(unittest.TestCase):
@@ -323,8 +366,8 @@ class FastArmSemanticsTest(BenchCase):
         )
         samples = read_jsonl(config.out_dir / "raw" / f"{FAST_ARM}_samples.jsonl")
         self.assertEqual(len(samples), REPEATS)
-        total_frames = int(round(samples[0]["total_duration_ms"] * SAMPLE_RATE / 1000.0))
-        expected = round(min(1.0, precast / total_frames), 6)
+        total_frames = samples[0]["total_frames"]
+        expected = round(precast / total_frames, 6)
         observed = report["arms"][FAST_ARM][PRECAST_RATIO]
         self.assertEqual(observed, expected, "precast_ratio 与口径公式不一致")
         self.assertGreater(observed, 0.0)
@@ -626,6 +669,22 @@ class SummaryTest(BenchCase):
         self.assertTrue(summary.startswith("[INCOMPLETE]"))
         self.assertIn("有效样本数 19 < repeats 20", summary)
 
+    def test_synthetic_marker_without_attribute(self):
+        """没有 synthetic 属性的假适配器（__module__ 以 eval. 开头）→ meaningful=False 且摘要含警告。
+
+        WHY: 忘记打标记的替身适配器不得被报告背书为真机数据。
+        """
+        adapter = FakeAdapterNoSynthetic(voice=VOICE, model_version=MODEL_VERSION)
+        config = make_config(self.pack, self.units, self.fresh_out_dir(), adapter=adapter)
+        report = run_bench(config)
+
+        self.assertIs(report["timing_metrics_meaningful"], False,
+                      "eval.* 模块下的适配器必须被识别为替身")
+        self.assertTrue(report["env"]["adapter"]["synthetic"],
+                        "模块路径检查应将其识别为替身（synthetic=True）")
+        summary = render_summary(report)
+        self.assertIn("[警告]", summary)
+
 
 # ---------------------------------------------------------------------------
 # 9~10. 负面用例
@@ -712,6 +771,81 @@ class NegativeTest(BenchCase):
                                   adapter=Bare()))
         self.assertIn("synthesize", str(ctx.exception))
         self.assertIn("Bare", str(ctx.exception))
+
+    def test_partial_failure_produces_report(self):
+        """某一臂一次 execute() 抛错 → 仍产出报告、incomplete is True、原因含 turn_id 与异常消息。
+
+        WHY: _timing_block 在 n < MIN_REPEATS 时不得抛错中止整轮对拍，
+             样本不足的判定归 assess_completeness。
+        """
+        FlakyOfflineTts.reset()
+        adapter = FlakyOfflineTts()
+        config = make_config(self.pack, self.units, self.fresh_out_dir(), adapter=adapter)
+        report = run_bench(config)
+
+        self.assertTrue(report["incomplete"], "执行期失败导致样本不足时报告必须标 incomplete")
+        blob = " ".join(report["incomplete_reasons"])
+        self.assertIn("注入的失败", blob, "原因必须含异常消息原文")
+        self.assertIn("bench-slow-0000", blob, "原因必须含失败的 turn_id")
+        self.assertEqual(report["timing_metrics"][SLOW_ARM]["n"], REPEATS - 1)
+        self.assertIsNone(report["timing_metrics"][SLOW_ARM]["p50"],
+                          "n < MIN_REPEATS 时 p50 必须是 None（不是 0.0）")
+        self.assertTrue(render_summary(report).startswith("[INCOMPLETE]"))
+
+    def test_precast_ratio_over_one_marks_incomplete(self):
+        """包元数据不一致（duration_ms 篡改使分子 > 分母）→ 比值 > 1 如实写出且 incomplete=true。
+
+        WHY: 不得夹取到 1.0——异常数据被静默改写成"满分"属于美化。
+        """
+        pack_root = self._work / "pack-tampered"
+        pack_root.mkdir()
+        pack = build_pack(pack_root, self.units)
+        manifest = json.loads((pack_root / "manifest.json").read_text(encoding="utf-8"))
+        for a in manifest["assets"]:
+            a["duration_ms"] *= 3
+        (pack_root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+        )
+        tampered_pack = load_pack(pack_root)
+        config = make_config(tampered_pack, self.units, self.fresh_out_dir())
+        report = run_bench(config)
+
+        self.assertTrue(report["incomplete"])
+        ratio = report["arms"][FAST_ARM][PRECAST_RATIO]
+        self.assertIsNotNone(ratio, "比值 > 1 时不得写 None")
+        self.assertGreater(ratio, 1.0, f"比值 > 1 应如实写出，实际为 {ratio}")
+        blob = " ".join(report["incomplete_reasons"])
+        self.assertIn("precast_ratio", blob)
+        self.assertIn("包元数据不一致", blob)
+
+    def test_precast_ratio_zero_denominator_gives_none(self):
+        """总帧数为 0 时 precast_ratio 必须是 None（不得写 0.0）。
+
+        WHY: 0.0 会被读成"没有任何预铸音频"，但真实情况是"无法计算"。
+        此用例直接测试 _make_sample（产品 API 无法触发 0 帧场景：
+        runtime 拒读 0 帧 WAV，属正常防御行为）。
+        """
+        from eval.bench import _make_sample
+
+        class MockResult:
+            """模拟 total_duration_ms=0 的执行结果。"""
+            events = []
+            total_duration_ms = 0
+            first_audio_ms = 0.0
+            tts_calls = 0
+
+        sample = _make_sample(
+            arm=FAST_ARM,
+            index=0,
+            turn_id="test-fast-0000",
+            plan_units=self.units,
+            result=MockResult(),
+            pack=self.pack,
+            units=len(self.units),
+        )
+        self.assertIsNone(sample[PRECAST_RATIO], "总帧数为 0 时 precast_ratio 必须是 None")
+        self.assertEqual(sample["total_frames"], 0)
+        self.assertEqual(sample["precast_frames"], 0)
 
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,7 @@ from runtime import Executor, RuntimeMissError, SAMPLE_RATE
 
 from .offline_tts import OfflineTts
 from .report import (
+    BenchReportError,
     assess_completeness,
     build_report,
     render_summary,
@@ -80,12 +81,7 @@ _SENTENCE_END: str = "。！？!?"
 # ---------------------------------------------------------------------------
 # 异常与配置
 # ---------------------------------------------------------------------------
-class BenchReportError(Exception):
-    """harness 配置/语料错误。
-
-    消息必须包含导致失败的具体值（路径、数值、key），不允许吞掉上下文。
-    抛此异常时不得产生报告文件（不写盘，避免留下半成品）。
-    """
+# BenchReportError 定义在 report.py（build_report 的硬校验需要它），此处 re-export。
 
 
 @dataclass(frozen=True)
@@ -319,9 +315,12 @@ def _make_sample(
 
     precast = _precast_frames(result.events, pack)
     total_frames = int(round(result.total_duration_ms * SAMPLE_RATE / 1000.0))
-    precast_ratio = (
-        round(min(1.0, precast / total_frames), 6) if total_frames else 0.0
-    )
+    # WHY: 不得夹取——比值 > 1 说明包元数据不一致（分子 > 分母），如实写出并标 incomplete；
+    #      分母为 0 时给 None（不得写 0.0，0.0 会被读成"没有任何预铸音频"）。
+    if total_frames == 0:
+        precast_ratio = None
+    else:
+        precast_ratio = round(precast / total_frames, 6)
 
     return {
         "index": index,
@@ -334,6 +333,8 @@ def _make_sample(
         "state_counts": state_counts,
         HIT_RATE: round(state_counts[HIT] / units, 6) if units else 0.0,
         PRECAST_RATIO: precast_ratio,
+        "precast_frames": precast,
+        "total_frames": total_frames,
     }
 
 
@@ -560,6 +561,10 @@ def _timing_block(samples: Sequence[Dict[str, Any]], seed: int) -> Dict[str, Any
 
     machine_dependent 恒为 True——挂钟时间必然受机器与负载影响；
     离线替身适配器的问题由 timing_metrics_meaningful 单独标记。
+
+    WHY: n < MIN_REPEATS 时 bootstrap_ci 会抛 ValueError（正确行为——样本不足不得出 CI），
+         但 _timing_block 不应中止整轮对拍：样本不足的判定归 assess_completeness，
+         此处返回 None 值让报告如实呈现"数据不够"而不是"整轮崩溃"。
     """
     if not samples:
         return {
@@ -573,8 +578,22 @@ def _timing_block(samples: Sequence[Dict[str, Any]], seed: int) -> Dict[str, Any
             "machine_dependent": True,
         }
     values = [sample[FIRST_AUDIO_MS] for sample in samples]
+    n = len(values)
+    if n < MIN_REPEATS:
+        # WHY: 降级路径——n 不足时不给点估计与 CI（避免用稀疏样本编造统计量），
+        #      但保留 n 让报告如实显示"实际样本数"。
+        return {
+            "n": n,
+            "p50": None,
+            "p99": None,
+            "max": None,
+            "ci95_p50": None,
+            "ci95_p99": None,
+            "unit": "ms",
+            "machine_dependent": True,
+        }
     return {
-        "n": len(values),
+        "n": n,
         "p50": percentile(values, 0.5),
         "p99": percentile(values, 0.99),
         "max": float(max(values)),
@@ -672,8 +691,57 @@ def run_bench(config: BenchConfig) -> Dict[str, Any]:
         raw_checks=raw_checks,
     )
 
+    # WHY: precast_ratio > 1 说明包元数据不一致（分子 > 分母），
+    #      分母为 0 说明输出总帧数为 0——都不能出结论，必须标 incomplete。
+    #      不得夹取到 1.0，不得写 0.0（会被读成"没有任何预铸音频"）。
+    for arm in _ARMS:
+        run = runs[arm]
+        if not run.samples:
+            continue
+        first_sample = run.samples[0]
+        ratio = aggregates[arm].get(PRECAST_RATIO)
+        total_f = first_sample.get("total_frames", 0)
+        precast_f = first_sample.get("precast_frames", 0)
+        if ratio is not None and ratio > 1.0:
+            reasons.append(
+                f"[{arm}] precast_ratio={ratio} > 1.0"
+                f"（分子 precast_frames={precast_f} > 分母 total_frames={total_f}，"
+                f"包元数据不一致）"
+            )
+            incomplete = True
+        elif ratio is None and total_f == 0:
+            reasons.append(
+                f"[{arm}] precast_ratio=None（输出总帧数 total_frames=0，无法计算）"
+            )
+            incomplete = True
+
     adapter = config.adapter
-    synthetic = bool(getattr(adapter, "synthetic", False))
+    # WHY: 不依赖单一属性——忘记打 synthetic 标记的替身适配器会被误认为真机数据，
+    #      导致时序数字被报告背书为真机（T08 卡 §224 明令禁止）。
+    #      三重检查：
+    #        ① adapter.synthetic is True（显式标记，如 OfflineTts）；
+    #        ② 模块名以 eval. 开头（unittest discover 前缀场景）；
+    #        ③ 源文件位于 eval 包目录下（unittest discover -s eval 无前缀场景）；
+    #        ④ 模块不在 adapters/ 下且未显式声明 synthetic=False（第三方替身场景）。
+    import os as _os
+    import sys as _sys
+    _eval_dir = _os.path.dirname(_os.path.abspath(__file__))
+    _adapter_mod_name = type(adapter).__module__
+    _adapter_mod_obj = _sys.modules.get(_adapter_mod_name)
+    _adapter_file = getattr(_adapter_mod_obj, '__file__', '') or ''
+    _adapter_dir = _os.path.dirname(_os.path.abspath(_adapter_file)) if _adapter_file else ''
+    _in_eval_pkg = (
+        _adapter_dir == _eval_dir
+        or _adapter_dir.startswith(_eval_dir + _os.sep)
+    )
+    _in_adapters = _adapter_mod_name.startswith("adapters.")
+    _has_explicit_synthetic = hasattr(adapter, "synthetic")
+    synthetic = (
+        getattr(adapter, "synthetic", False) is True
+        or _adapter_mod_name.startswith("eval.")
+        or _in_eval_pkg
+        or (not _in_adapters and not _has_explicit_synthetic)
+    )
     env = {
         "platform": platform.platform(),
         "python": platform.python_version(),
@@ -885,9 +953,20 @@ def run_bench_cli(argv: Optional[Sequence[str]] = None) -> int:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
 
+    # 执行期失败导致样本不足：报告已写出，但退出码非 0。
+    # WHY: 不得用"参数错误"的消息掩盖"执行期失败"的语义——
+    #      退出码 2 与参数错误合流，但 stderr 消息必须说明是执行期失败。
+    incomplete_from_bench = report["incomplete"]
+
     path = write_report(report, config.out_dir)
     print(render_summary(report))
     print(f"\n报告已写入: {path}")
+
+    if incomplete_from_bench:
+        for reason in report["incomplete_reasons"]:
+            print(f"错误: {reason}", file=sys.stderr)
+        return 2
+
     return 0
 
 

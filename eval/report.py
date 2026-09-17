@@ -28,6 +28,15 @@ from core.metrics_spec import (
 
 from .stats import BOOTSTRAP_RESAMPLES, MIN_REPEATS, QUANTILE_METHOD
 
+
+class BenchReportError(Exception):
+    """harness 配置/语料/报告组装错误。
+
+    消息必须包含导致失败的具体值（路径、数值、key、字段名），不允许吞掉上下文。
+    抛此异常时不得产生报告文件（不写盘，避免留下半成品）。
+    """
+
+
 # 报告 schema 版本：字段名冻结，新增只能追加
 SCHEMA_VERSION: str = "vox-eval-report/1"
 
@@ -253,6 +262,16 @@ def build_report(
         raise TypeError(
             "build_report.timing_metrics_meaningful: 必须是 bool，"
             f"实际为 {timing_metrics_meaningful!r}"
+        )
+    # WHY: 替身适配器（synthetic=True）的时序数字是人工构造的，
+    #      不得被报告背书为真机数据（T08 卡 §224 明令禁止）。
+    #      校验必须落在函数体内——只在测试里断言等于把红线挪开。
+    synthetic = env.get("adapter", {}).get("synthetic", False)
+    if synthetic is True and timing_metrics_meaningful is not False:
+        raise BenchReportError(
+            f"build_report: env.adapter.synthetic={synthetic} 但 "
+            f"timing_metrics_meaningful={timing_metrics_meaningful}——"
+            f"替身适配器的时序数字不得被报告背书为真机数据"
         )
 
     report: Dict[str, Any] = {
