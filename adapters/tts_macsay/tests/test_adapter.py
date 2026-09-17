@@ -10,6 +10,7 @@ adapters.tts_macsay.tests.test_adapter — MacSayTts 适配器正例 + 负例测
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 import wave
 from pathlib import Path
 
@@ -167,6 +168,37 @@ class TestSynthesizePositive(unittest.TestCase):
         self.tts.synthesize("临时文件", self.out_path)
         after = len([f for f in tmp_dir.iterdir() if f.name.startswith("tmp") and f.suffix == ".wav"])
         self.assertEqual(after, before, "合成后不应多出临时文件")
+
+
+# ============================================================
+# 4b. 失败路径临时文件泄漏回归（不依赖 say，纯 mock）
+# ============================================================
+class TestFailurePathTempfileLeak(unittest.TestCase):
+    """失败路径（say 非零退出）也不得留下临时文件——finally 清理必须生效。"""
+
+    def setUp(self):
+        self.tts = MacSayTts()
+
+    def _count_tmp_wav(self) -> int:
+        """统计系统临时目录内 tmp*.wav 数量。"""
+        tmp_dir = Path(tempfile.gettempdir())
+        return len([f for f in tmp_dir.iterdir() if f.name.startswith("tmp") and f.suffix == ".wav"])
+
+    @unittest.mock.patch("adapters.tts_macsay.adapter.subprocess.run")
+    def test_failure_path_leaves_no_tempfile(self, mock_run):
+        """失败路径（say 非零退出）也不得留下临时文件。"""
+        mock_run.return_value = unittest.mock.Mock(returncode=1, stderr="mocked error")
+
+        before = self._count_tmp_wav()
+        out_path = Path(tempfile.mktemp(suffix=".wav"))
+        try:
+            with self.assertRaises(TtsError):
+                self.tts.synthesize("测试失败路径", out_path)
+        finally:
+            out_path.unlink(missing_ok=True)
+
+        after = self._count_tmp_wav()
+        self.assertEqual(after, before, "失败路径下临时文件应被清理，不应多出 tmp*.wav")
 
 
 # ============================================================
