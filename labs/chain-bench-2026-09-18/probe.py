@@ -12,8 +12,9 @@ REPO = pathlib.Path("/Volumes/macos/kefu-agent")
 CV = REPO / "organs" / "客服" / "channel-voice"
 VENV_PY = REPO / ".venv-voice" / "bin" / "python"
 WORKER = CV / "voice_worker.py"
-OUT = pathlib.Path("/tmp/chain-probe")
+OUT = pathlib.Path("/tmp/chain-probe")          # 样本 JSONL 落这里
 OUT.mkdir(parents=True, exist_ok=True)
+AUDIO = pathlib.Path(tempfile.mkdtemp(prefix="chain-probe-audio-"))  # 音频只放临时区，不进仓
 
 # packs/repair 的 12 条话术（每组取第一个 variant）
 PHRASES = json.load(open("/Volumes/macos/newProject/vox-type/packs/repair/phrases.json", encoding="utf-8"))["phrases"]
@@ -83,7 +84,7 @@ if __name__ == "__main__":
         rows = []
         for i, key in enumerate(KEYS):
             text = TEXTS[key]
-            wav = say_wav(text, OUT / f"user_{i:02d}.wav")
+            wav = say_wav(text, AUDIO / f"user_{i:02d}.wav")
             b64 = base64.b64encode(wav.read_bytes()).decode("ascii")
             r, wall = w.call({"op": "stt", "wavB64": b64, "lang": "zh"})
             rows.append({"key": key, "text": text, "wall_ms": round(wall, 1),

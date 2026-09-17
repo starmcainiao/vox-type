@@ -4,10 +4,11 @@
 用法：python3 labs/chain-bench-2026-09-18/segments.py [say|llm|all]
 输出：<本目录>/raw/tts_say_samples.jsonl、raw/llm_warm_samples.jsonl
 """
-import json, pathlib, subprocess, sys, time, urllib.request
+import json, pathlib, subprocess, sys, tempfile, time, urllib.request
 
 OUT = pathlib.Path(__file__).resolve().parent / "raw"
 OUT.mkdir(parents=True, exist_ok=True)
+AUDIO = pathlib.Path(tempfile.mkdtemp(prefix="chain-seg-audio-"))   # 音频只放临时区，不进仓
 PACK = pathlib.Path("/Volumes/macos/newProject/vox-type/packs/repair/phrases.json")
 KEYS = ["greeting_welcome", "ask_fault_type", "ask_fault_detail", "ask_fault_urgency",
         "ask_address", "ask_contact", "ask_time_window", "confirm_summary",
@@ -20,7 +21,7 @@ MODEL = "mlx-community--Qwen3.5-4B-MLX-4bit"
 def say_samples() -> None:
     rows = []
     for i, key in enumerate(KEYS):
-        out = OUT / f"say_{i:02d}.wav"
+        out = AUDIO / f"say_{i:02d}.wav"
         t0 = time.perf_counter()
         subprocess.run(["say", "-v", "Tingting", "-o", str(out), "--file-format=WAVE",
                         "--data-format=LEI16@16000", TEXTS[key]], check=True)
