@@ -160,4 +160,5 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T10-cli-CL
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发（2026-09-17，回落路径 `opencode run` / `sense-nova/sensenova-6.8-flash-lite`，**43 分 15 秒单轮完成**，无限流）→ [x] 已回收 → [x] **验收通过**（10/10；`cli` 64 条、`compiler` 165→**168**；退出码矩阵 2/3/4/5 全部经 `bin/vox` 实跑）
+- **一处与文档的偏差、按实现写回**：`pack check <已预铸包>` 的 `skipped=["source_and_script_unavailable"]`（已铸产物里没有源文件，源级检查无输入可跑）→ 已补进 `docs/08 §8.3`。

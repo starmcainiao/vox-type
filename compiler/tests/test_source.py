@@ -4,10 +4,12 @@ compiler.tests.test_source — 源格式装载器的正例 + 负例测试
 覆盖范围：
   - load_source 正例：合法源能装载，PackSource 字段与结构正确
   - rates 缺省：phrase 未给 rates → 取 pack.json.rates
-  - 负例（均断言异常类型 + 消息含 key 名或字段名）：
-      缺 pack.json / 缺 phrases.json / pack.json 缺必填字段 / phrases 缺字段 /
-      phrases 空列表 / key 空 / key 重复 / variants 空列表 / variant 空元素 /
-      rates 含非法档位（phrase 级 + pack 级）/ variant 含两个句末标点
+   - 负例（均断言异常类型 + 消息含 key 名或字段名）：
+       缺 pack.json / 缺 phrases.json / pack.json 缺必填字段 / phrases 缺字段 /
+       phrases 空列表 / key 空 / key 重复 / variants 空列表 / variant 空元素 /
+       rates 含非法档位（phrase 级 + pack 级）/ variant 含两个句末标点 /
+       未知字段（pack.json 的 duplx / phrases[0] 的 varient）
+   - 未知字段的活体回归：locale + duplex 属业务侧合法字段，必须照常通过
 """
 
 import json
@@ -349,6 +351,58 @@ class TestRateRules(_TmpDirTestBase):
         with self.assertRaises(SourceError) as ctx:
             load_source(self.tmp_dir)
         self.assertIn("rates", str(ctx.exception))
+
+
+# ============================================================
+# 6. 负例：未知字段拒绝（docs/08 §8.5 欠账 1）
+# ============================================================
+class TestUnknownFields(_TmpDirTestBase):
+    """未知字段必须抛 SourceError（typo 静默丢弃 = 静默降级），只增不减。"""
+
+    def test_pack_unknown_field(self):
+        """pack.json 塞 duplx → SourceError，消息含 'duplx' 与位置 'pack.json'。"""
+        pack = _default_pack(duplx={})
+        _make_source(self.tmp_dir, pack=pack)
+        with self.assertRaises(SourceError) as ctx:
+            load_source(self.tmp_dir)
+        msg = str(ctx.exception)
+        self.assertIn("duplx", msg)
+        self.assertIn("pack.json", msg)
+        self.assertIn("未知字段", msg)
+
+    def test_phrases_unknown_field(self):
+        """phrases[0] 塞 varient → SourceError，消息含 'varient' 与位置 'phrases[0]'。"""
+        phrases = {
+            "phrases": [
+                {"key": "greeting", "variants": ["您好"], "varient": []},
+            ]
+        }
+        _make_source(self.tmp_dir, phrases=phrases)
+        with self.assertRaises(SourceError) as ctx:
+            load_source(self.tmp_dir)
+        msg = str(ctx.exception)
+        self.assertIn("varient", msg)
+        self.assertIn("phrases[0]", msg)
+        self.assertIn("未知字段", msg)
+
+    def test_pack_business_fields_locale_and_duplex_allowed(self):
+        """locale + duplex 是业务侧合法字段（packs/repair 的活体回归用例），必须通过。"""
+        pack = _default_pack(
+            locale="zh-CN",
+            duplex={
+                "patience_ms": 900,
+                "rate_band": 0.15,
+                "backchannel": "on",
+                "barge_in": "allow",
+                "silence_pad_ms": 200,
+                "slot_pad_ms": 80,
+                "fade_ms": 5,
+            },
+        )
+        _make_source(self.tmp_dir, pack=pack)
+        # 只校验「存在性允许」，内部形状由 runtime.DuplexParams 负责——此处不应报错
+        source = load_source(self.tmp_dir)
+        self.assertEqual(source.pack_id, "repair")
 
 
 if __name__ == "__main__":

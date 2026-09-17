@@ -32,6 +32,22 @@ PACK_REQUIRED_FIELDS: Tuple[str, ...] = (
     "rates",
 )
 
+# pack.json 允许的字段全集（必填 + 业务侧可选）；出现别的 → 未知字段报错
+# WHY（docs/08 §8.5 欠账 1）：locale 与 duplex 是业务侧字段（双工参数默认值），
+#      这里只校验「存在性允许」，其内部形状由 runtime.DuplexParams 负责——
+#      校验强度只增不减，不允许各层各写一份白名单。
+PACK_ALLOWED_FIELDS: Tuple[str, ...] = PACK_REQUIRED_FIELDS + (
+    "locale",
+    "duplex",
+)
+
+# phrases.json 每项允许的字段全集；出现别的 → 未知字段报错
+PHRASE_ALLOWED_FIELDS: Tuple[str, ...] = (
+    "key",
+    "variants",
+    "rates",
+)
+
 # 句末标点集合（中英双语）——用于「一句」判据
 _SENTENCE_TERMINATORS: str = "。！？!?"
 
@@ -189,8 +205,8 @@ def load_source(root: Union[str, Path]) -> PackSource:
         校验通过的 PackSource 实例
 
     异常：
-        SourceError: pack.json/phrases.json 缺失、字段不全、key 重复、
-                     rates 非法档位、variant 非「一句」
+        SourceError: pack.json/phrases.json 缺失、字段不全、未知字段（typo 必须响）、
+                     key 重复、rates 非法档位、variant 非「一句」
     """
     root = Path(root)
 
@@ -199,6 +215,16 @@ def load_source(root: Union[str, Path]) -> PackSource:
     missing = [f for f in PACK_REQUIRED_FIELDS if f not in pack]
     if missing:
         raise SourceError(f"pack.json 缺少必填字段: {missing}")
+
+    # 1b. 未知字段：typo 必须响，不得静默丢弃
+    # WHY（docs/08 §8.5 欠账 1）：`duplex` 写错一个字母（如 `duplx`）被无声忽略
+    #      = 业务参数静默不生效，顶在「禁止静默降级」红线上。白名单只增不减——
+    #      packs/repair/pack.json 正好用了 locale + duplex，是本改动的活体回归用例。
+    unknown_pack = sorted(set(pack.keys()) - set(PACK_ALLOWED_FIELDS))
+    if unknown_pack:
+        raise SourceError(
+            f"pack.json 未知字段: {unknown_pack}（仅允许 {list(PACK_ALLOWED_FIELDS)}）"
+        )
 
     # 2. 校验 pack.json.rates（包级默认语速档）
     default_rates = _validate_rates(pack["rates"], "pack.json")
@@ -226,6 +252,16 @@ def load_source(root: Union[str, Path]) -> PackSource:
         if not isinstance(raw, dict):
             raise SourceError(
                 f"phrases[{i}] 必须是字典，实际类型为 {type(raw).__name__}"
+            )
+
+        # 未知字段：源格式是「给人和模型看的可 Review 文本」，typo 必须响
+        # WHY：`varient` 静默丢弃 = 作者以为写了变体开关，实际没生效，
+        #      且零留痕——与 pack.json 的 duplex typo 是同一类静默降级。
+        unknown_phrase = sorted(set(raw.keys()) - set(PHRASE_ALLOWED_FIELDS))
+        if unknown_phrase:
+            raise SourceError(
+                f"phrases[{i}] 未知字段: {unknown_phrase}"
+                f"（仅允许 {list(PHRASE_ALLOWED_FIELDS)}）"
             )
 
         key = raw.get("key")
