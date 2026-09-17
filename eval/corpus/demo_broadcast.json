@@ -1,0 +1,19 @@
+{
+  "corpus_id": "demo-broadcast-v1",
+  "version": 1,
+  "notes": "公开 demo 话术（报修登记表单流程），自造文本，无个人数据",
+  "units": [
+    {"key": "greeting_welcome", "text": "您好，这里是报修服务热线。", "rate": "normal", "variant": 0},
+    {"key": "greeting_hours", "text": "我们的受理时间是每天八点到晚上十点。", "rate": "slow", "variant": 0},
+    {"key": "ask_name", "text": "请先告诉我您的称呼。", "rate": "normal", "variant": 0},
+    {"key": "ask_address", "text": "请提供故障发生的位置。", "rate": "normal", "variant": 0},
+    {"key": "ask_fault_type", "text": "请选择故障类型，是停电，还是漏水。", "rate": "fast", "variant": 0},
+    {"key": "ask_fault_time", "text": "请问故障是从什么时候开始的。", "rate": "fast", "variant": 0},
+    {"key": "confirm_info", "text": "我念一遍您刚才提供的信息，请您核对。", "rate": "slow", "variant": 0},
+    {"key": "ask_contact", "text": "请留下方便回电的联系方式。", "rate": "normal", "variant": 0},
+    {"key": "ask_callback_time", "text": "您希望我们大概什么时候回电比较方便。", "rate": "slow", "variant": 0},
+    {"key": "give_ticket", "text": "您的报修编号已经生成，请记住最后一位数字。", "rate": "fast", "variant": 0},
+    {"key": "promise_visit", "text": "我们会在工作日内安排师傅上门处理。", "rate": "normal", "variant": 0},
+    {"key": "goodbye_thanks", "text": "感谢您的配合，祝您生活愉快。", "rate": "slow", "variant": 0}
+  ]
+}
