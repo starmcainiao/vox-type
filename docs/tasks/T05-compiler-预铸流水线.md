@@ -172,4 +172,4 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T05-compil
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过 / [ ] 退回
+- [x] 已派发（2026-09-17，sense-nova/sensenova-6.8-flash-lite，22m44s）→ [x] 已回收 → [x] 验收通过（提交 f3a456e）

@@ -165,4 +165,5 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T07-runtim
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过 / [ ] 退回
+- [x] 已派发（2026-09-17，sense-nova/sensenova-6.8-flash-lite，62m，中途限流一次后 -c 续跑）→ [x] 已回收 → [x] 验收通过（提交 f2d23de）
+- 边界留档：`fingerprint_mismatch` 在正常路径为防御性分支（`load_pack` 装载期已校验同一对值），真实危险由编译期兜——见 `docs/06 §6.2.2` 的「可达性说明」
