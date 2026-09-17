@@ -202,6 +202,68 @@ def _check_user_data_fields(data: Dict[str, Any], context: str) -> None:
         )
 
 
+def _check_duplicate_identities(raw_assets: List[Dict[str, Any]]) -> None:
+    """检查资产条目列表中是否存在重复的 (key, part_index, rate_key, variant) 身份。
+
+    寻址身份是 (key, part_index, rate_key, variant)。当同一身份出现两条时，
+    lookup 只会命中先出现的那条，新条目永远查不到——正是「本该命中却换了路径」
+    且零留痕的原型，必须拦截。
+
+    参数：
+        raw_assets: 原始资产条目列表（来自 JSON）
+
+    异常：
+        AssetPackError: 存在重复身份（消息含冲突 key 与坐标）
+    """
+    seen: Dict[tuple, int] = {}
+    for i, raw in enumerate(raw_assets):
+        if not isinstance(raw, dict):
+            continue
+        identity = (
+            raw.get("key"),
+            raw.get("part_index"),
+            raw.get("rate_key"),
+            raw.get("variant"),
+        )
+        if identity in seen:
+            raise AssetPackError(
+                f"资产条目 #{i} 与 #{seen[identity]} 身份重复: "
+                f"(key={identity[0]!r}, part_index={identity[1]!r}, "
+                f"rate_key={identity[2]!r}, variant={identity[3]!r})"
+            )
+        seen[identity] = i
+
+
+def _validate_asset_path_str(path_str: Any, index: int, root: Path) -> None:
+    """校验资产条目的 path 字段：必须是字符串、相对路径、不逃逸出包根。
+
+    参数：
+        path_str: path 字段值
+        index:    条目序号（用于错误信息）
+        root:     包根目录路径
+
+    异常：
+        AssetPackError: path 不合法
+    """
+    if not isinstance(path_str, str):
+        raise AssetPackError(
+            f"资产条目 #{index} 的 path 必须是字符串，"
+            f"实际类型为 {type(path_str).__name__}"
+        )
+    p = Path(path_str)
+    if p.is_absolute():
+        raise AssetPackError(
+            f"资产条目 #{index} 的 path 必须是相对路径，"
+            f"实际值为 {path_str!r}（绝对路径不被允许）"
+        )
+    normalized = (root / p).resolve()
+    root_resolved = root.resolve()
+    if not str(normalized).startswith(str(root_resolved) + os.sep) and normalized != root_resolved:
+        raise AssetPackError(
+            f"资产条目 #{index} 的 path 逃逸出包根: {path_str!r}"
+        )
+
+
 def _validate_asset_entry(
     raw: Dict[str, Any],
     index: int,
@@ -285,7 +347,11 @@ def _validate_asset_entry(
             f"包内={actual_fp!r}, 重算={expected_fp!r}"
         )
 
-    # 6. 音频文件存在性检查
+    # 6. path 安全性检查——必须是相对路径且不逃逸出包根
+    # WHY：绝对路径或 .. 逃逸会导致资产指向包外文件，迁移/换包后静默指向错误文件。
+    _validate_asset_path_str(raw["path"], index, root)
+
+    # 7. 音频文件存在性检查
     # WHY：运行时 lookup 返回了路径但文件不存在 = 必然失败，装载时应尽早发现。
     audio_path = root / raw["path"]
     if not audio_path.exists():
@@ -333,6 +399,8 @@ def load_pack(root: Path) -> AssetPack:
     try:
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
+    except UnicodeDecodeError as e:
+        raise AssetPackError(f"manifest.json 编码错误（非 UTF-8）: {e}")
     except json.JSONDecodeError as e:
         raise AssetPackError(f"manifest.json 不是合法 JSON: {e}")
 
@@ -356,6 +424,11 @@ def load_pack(root: Path) -> AssetPack:
     if not isinstance(raw_assets, list) or len(raw_assets) == 0:
         raise AssetPackError("manifest.json 中 assets 必须是非空列表")
 
+    # 5. 重复身份检查
+    # WHY：同一 (key, part_index, rate_key, variant) 出现两次时 lookup 只命中先出现的，
+    #       新条目永远查不到——是「本该命中却换了路径」且零留痕的原型。
+    _check_duplicate_identities(raw_assets)
+
     entries: List[AssetEntry] = []
     for i, raw_entry in enumerate(raw_assets):
         if not isinstance(raw_entry, dict):
@@ -369,7 +442,7 @@ def load_pack(root: Path) -> AssetPack:
         )
         entries.append(entry)
 
-    # 5. 构造 AssetPack 实例
+    # 6. 构造 AssetPack 实例
     return AssetPack(
         pack_id=manifest["pack_id"],
         pack_version=manifest["pack_version"],
@@ -427,7 +500,7 @@ def validate_pack(root: Path) -> List[str]:
 
     用于 CLI vox verify 命令——不抛异常，返回可读的问题列表。
     校验内容：manifest 完整性 + 资产条目合法性 + 指纹一致性 + 文件存在性
-    + 用户数据黑名单。
+    + 用户数据黑名单 + 重复身份 + path 安全性。
 
     参数：
         root: 资产包根目录路径
@@ -448,6 +521,9 @@ def validate_pack(root: Path) -> List[str]:
     try:
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
+    except UnicodeDecodeError as e:
+        issues.append(f"manifest.json 编码错误（非 UTF-8）: {e}")
+        return issues
     except json.JSONDecodeError as e:
         issues.append(f"manifest.json 不是合法 JSON: {e}")
         return issues
@@ -482,32 +558,38 @@ def validate_pack(root: Path) -> List[str]:
         issues.append("manifest.json 中 assets 为空列表")
         return issues
 
-    # 6. 逐条校验资产条目
+    # 6. 重复身份检查
+    try:
+        _check_duplicate_identities(raw_assets)
+    except AssetPackError as e:
+        issues.append(str(e))
+
+    # 7. 逐条校验资产条目
     for i, raw_entry in enumerate(raw_assets):
         if not isinstance(raw_entry, dict):
             issues.append(f"资产条目 #{i} 必须是字典，实际类型为 {type(raw_entry).__name__}")
             continue
 
-        # 6a. 必填字段
+        # 7a. 必填字段
         missing_asset = ASSET_REQUIRED_FIELDS - raw_entry.keys()
         if missing_asset:
             issues.append(f"资产条目 #{i} 缺少必填字段: {sorted(missing_asset)}")
             continue  # 字段不全，后续校验无意义
 
-        # 6b. 用户数据黑名单
+        # 7b. 用户数据黑名单
         found_user_entry = USER_DATA_BLACKLIST & raw_entry.keys()
         if found_user_entry:
             issues.append(
                 f"资产条目 #{i} 中发现用户数据字段: {sorted(found_user_entry)}"
             )
 
-        # 6c. rate_key 合法性
+        # 7c. rate_key 合法性
         if raw_entry["rate_key"] not in VALID_RATE_KEYS:
             issues.append(
                 f"资产条目 #{i} 的 rate_key 非法: '{raw_entry['rate_key']}'"
             )
 
-        # 6d. 类型检查
+        # 7d. 类型检查
         if not isinstance(raw_entry["part_index"], int):
             issues.append(
                 f"资产条目 #{i} 的 part_index 必须是整数，"
@@ -524,7 +606,7 @@ def validate_pack(root: Path) -> List[str]:
                 f"实际值为 {raw_entry['duration_ms']!r}"
             )
 
-        # 6e. 指纹校验
+        # 7e. 指纹校验
         expected_fp = fingerprint(
             text=raw_entry["text"],
             voice=manifest.get("voice", ""),
@@ -537,11 +619,18 @@ def validate_pack(root: Path) -> List[str]:
                 f"包内={raw_entry['fingerprint']!r}, 重算={expected_fp!r}"
             )
 
-        # 6f. 音频文件存在性
-        audio_path = root / raw_entry["path"]
-        if not audio_path.exists():
-            issues.append(
-                f"资产条目 #{i} (key={raw_entry['key']!r}) 的音频文件不存在: {audio_path}"
-            )
+        # 7f. path 安全性检查
+        try:
+            _validate_asset_path_str(raw_entry["path"], i, root)
+        except AssetPackError as e:
+            issues.append(str(e))
+
+        # 7g. 音频文件存在性
+        if isinstance(raw_entry["path"], str):
+            audio_path = root / raw_entry["path"]
+            if not audio_path.exists():
+                issues.append(
+                    f"资产条目 #{i} (key={raw_entry['key']!r}) 的音频文件不存在: {audio_path}"
+                )
 
     return issues

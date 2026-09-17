@@ -695,5 +695,245 @@ class TestAssetPackMethodLookup(unittest.TestCase):
         self.assertIsNone(module_result)
 
 
+# ============================================================
+# 10. 缺陷 1：重复身份条目校验（T04c）
+# ============================================================
+class TestDuplicateIdentity(unittest.TestCase):
+    """重复 (key, part_index, rate_key, variant) 身份必须被拒绝。
+
+    load_pack → AssetPackError（消息含冲突 key 与坐标）
+    validate_pack → 返回非空问题列表
+    """
+
+    def _create_duplicate_pack(self, root: Path) -> None:
+        """在 root 下创建含两条同一身份条目的合法包。"""
+        text_old = "旧话术"
+        text_new = "新话术"
+        voice = "Tingting"
+        rate_key = "normal"
+        model_version = "macos-say"
+
+        audio_dir = root / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("old", "new"):
+            (audio_dir / f"{name}.wav").write_bytes(b"\x00\x00" * 80)
+
+        def entry(t, p):
+            return {
+                "key": "greet", "part_index": 0, "rate_key": rate_key,
+                "variant": 0, "text": t,
+                "fingerprint": fingerprint(t, voice, rate_key, model_version),
+                "path": p, "duration_ms": 100,
+            }
+
+        manifest = {
+            "pack_id": "p", "pack_version": "1",
+            "protocol_version": "0.1", "ruleset_version": "v1",
+            "voice": voice, "model_version": model_version,
+            "created_at": "t",
+            "assets": [
+                entry(text_old, "audio/old.wav"),
+                entry(text_new, "audio/new.wav"),
+            ],
+        }
+        (root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def test_load_pack_rejects_duplicate_identity(self):
+        """load_pack 遇到重复身份 → AssetPackError，消息含冲突 key 与坐标。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._create_duplicate_pack(root)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            msg = str(ctx.exception)
+            self.assertIn("重复", msg)
+            self.assertIn("greet", msg)
+
+    def test_validate_pack_detects_duplicate_identity(self):
+        """validate_pack 检测重复身份 → 问题列表非空且含"重复"。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._create_duplicate_pack(root)
+            issues = validate_pack(root)
+            self.assertTrue(
+                any("重复" in issue for issue in issues),
+                f"validate_pack 未检测到重复身份: {issues}",
+            )
+
+    def test_load_pack_accepts_unique_identities(self):
+        """身份唯一的合法包 → load_pack 正常装载。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            pack = load_pack(root)
+            self.assertEqual(len(pack.assets), 1)
+            self.assertEqual(pack.assets[0].key, "greeting")
+
+
+# ============================================================
+# 11. 缺陷 2：validate_pack 对非法输入返回问题列表而非抛异常（T04c）
+# ============================================================
+class TestValidatePackRobustness(unittest.TestCase):
+    """validate_pack 对非法输入必须返回问题列表，不得抛异常。"""
+
+    def test_validate_pack_returns_list_for_non_utf8_manifest(self):
+        """非 UTF-8 编码的 manifest → validate_pack 返回问题列表。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "manifest.json").write_bytes(
+                '{"pack_id":"中文"}'.encode("gb18030")
+            )
+            issues = validate_pack(root)
+            self.assertIsInstance(issues, list)
+            self.assertTrue(len(issues) > 0)
+            self.assertTrue(
+                any("编码" in issue or "UTF" in issue for issue in issues),
+                f"validate_pack 未报告编码错误: {issues}",
+            )
+
+    def test_load_pack_raises_for_non_utf8_manifest(self):
+        """非 UTF-8 编码的 manifest → load_pack 抛 AssetPackError。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "manifest.json").write_bytes(
+                '{"pack_id":"中文"}'.encode("gb18030")
+            )
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            msg = str(ctx.exception)
+            self.assertTrue(
+                "编码" in msg or "UTF" in msg,
+                f"AssetPackError 消息未提及编码问题: {msg}",
+            )
+
+    def test_validate_pack_returns_list_for_non_string_path(self):
+        """资产条目 path 非字符串 → validate_pack 返回问题列表。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = 12345  # 非字符串
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            issues = validate_pack(root)
+            self.assertIsInstance(issues, list)
+            self.assertTrue(len(issues) > 0)
+            self.assertTrue(
+                any("path" in issue.lower() or "字符串" in issue for issue in issues),
+                f"validate_pack 未报告 path 类型错误: {issues}",
+            )
+
+    def test_load_pack_raises_for_non_string_path(self):
+        """资产条目 path 非字符串 → load_pack 抛 AssetPackError。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = 12345  # 非字符串
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            msg = str(ctx.exception)
+            self.assertIn("path", msg)
+            self.assertIn("字符串", msg)
+
+
+# ============================================================
+# 12. 缺陷 3：path 必须在包根内（T04c）
+# ============================================================
+class TestAssetPathBoundary(unittest.TestCase):
+    """path 必须是相对路径且规范化后仍落在包根内。"""
+
+    def test_load_pack_rejects_absolute_path(self):
+        """path 为绝对路径 → load_pack 抛 AssetPackError。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = "/etc/hosts"
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            msg = str(ctx.exception)
+            self.assertIn("相对路径", msg)
+            self.assertIn("/etc/hosts", msg)
+
+    def test_validate_pack_rejects_absolute_path(self):
+        """path 为绝对路径 → validate_pack 返回非空问题列表。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = "/etc/hosts"
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            issues = validate_pack(root)
+            self.assertTrue(
+                any("相对路径" in issue or "绝对路径" in issue for issue in issues),
+                f"validate_pack 未检测到绝对路径: {issues}",
+            )
+
+    def test_load_pack_rejects_escape_path(self):
+        """path 含 .. 逃逸 → load_pack 抛 AssetPackError。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = "../../../etc/hosts"
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            with self.assertRaises(AssetPackError) as ctx:
+                load_pack(root)
+            msg = str(ctx.exception)
+            self.assertIn("逃逸", msg)
+
+    def test_validate_pack_rejects_escape_path(self):
+        """path 含 .. 逃逸 → validate_pack 返回非空问题列表。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            manifest_path = root / "manifest.json"
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            manifest["assets"][0]["path"] = "../../../etc/hosts"
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False)
+            issues = validate_pack(root)
+            self.assertTrue(
+                any("逃逸" in issue for issue in issues),
+                f"validate_pack 未检测到路径逃逸: {issues}",
+            )
+
+    def test_load_pack_accepts_valid_relative_path(self):
+        """正常相对路径（如 audio/a.wav）→ load_pack 正常装载。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            pack = load_pack(root)
+            self.assertEqual(pack.assets[0].path, "audio/greeting.wav")
+
+    def test_validate_pack_accepts_valid_relative_path(self):
+        """正常相对路径 → validate_pack 返回空列表。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _create_valid_pack(root)
+            issues = validate_pack(root)
+            self.assertEqual(issues, [])
+
+
 if __name__ == "__main__":
     unittest.main()
