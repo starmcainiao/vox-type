@@ -3,11 +3,14 @@
 ## ① 职责 / 不负责什么
 
 **职责**：**一个业务一个目录**，装该业务的全部"该说什么"与"怎么说"。
-- `talk.json`：话术清单（key + 文本 + 变体 + 语速档）
-- `script.json`：剧本（状态机/流程，用 `core/` 的原语表达）
-- `pack.json`：业务参数（双工参数默认值、音色选择、规则集版本依赖）
+- `phrases.json`：话术表（key + 文本 + 变体 + 语速档）——**源格式权威 = `docs/06 §6.1.2`**，由 `compiler.load_source` 装载
+- `script.json`：剧本（线性 plan + 终态声明 + 直播白名单）——**源格式权威 = `docs/07 §7.2`**，由 `compiler.load_script` 装载、`compiler.check_properties` 判定
+- `pack.json`：包元数据与业务默认参数（`pack_id` / `pack_version` / `protocol_version` / `ruleset_version` / `voice` / `model_version` / `rates` 为 **`compiler` 必填**；`locale` 与 `duplex`（双工参数默认值）为业务侧字段）
 - `golden/`：该业务的真人标注与验收用例（**不进公开分发**）
 - `rules.ext.json`（可选）：业务自定义规则扩展位
+
+> **命名对账（2026-09-17，策划）**：本文件早期草稿写的是 `talk.json` / `version` / `rules_version`，与已实现并验收的 `docs/06 §6.1.2`（`phrases.json` / `pack_version` / `ruleset_version`）不一致。**以 `docs/06` 为准**，本文件已改正——包目录里不存在 `talk.json`。
+> **已知口子（交接给 T10）**：`compiler.load_source` 目前只校验**必填字段是否齐**，对**未知字段是静默忽略**的（实测：pack.json 里塞 `typo_field` 不报错）。这意味着 `duplex` 写错一个字母会被无声丢弃 → 业务参数静默不生效（顶在「禁止静默降级」红线上）。落点：`vox pack check`（T10）接通"源格式未知字段拒绝"，不要各层各写一份白名单。
 
 **不负责**：**不改内核、不写代码逻辑**（业务侧的唯一动作 = 写包 + 跑 `vox pack check`）。
 
@@ -15,7 +18,7 @@
 
 - 输入：`rules/` 的规则集 + `adapters/` 可用引擎清单。
 - 输出：可被 `compiler/` 编译的包源（编译产物进 `assets/`）。
-- 包必须声明：`pack_id` / `version` / `locale` / `rules_version` / `duplex` 默认参数。
+- 包必须声明：`pack_id` / `pack_version` / `protocol_version` / `ruleset_version` / `voice` / `model_version` / `rates`（**这 7 项是 `compiler.load_source` 的必填**），外加业务侧字段 `locale` 与 `duplex`（双工默认参数，键名与取值范围照 `runtime.DuplexParams`：`patience_ms ∈ {400,900,1800}` / `rate_band` / `backchannel ∈ {on,off}` / `barge_in ∈ {allow,confirm}` / `silence_pad_ms ∈ [120,300]` / `slot_pad_ms ∈ [50,150]` / `fade_ms ≥ 0`）。
 
 ## ③ 验收条件（业务上线的门槛）
 
