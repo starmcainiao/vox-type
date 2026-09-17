@@ -32,17 +32,22 @@ runtime/ [冻]    执行器与旁路：短路判定、槽位拼接、播放、�
 adapters/[扩]    tts-* / asr-* / framework-*（薄适配器）
 packs/   [扩]    业务包：一业务一目录（话术 + 剧本 + 参数）
 eval/    [冻]    离线对拍与盲测、golden set、拼接自然度基准
+cli/     [冻]    薄壳：解析参数 → 调各层**公开** API → 打印 → 定退出码；**不含任何判定逻辑**
+                （命中判定/四属性/质检阈值/统计口径一律调对应层）；口径见 `docs/08-CLI口径.md`
+bin/vox          CLI 入口（POSIX sh 薄壳，仓库内可直接跑，不依赖安装）
 ```
 
-## 四、CLI 约定（实现后置，名字先冻结）
+## 四、CLI 约定（命令名冻结；`docs/08-CLI口径.md` 定行为、退出码与错误分类）
 
 ```
 vox pack build   <pack>     预铸：话术 → 资产包（含质检报告）
-vox pack check   <pack>     只校验不预铸（五类规则 + 四属性）
+vox pack check   <pack>     只校验不预铸（源格式 + 五类规则 + 四属性）
 vox run          <plan>     执行一条播报计划（快路；未命中默认 fail-closed）
 vox bench        <pack>     离线对拍：快路 vs 慢路，出报告
 vox verify       <artifact> 对任意产物跑质检（资产包/报告/剧本）
 ```
+
+退出码（冻结）：`0` 成功 / `2` 用法或参数错误 / `3` 运行期失败（stderr 必带异常类型名）/ `4` 质检不通过 / `5` fail-closed 中止。
 
 ## 五、任务卡派发流程（本项目工作方式）
 
