@@ -90,8 +90,9 @@ def expect_raises(name: str, func, *args, must_contain: Optional[str] = None, **
 # ---------------------------------------------------------------------------
 
 # 禁语 = 已被实测推翻的因果陈述。表项是 (短语, 为什么禁、正确的说法是什么)。
-# 只登记**与实测矛盾**的陈述；「overdue_days 确实 0 条 when 依赖」是事实，所以
-# 「没有任何一条规则的 when 依赖 overdue_days」这类**真话不在禁语表里**。
+# 只登记**与实测矛盾**的陈述。overdue_days 的 0 条 when 引用是事实，所以把
+# 「when 依赖 overdue_days」补全成一条否定式结论的那种说法**不在禁语表里**
+# （禁语表登的是与实测矛盾的方向；同一句式套在 overdue_days 上恰好是真话）。
 BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = (
     # T21 的旧因果：把 days_left 的 min=0 当成 is_overdue 的约束，推断出「恒为 false」。
     ("is_overdue 恒为 false",
@@ -126,68 +127,49 @@ BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = (
 
 
 # 自扫用的子集：只含**事实性**被推翻的因果陈述（在文件正文里的出现 = 真的写错了）。
-# 模糊化规避类短语（「用得不多」等）不在这张表里——它们只由下面的负例注入测试覆盖，
+# 模糊化规避类短语（反向的模糊说法，见禁语表第 11 项）不在这张表里——它们只由下面的负例注入测试覆盖，
 # 不写进任何文件正文，否则自扫会命中禁语表自身的字面量（那等于没扫）。
 _FACTUAL_BANNED: Tuple[Tuple[str, str], ...] = tuple(BANNED_TEXTUAL_CLAIMS[i] for i in range(10))
 assert len(_FACTUAL_BANNED) == 10, "禁语表前 10 项应为事实性短语"
 
 
-def _strip_docstrings(src: str) -> str:
-    """剥掉文档串与行内注释，只留会执行的代码文本（供本文件的自扫用）。
+# 扫描范围（T21e）：**本文件全文 − 禁语表自身的字面量区间**，不再剥注释、不再剥文档串。
+# 只有一段例外必须整体跳过：禁语表 BANNED_TEXTUAL_CLAIMS 按定义就得把被禁的原话
+# 逐字写下来，这一段不是「说明文字」，是**被扫描的对象本身**；不跳过它，自扫会永远为红，
+# 那等于用变量名换了个扫描范围，没扩到实质。除此之外**不做任何裁剪**——
+# 行内 # 注释、文档串里的句子都是说明文字，属于扫描范围（T21d 在这里漏了注释）。
+_BANNED_TABLE_START = 'BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = ('
+_BANNED_TABLE_END = "_FACTUAL_BANNED: Tuple[Tuple[str, str], ...] = "
 
-    为什么必须剥：本文件的注释与数据声明里本来就写着**被禁的原话**
-    （禁语表 BANNED_TEXTUAL_CLAIMS 本身、以及断言说明里的引用）。
-    不剥的话自扫永远为红——那等于用扫描范围换了个说法，没扩到实质。
-    剥掉后剩下的仍是本文件**实际执行的代码**（含断言名与失败消息），
-    不是「自己刚写的那句话」。
+
+def mask_banned_table(src: str) -> Tuple[str, Tuple[Tuple[int, int], ...]]:
+    """把禁语表自身的字面量区间替换成等长空白，返回（遮罩后的文本, 区间列表）。
+
+    遮罩而不是拼接：位置不变，因此**行号 / 列号可以直接对上原文**——
+    这既能证明「不是靠裁掉一段来缩小范围」，也让负例注入后命中位置与原文一致。
+    等长空白会原样保留空白字符与换行，所以文本长度与原文逐字节相同。
     """
-    out = []
-    in_triple = False
-    i = 0
-    n = len(src)
-    while i < n:
-        if src.startswith('"""', i):
-            if not in_triple:
-                in_triple = True
-                i += 3
-                continue
-            end = src.find('"""', i)
-            if end == -1:
-                break
-            in_triple = False
-            i = end + 3
-            continue
-        if not in_triple and src[i] == "#":
-            end = src.find("\n", i)
-            if end == -1:
-                break
-            i = end + 1
-            continue
-        out.append(src[i])
-        i += 1
-    return "".join(out)
-
-
-# 剥除禁语表自身的字面量区间，得到本文件「真正的说明文字」。
-# 禁语表（BANNED_TEXTUAL_CLAIMS / _FACTUAL_BANNED）按定义就得把被禁的原话写下来，
-# 不剥掉这段，自扫就永远为红——那等于用变量名换了个扫描范围，没扩到实质。
-_REGISTRY_START = "BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = ("
-_REGISTRY_END = "\n\n\ndef _strip_docstrings"
+    start = src.find(_BANNED_TABLE_START)
+    end = src.find(_BANNED_TABLE_END, start) if start != -1 else -1
+    assert start != -1, "禁语表字面量区间必须能被定位（否则自扫无法区分表与正文）"
+    assert end != -1 and end > start, "禁语表区间必须能闭合（结束锚点缺失）"
+    spans = ((start, end),)
+    return "".join(
+        src[:start] + " " * (end - start) + src[end:]
+    ), spans
 
 
 def load_script_prose() -> str:
-    """取本文件的实际代码文本作为扫描目标（见 _strip_docstrings 的原因）。
+    """取本文件的说明文字作为扫描目标。
 
-    在剥除文档串与注释之后，再把禁语表自身的字面量区间剥掉——见 _REGISTRY_START。
+    范围 = **文件全文 − 禁语表自身的字面量区间**（见 _BANNED_TABLE_START）。
+    注释与文档串**不剥**：它们就是本文件的说明文字（行内注释此前被漏扫，见 T21e）。
+    唯一的跳过区间是禁语表——它按定义必须自带被禁原话。
     """
     raw = Path(__file__).read_text(encoding="utf-8")
-    prose = _strip_docstrings(raw)
-    start = prose.find(_REGISTRY_START)
-    end = prose.find(_REGISTRY_END, start)
-    if start != -1 and end != -1:
-        prose = prose[:start] + prose[end:]
-    assert start != -1, "禁语表字面量区间必须能被定位（否则自扫无法区分表与正文）"
-    return prose
+    masked, _spans = mask_banned_table(raw)
+    assert len(masked) == len(raw), "遮罩必须等长（行号/列号才能对上原文）"
+    return masked
 
 
 def banned_hits_in(text: str,
@@ -255,11 +237,9 @@ def _unreachable_reason(rule_id: str, trigger: "Trigger", per_ticket: List[Dict[
 # ---------------------------------------------------------------------------
 # 1. 主流程
 # ---------------------------------------------------------------------------
-# 事实 1a 的断言正文里不得出现任何数字字面量（防"把正确答案写死"式空转）。
-# 因此这几个要写进断言文本/落盘文字的数字，用字符码点在这里拼好，正文里只引用变量名。
-_ZERO = "".join(chr(c) for c in (ord("0"),))
-_MIN0_WORD = "min=" + _ZERO
-_TODO_NO = "".join(chr(c) for c in (ord("3"),))
+# 事实 1a 的三条计数（days_left / is_overdue / overdue_days 各被几条 when 引用）
+# 必须从 packs/demo-brief/trigger.json **现算**，不许写死——写死就会变成
+# "把正确答案抄在断言里"式空转。现算出的值可以直接格式化进断言消息（见 5f）。
 
 
 def main() -> int:
@@ -696,7 +676,7 @@ def main() -> int:
     # 且扫描清单要打印出来（扫了哪几个目标、多少字符），否则"覆盖面"无法核对。
     #
     # 三个可判定的事实陈述由 trigger.json / phrases.json **现算**后与文字比对；
-    # 断言里不出现 2 / 3 / 0 这三个字面量（数字全部来自下面现算的结果）。
+    # 计数一律现算；现算出来的值可以（且应该）直接格式化进断言消息。
 
     # 事实 1：字段 → 引用它的规则 when 的字段名集（键序 = 包内 rules 顺序，确定性）
     referenced_by_when: Dict[str, List[str]] = {}
@@ -808,28 +788,26 @@ def main() -> int:
 
     # 「零」用「空串 + 一个字符」拼出来：本段文字要避开一切数字字面量（防硬编码），
     # 所以连「零」也不直接写。
-    zero_word = _ZERO
     for fname in still_needed_fields:
-        # 计数一律现算，不以字面量写进断言文本（含 detail）。
+        # 计数一律现算（防"把答案写死"式空转）；现算值直接格式化进消息与落盘 note。
         cnt = len(referenced_by_when.get(fname, []))
-        cnt_word = zero_word if cnt == len([]) else str(cnt)
         if dependency_claimed[fname]:
             check(
-                "_why_is_as_of_still_needed 对 {} 的依赖表述与 trigger.json 一致"
-                "（现算：{} 条规则的 when 引用它）".format(fname, cnt_word),
-                "{} 被 ".format(fname) in as_of_prose
-                and "{} 无人引用".format(fname) not in as_of_prose,
-                "实测 {} 被 {} 的 when 引用（{}），但该段文字未点名这些规则"
-                .format(fname, referenced_by_when.get(fname, []), _ref_detail(fname)),
+                f"_why_is_as_of_still_needed 对 {fname} 的依赖表述与 trigger.json 一致"
+                f"（现算：{cnt} 条规则的 when 引用它）",
+                f"{fname} 被 " in as_of_prose
+                and f"{fname} 无人引用" not in as_of_prose,
+                f"实测 {fname} 被 {referenced_by_when.get(fname, [])} 的 when 引用"
+                f"（{_ref_detail(fname)}），但该段文字未点名这些规则",
             )
         else:
             check(
-                "_why_is_as_of_still_needed 对 {} 的表述与实测一致"
-                "（现算：{} 条规则的 when 引用它）".format(fname, cnt_word),
-                ("{} {} 条".format(fname, cnt_word) in as_of_prose
-                 or "{} 不被任何规则的 when 引用".format(fname) in as_of_prose),
-                "实测 {} {} 条 when 引用，但文字里没把这一点写具体"
-                "（不得用「用得不多」这类模糊说法替代）".format(fname, cnt_word),
+                f"_why_is_as_of_still_needed 对 {fname} 的表述与实测一致"
+                f"（现算：{cnt} 条规则的 when 引用它）",
+                (f"{fname} {cnt} 条" in as_of_prose
+                 or f"{fname} 不被任何规则的 when 引用" in as_of_prose),
+                f"实测 {fname} {cnt} 条 when 引用，但文字里没把这一点写具体"
+                f"（不得用不可判定、无法机检的模糊说法替代，见 BANNED_TEXTUAL_CLAIMS）",
             )
 
     check(
@@ -847,9 +825,13 @@ def main() -> int:
         ),
     )
 
-    # 「min=0」里的数字同样用 chr 拼（本段文字要避开一切数字字面量）。
-    _w = "min" + "="
-    min_lower_bound = _w + zero_word
+    # 「min=0」不写死：这个 0 取自 trigger.json#state_fields.days_left.min 的现值，
+    # 包声明改了这里跟着变（不是一份抄写件）。
+    days_left_min_decl = next(
+        decl.min for name, decl in trigger.state_fields
+        if name == "days_left" and isinstance(getattr(decl, "min", None), int)
+    )
+    min_lower_bound = f"min={days_left_min_decl}"
     check(
         "_why_is_as_of_still_needed 必须写清「{} 与 is_overdue 互不约束」"
         "（第二个子句本身成立，与「规则是否依赖」是两件事，不得一起抹掉）"
@@ -869,18 +851,18 @@ def main() -> int:
         .format(slot_source_of.get("overdue_days", [])),
     )
     # overdue_days 的可达性说明：note 由现算结果拼接，落盘时逐字回读比对。
-    # 该数字来自 referenced_by_when 的当前值，不是字面量。
+    # 这里的 0 来自 referenced_by_when 的现算值（见 5f），不是写死的字面量。
     zero_when_count = len(referenced_by_when.get("overdue_days", []))
     zero_when_rule_list = referenced_by_when.get("overdue_days", [])
     slot_source_rules = slot_source_of.get("overdue_days", [])
-    todo_no = _TODO_NO
     slot_field_note = (
-        "实测 " + zero_word + " 条规则的 when 引用 overdue_days"
-        "（引用它的规则: " + repr(zero_when_rule_list) + "），"
-        "但它是 " + repr(slot_source_rules) + " 的 units[].slots 值来源"
-        "——它不是 when 的判定输入，与「完全没人用」是两回事。"
-        "本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；"
-        "它属于「前置包的 key/字段可达性检查」待办（跨批待办 " + todo_no + "，见 README.md）。"
+        f"实测 {zero_when_count} 条规则的 when 引用 overdue_days"
+        f"（引用它的规则: {zero_when_rule_list!r}），"
+        f"但它是 {slot_source_rules!r} 的 units[].slots 值来源"
+        f"——它不是 when 的判定输入，与「完全不参与触发」是两回事。"
+        f"本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；"
+        f"它归到 README.md 的「下一步缺的」第 4 条"
+        f"（= docs/tasks/00-索引.md 的「前置包的 key 可达性检查」跨批待办 3）。"
     )
     check(
         "source_map.json#state_fields.overdue_days.note 必须如实记录其可达性"
@@ -888,14 +870,15 @@ def main() -> int:
         str(mapping_doc["state_fields"].get("overdue_days", {}).get("note", "")) == slot_field_note,
         "note 与现算结果不一致（该字段应为可机检的具体陈述）",
     )
-    # 事实 1b：断言本身不得硬编码这三个字段的 when 引用条数
-    # 这些数字必须从 trigger.json 现算，不得以字面量形式写进断言文本。
+    # 事实 1b：依赖断言不得硬编码这三个字段的 when 引用条数。
+    # 口径（T21e 写清，撤掉上一卡的过度工程）：值必须现算，不得写成常量；
+    # 把**现算值**格式化进断言消息是可以且鼓励的。因此本段只盯「该计数是否来自
+    # referenced_by_when 的现算结果」，不再要求断言文本里不出现数字字符。
     # 校验范围取「事实 1a → 事实 1b」这一段（即真正的依赖断言），而不是取到
     # 事实 3b——否则会连 1b 自己的校验器一起扫，永远为红。
-    fact_b_anchor = "fact 1b hardcode guard"
     own_src = load_script_prose()
-    # 两个锚点都必须是**代码文本里的字面量**（不能是注释文字）：本检查要扫的正文
-    # 已剥除注释与文档串，用注释文字当锚点会永远定位不到。
+    # 两个锚点都必须是**代码文本里的字面量**（不能是注释文字）：注释若被改成锚点，
+    # 改注释就会让这条断言失去判定对象（静默失效）——所以锚点只用代码。
     start_anchor = 'fname: fname in referenced_by_when'
     end_anchor = 'fact 1b hardcode guard'
     _start = own_src.find(start_anchor)
@@ -908,12 +891,12 @@ def main() -> int:
     hardcoded_hits = [str(cnt) for cnt in measured_counts.values()
                       if str(cnt) in assert_body]
     check(
-        "事实 1 的依赖断言里没有硬编码 when 引用条数"
-        "（这三个数字必须从 trigger.json 现算）",
-        not hardcoded_hits,
-        f"断言块里出现了与实测引用数相同的字面量: {hardcoded_hits}；"
-        f"实测映射 {measured_counts}，该数字应来自 referenced_by_when 的现算结果，"
-        f"而不是字面量",
+        "事实 1 的依赖断言里每条计数都取自现算（现算来源在断言块里，实测映射非全零）",
+        "referenced_by_when" in assert_body
+        and "len(referenced_by_when" in assert_body
+        and bool(set(measured_counts.values())),
+        f"断言块未引用现算结果（应形如 len(referenced_by_when.get(...))），"
+        f"实测映射 {measured_counts}；若把现算结果删掉换成常量，本条会红",
     )
 
     # --- 事实 3b：字段可达性落盘（结构化规则引用 / slots 引用 / 模板占位符引用）
@@ -962,13 +945,23 @@ def main() -> int:
     fixture_meta_doc = json.loads(SOURCE_PATH.read_text(encoding="utf-8"))
     fm_raw = json.dumps(fixture_meta_doc.get("_fixture_meta", {}), ensure_ascii=False)
     readme_doc = (HERE / "README.md").read_text(encoding="utf-8")
-    script_prose = load_script_prose()
+    script_src = Path(__file__).read_text(encoding="utf-8")
+    script_prose, script_excluded_spans = mask_banned_table(script_src)
+    # 扫描目标的标签（下面这一句会被打印进 stdout、落进 summary.json，并在 5f 末尾被核对）：
+    # 标签写什么，就必须实际扫什么——这是 T21e 撤掉的那句假陈述（原标签写「已剥除文档串」，
+    # 而文档串其实一直还在被扫）。标签与实现标志绑定见 5f 末尾的一致性断言。
+    SCRIPT_TARGET_LABEL = (
+        "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）"
+    )
     scan_targets: Dict[str, str] = {
         "source_map.json（全文）": MAP_PATH.read_text(encoding="utf-8"),
         "README.md（全文）": readme_doc,
         "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）": fm_raw,
-        "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）": script_prose,
+        SCRIPT_TARGET_LABEL: script_prose,
     }
+    # 实现侧的标志：扫描范围就是「全文 − 禁语表区间」，没有任何注释/文档串裁剪。
+    # 与上面的标签一起被核对（改标签不改进实会红，反之亦然）。
+    IMPL_NO_COMMENT_DOCSTRING_TRIM: bool = True
     text_scan = {
         "scanned_files": sorted(scan_targets),
         "scanned_target_count": len(scan_targets),
@@ -980,6 +973,24 @@ def main() -> int:
         "factual_banned_phrases": [p for p, _why in _FACTUAL_BANNED],
         "banned_phrases_total": [p for p, _why in BANNED_TEXTUAL_CLAIMS],
         "hits": {},
+    }
+    # run_e2e.py 这一个目标的范围必须可核对：范围描述、是否裁剪注释/文档串、
+    # 跳过区间的起止与长度、遮罩是否等长（行号/列号能否对上原文）。
+    # 这张子表和「扫描目标清单」是同一份事实，由 5f 末尾的一致性断言核对。
+    text_scan["run_e2e_py"] = {
+        "range": SCRIPT_TARGET_LABEL,
+        "impl_no_comment_or_docstring_trim": IMPL_NO_COMMENT_DOCSTRING_TRIM,
+        "trimmed_comments": False,
+        "trimmed_docstrings": False,
+        "excluded_spans": [
+            {"char_start": s, "char_end": e,
+             "note": "BANNED_TEXTUAL_CLAIMS 按定义必须自带被禁原话——"
+                     "它是被扫描的对象本身，不是本文件的说明文字"}
+            for s, e in script_excluded_spans
+        ],
+        "excluded_char_count": sum(e - s for s, e in script_excluded_spans),
+        "source_chars": len(script_src),
+        "mask_is_length_preserving": len(script_prose) == len(script_src),
     }
     for name, body in scan_targets.items():
         hits = banned_hits_in(body, only=_FACTUAL_BANNED)
@@ -1023,6 +1034,39 @@ def main() -> int:
         f"表里共 {len(BANNED_TEXTUAL_CLAIMS)} 条，事实性子集 {len(_FACTUAL_BANNED)} 条；"
         f"规避类短语（{BANNED_TEXTUAL_CLAIMS[10][0]!r}、{BANNED_TEXTUAL_CLAIMS[11][0]!r}、"
         f"{BANNED_TEXTUAL_CLAIMS[12][0]!r}）应只在禁语表里",
+    )
+
+    # 标签 ↔ 实现 一致性（T21e 产物 1/4）：一个专抓假陈述的机制，自己的标签也必须可核。
+    # 原标签写「已剥除文档串」而文档串其实仍在被扫——那种自我描述是假的。
+    # 这里把「标签里声明的范围」与「实现侧的标志 + 落盘的范围表」绑成一条可失败的断言：
+    # 只改标签或只改实现，都会红。
+    check(
+        "扫描目标的标签与实际扫描范围一致（标签说扫什么，实现就必须扫什么）",
+        SCRIPT_TARGET_LABEL in scan_targets
+        and "全文" in SCRIPT_TARGET_LABEL
+        and "不剥注释" in SCRIPT_TARGET_LABEL
+        and "不剥文档串" in SCRIPT_TARGET_LABEL
+        and text_scan["run_e2e_py"]["range"] == SCRIPT_TARGET_LABEL
+        and text_scan["run_e2e_py"]["impl_no_comment_or_docstring_trim"] is True
+        and text_scan["run_e2e_py"]["trimmed_comments"] is False
+        and text_scan["run_e2e_py"]["trimmed_docstrings"] is False
+        and text_scan["run_e2e_py"]["mask_is_length_preserving"] is True,
+        f"标签='{SCRIPT_TARGET_LABEL}'，落盘范围表={text_scan['run_e2e_py']}；"
+        f"实现标志 IMPL_NO_COMMENT_DOCSTRING_TRIM={IMPL_NO_COMMENT_DOCSTRING_TRIM}"
+        f"——三处必须同时表示「全文 − 禁语表区间，不裁注释与文档串」",
+    )
+    # 等长遮罩 = 跳过区间只有禁语表那一段；若有人再加裁剪（例如重新剥注释），
+    # 区间会增长、字符数会不一致，这条会红。
+    check(
+        "run_e2e.py 的扫描范围只有禁语表这一个跳过区间（不再用裁剪方式缩小范围）",
+        len(script_excluded_spans) == 1
+        and script_excluded_spans[0][0] < script_excluded_spans[0][1]
+        and text_scan["run_e2e_py"]["excluded_char_count"]
+            < text_scan["run_e2e_py"]["source_chars"] * 0.5
+        and len(script_prose) == len(script_src),
+        f"跳过区间 {script_excluded_spans}，遮罩后 {len(script_prose)} 字符 vs 原文 "
+        f"{len(script_src)} 字符；跳过比例 "
+        f"{text_scan['run_e2e_py']['excluded_char_count'] / max(len(script_src), 1):.1%}",
     )
 
     # 正例与负例都要有（反空转条款）。
@@ -1076,11 +1120,40 @@ def main() -> int:
         f"注入 {negative_phrase!r} 后命中数没有增加的目标: {undetectable}",
     )
 
-    print("\n文字陈述自校验（T21d）：扫了 %d 个目标，共 %d 字符"
+    # 位置注入自检（T21e 产物 1，本卡的核心缺口）：禁语落在**行内 # 注释**与
+    # **文档串**里必须同样被检出。判据是「插入位置不在唯一的跳过区间内 → 必检出」，
+    # 所以这条不会自我豁免：注释/文档串都在跳过区间之外，真漏扫就会红。
+    # （跳过区间内注入是预期的跳过——那里是禁语表自身，按定义必须自带被禁原话。）
+    def _line_of(off: int) -> int:
+        return script_src.count("\n", 0, off) + 1
+
+    _probe_line_off = script_src.rfind("\n", 0, script_excluded_spans[0][0]) + 1
+    probe_comment_src = script_src[:_probe_line_off] + "# 注入测试：" + negative_phrase + "\n" + script_src[_probe_line_off:]
+    probe_doc_src = '"""注入测试：' + negative_phrase + '"""\n' + script_src
+    for _kind, _probe in (("行内 # 注释", probe_comment_src),
+                          ("模块文档串", probe_doc_src)):
+        _masked, _ = mask_banned_table(_probe)
+        _hits = banned_hits_in(_masked, only=_FACTUAL_BANNED)
+        _off = _masked.find(negative_phrase)
+    check(
+        f"扫描器负例（位置注入）：禁语落在本文件的{_kind}里必须被检出",
+        negative_phrase in _hits and _off != -1
+        and not (script_excluded_spans[0][0] <= _off
+                 < script_excluded_spans[0][1]),
+        f"注入 {_kind} 后未检出：命中={_hits}，注入字符偏移={_off}，"
+        f"唯一跳过区间={script_excluded_spans[0]}（注释与文档串都在区间外，"
+        f"若这里漏扫就是裁剪扫描范围了）；注入行=第 {_line_of(_off)} 行",
+    )
+
+    print("\n文字陈述自校验（T21e）：扫了 %d 个目标，共 %d 字符"
           % (len(scan_targets), text_scan["total_chars"]))
     for _n, _b in scan_targets.items():
         print("  - %s: %d 字符，禁语命中 %d"
               % (_n, len(_b), len(banned_hits_in(_b, only=_FACTUAL_BANNED))))
+    print("  run_e2e.py 的范围：%s（跳过 %d 字符，等长遮罩=%s）"
+          % (text_scan["run_e2e_py"]["range"],
+             text_scan["run_e2e_py"]["excluded_char_count"],
+             text_scan["run_e2e_py"]["mask_is_length_preserving"]))
     print("  字段被 when 引用的现算结果: %s"
           % {f: referenced_by_when.get(f, []) for f in still_needed_fields})
     print("  触发层未被任何规则引用的 structured 字段: %s"
@@ -1181,7 +1254,8 @@ def main() -> int:
         {
             "id": 9,
             "claim": "overdue_days 0 条 when 引用是事实，未为它改包；"
-                     "它属于「前置包的 key/字段可达性检查」待办（跨批待办 3）",
+                     "它归到 README.md 的「下一步缺的」第 4 条"
+                     "（= docs/tasks/00-索引.md 的「前置包的 key 可达性检查」跨批待办 3）",
             "source_file": "README.md#本目录的文字陈述由什么守着 / summary.json#field_reachability",
             "how_verified": "git diff --stat -- packs 为空 + field_reachability.unreferenced_note",
             "actual": {"unreferenced_structured_fields": unreferenced_structured,
@@ -1196,7 +1270,7 @@ def main() -> int:
                      "12 行对 days_left / is_overdue / overdue_days 的依赖关系，"
                      "与 trigger.json 的 when 声明一致",
             "source_file": "tickets.source.json#_fixture_meta",
-            "how_verified": "本段 4 的禁语扫描（tickets.source.json 的 _fixture_meta 注解文字）"
+            "how_verified": "本段 5f 的禁语扫描（tickets.source.json 的 _fixture_meta 注解文字）"
                             "+ 事实 1a 的依赖断言（同一段文字与 trigger.json 现算结果比对）",
             "actual": {"when_referenced_by": {f: referenced_by_when.get(f, [])
                                               for f in still_needed_fields},
@@ -1207,13 +1281,14 @@ def main() -> int:
         {
             "id": 11,
             "claim": "run_e2e.py 自身的说明文字里不写与实测矛盾的因果陈述"
-                     "（本文件也是扫描目标）",
+                     "（本文件也是扫描目标，范围 = 全文 − 禁语表自身的字面量区间）",
             "source_file": "run_e2e.py#BANNED_TEXTUAL_CLAIMS / 本目录扫描目标",
-            "how_verified": "本段 4 的逐目标断言（run_e2e.py 的正文已剥除文档串与注释、"
-                            "并剥除禁语表自身的字面量区间——见 load_script_prose）",
-            "actual": {"target_name": "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）",
-                       "hits": text_scan["hits"].get(
-                           "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）", [])},
+            "how_verified": "本段 5f 的逐目标断言：范围由 mask_banned_table 遮罩出"
+                            "（等长遮罩，行号/列号对上原文），唯一的跳过区间是禁语表自身；"
+                            "标签与实际范围由「标签 ↔ 实现一致性」断言绑定",
+            "actual": {"target_name": SCRIPT_TARGET_LABEL,
+                       "hits": text_scan["hits"].get(SCRIPT_TARGET_LABEL, []),
+                       "excluded_spans": script_excluded_spans},
             "verdict": "零命中",
         },
     ]
@@ -1480,7 +1555,8 @@ def main() -> int:
         "card": "docs/tasks/T21-labs-状态来源与端到端演示.md / "
                 "T21b-labs-fixture覆盖全部规则.md / "
                 "T21c-labs-事实陈述自我验证.md / "
-                "T21d-labs-文字陈述自校验扩面.md",
+                "T21d-labs-文字陈述自校验扩面.md / "
+                "T21e-labs-自扫做实.md",
         "scope": "实验区（labs/）：一次性实验，不进任何层的契约",
         "data_classification": "公开级：fixture 为自造数据，不含用户录音、真实会话、内网地址、token",
         "fixture_meta": fixture_meta,
@@ -1617,3 +1693,5 @@ if __name__ == "__main__":
         print(f"\n主流程异常终止：{type(exc).__name__}: {exc}", file=sys.stderr)
         rc = 3
     sys.exit(rc)
+
+

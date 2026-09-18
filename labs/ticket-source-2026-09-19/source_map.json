@@ -94,7 +94,7 @@
       "nullable": false,
       "min": 0,
       "max": 3650,
-      "note": "实测 0 条规则的 when 引用 overdue_days（引用它的规则: []），但它是 ['overdue'] 的 units[].slots 值来源——它不是 when 的判定输入，与「完全没人用」是两回事。本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；它属于「前置包的 key/字段可达性检查」待办（跨批待办 3，见 README.md）。"
+      "note": "实测 0 条规则的 when 引用 overdue_days（引用它的规则: []），但它是 ['overdue'] 的 units[].slots 值来源——它不是 when 的判定输入，与「完全不参与触发」是两回事。本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；它归到 README.md 的「下一步缺的」第 4 条（= docs/tasks/00-索引.md 的「前置包的 key 可达性检查」跨批待办 3）。"
     },
     "is_overdue": {
       "from": "is_overdue",
