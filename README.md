@@ -3,8 +3,9 @@
 > **Pre-cast voice assets + duplex behaviour controller for voice agents.**
 > 给语音 Agent 的固定部分：零延迟、零成本、可审核；不确定的部分才动用模型。
 
-**Status: **八层可跑（落盘基线见 `git log`）**：协议与资产包格式已冻结，`compiler`/`runtime`/`eval` 打通端到端，`bin/vox` 五个命令可用；`packs/repair/` 是示例业务包；首组真实数字见 `docs/09`。尚未接入任何生产链路（接入规格见 `docs/10`）。** 本仓库目前只包含设计文档与调研，
-代码待协议定稿后开工。License: **TBD**（候选 Apache-2.0）。
+**Status**：**八层可跑**（落盘基线见 `git log`）——协议与资产包格式已冻结；`compiler` → `assets` → `runtime` → `eval` 端到端打通；`bin/vox` 五个命令可用；`packs/repair/` 是示例业务包；首组真实数字与外部链路对照见 `docs/09`。
+**尚未接入任何生产链路**（接入规格见 `docs/10`）。
+License: **TBD**（候选 Apache-2.0）。
 
 ---
 
