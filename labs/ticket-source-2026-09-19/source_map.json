@@ -40,7 +40,7 @@
     "date": null,
     "note": "正例走 source_map.json 的 as_of。run_e2e.py 的负例用参数注入做对照：传入完整日期 = 证明注入生效（派生值随之变化）；强制当作未注入 = 证明报错。"
   },
-  "_why_is_as_of_still_needed": "packs/demo-brief 的 trigger.json 声明 days_left / is_overdue / overdue_days 为 layer=structured，但没有任何一条规则的 when 依赖它们；且 days_left 的 min=0 与 is_overdue 的语义（到期日之前 = days_left < 0）在 T16 的校验范围内不可同时满足。因此这三个字段直接透传源数据，state 的映射里不含任何日期运算。as_of 仍然必须注入，因为 derived_fields（不进 state，只进 summary.json）里的 as_of_iso / days_since_opened 要算；未注入即报错，代码不读系统时钟。",
+  "_why_is_as_of_still_needed": "packs/demo-brief 的 trigger.json 声明 days_left / is_overdue / overdue_days 为 layer=structured。它们与规则的依赖关系按 trigger.json 逐条现算：days_left 被 due_tonight、due_days_left 两条规则的 when 引用（本 fixture 命中 due_tonight 的 WB-DEMO-0016、due_days_left 的 WB-DEMO-0007/0010/0014）；is_overdue 被 overdue、due_tonight、due_days_left 三条规则的 when 引用（overdue 命中的是 WB-DEMO-0015）；overdue_days 0 条规则的 when 引用它——它是 overdue 规则 units[].slots 的值来源，属于播报模板的插值来源，不属于 when 的判定输入，这一点与「完全没人用」是两回事。第二个子句成立且与依赖关系无关：days_left 的 min=0 与 is_overdue 互不约束（overdue 的 when 就是 {is_overdue: true}，不含 days_left；本 fixture 里 WB-DEMO-0009 days_left=5、WB-DEMO-0012 days_left=0、WB-DEMO-0015 days_left=0 都是 is_overdue=true）。因此这三个字段直接透传源数据，state 的映射里不含任何日期运算。as_of 仍然必须注入，因为 derived_fields（不进 state，只进 summary.json）里的 as_of_iso / days_since_opened 要算；未注入即报错，代码不读系统时钟。",
   "rule_reachability": {
     "note": "本段是 packs/demo-brief/trigger.json 的 6 条规则在当前 fixture 下的可达性**枚举**，由 run_e2e.py 的断言与本表逐条比对；不一致即非零退出（rc 3）。改 fixture 或改包后必须同步改这里，否则脚本会立刻变红。",
     "reachable": ["greeting", "overdue", "due_tonight", "due_days_left", "ask_assignee", "closing"],
@@ -93,7 +93,8 @@
       "type": "int",
       "nullable": false,
       "min": 0,
-      "max": 3650
+      "max": 3650,
+      "note": "实测 0 条规则的 when 引用 overdue_days（引用它的规则: []），但它是 ['overdue'] 的 units[].slots 值来源——它不是 when 的判定输入，与「完全没人用」是两回事。本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；它属于「前置包的 key/字段可达性检查」待办（跨批待办 3，见 README.md）。"
     },
     "is_overdue": {
       "from": "is_overdue",

@@ -73,7 +73,7 @@ git diff --stat -- core rules compiler assets runtime eval cli adapters packs
 
 ### 规则覆盖：6 条全驱动（T21b）
 
-T21 只驱动了 6 条规则里的 2 条，T21 的执行方已如实报告根因是**行覆盖不足**。T21b 只加 fixture 行，
+T21 当时只把两条条件规则驱动起来，执行方已如实报告根因是**行覆盖不足**。T21b 只加 fixture 行，
 把 6 条全部驱动起来 —— **`packs/demo-brief/` 一行未改，`source_map.json` 一行未改**。
 
 | 规则（包内顺序） | `when` | 驱动它的行 | 匹配 | 命中 |
@@ -119,15 +119,16 @@ T21 只驱动了 6 条规则里的 2 条，T21 的执行方已如实报告根因
 
 ### T21c：把过期的事实陈述改成自我验证
 
-T21 在 `source_map.json#rule_reachability` 里写了「只能驱动 2 条规则、其余 4 条不可达」，
-并给了一个错误因果：因为 `days_left` 的 `min=0`，所以 is_overdue 恒为 false。
+T21 在 `source_map.json#rule_reachability` 里写了「只有两条条件规则被驱动、其余条件规则未被驱动」，
+并给了一个错误因果：把 `days_left` 的 `min=0` 当成 is_overdue 的取值约束。
 **这两条都与事实不符**（T21b 实测、且可独立复核）：
 
 1. T21 实测驱动的是 `greeting` + `due_days_left`，不是 `greeting` + `closing`；
 2. T21b 实测 **6 条规则全部可达**，只需加 fixture 行、不动 `packs/`；
 3. `overdue` 的 `when` 是 `{is_overdue: true}`，**不涉及 `days_left`**；
-   is_overdue 是从源**透传**的布尔列（本 fixture 里 WB-DEMO-0009 `days_left=5`、
-   WB-DEMO-0012 `days_left=0` 都是 true）——`days_left` 的 `min=0` 与 is_overdue 互不约束。
+   is_overdue 是从源**透传**的布尔列，本 fixture 里有 3 行取 true
+   （WB-DEMO-0009 `days_left=5`、WB-DEMO-0012 `days_left=0`、WB-DEMO-0015 `days_left=0`）
+   ——`days_left` 的 `min=0` 与 is_overdue 互不约束。
 
 T21c 做了两件事：
 
@@ -151,6 +152,45 @@ T21c 做了两件事：
 另有一条防回潮断言：该段不得再出现 T21 那句错误因果的原话（含缩写变体），
 也不得写成「大部分规则可达」这类无法机检的模糊陈述。
 
+### 本目录的文字陈述由什么守着（T21d）
+
+T21c 只给 `source_map.json#rule_reachability` 一段加了自校验，扫描范围是单段；
+同一份文件里另一处（`_why_is_as_of_still_needed`）当时仍写着与实测不符的因果。
+T21d 把扫描范围从「一段」扩到**整个目录**，并在 `run_e2e.py` 里落了几件事：
+
+- **禁语表**（`run_e2e.py#BANNED_TEXTUAL_CLAIMS`）：登记**已被实测推翻的因果陈述**。
+  表项是「短语 + 为什么禁、正确的说法是什么」；只登记与实测矛盾的陈述——
+  「overdue_days 确实 0 条 when 引用」是事实，所以这句话不在禁语表里。
+- **扫描目标**：4 个，扫**文件全文**而不是某一段，每次运行打印清单
+  （扫了几个目标、各多少字符、合计多少字符）。
+  | 目标 | 口径 |
+  |---|---|
+  | `source_map.json` | 全文 |
+  | `README.md` | 全文 |
+  | `tickets.source.json` | 只扫 `_fixture_meta` 注解文字，fixture 数据行不参与 |
+  | `run_e2e.py` | 实际代码文本（剥除文档串与注释——原因见 `_strip_docstrings`） |
+- **字段可达性是现算的**（`summary.json#field_reachability`）：`rules[].when` 的引用关系、
+  `rules[].units[].slots` 的引用关系、`phrases.json` 模板占位符的引用关系，
+  全部由 `run_e2e.py` 从 `packs/demo-brief/trigger.json` / `phrases.json` 现算，脚本不复制任何判定逻辑。
+  实测：`days_left` 被 `due_tonight` / `due_days_left` 的 when 引用；
+  `is_overdue` 被 `overdue` / `due_tonight` / `due_days_left` 的 when 引用；
+  `overdue_days` **0 条** when 引用。
+- **`overdue_days` 这件事如实记录**：它是 `overdue` 规则 `units[].slots` 的值来源，
+  不是 when 的判定输入——这与「完全没人用」是两回事。
+  本目录**不改 `packs/`**（改包属 `packs/` 的范围，不在本卡白名单内）；
+  它归到下面的跨批待办 3（前置包的 key/字段可达性检查）。
+- **逐条事实陈述清单**（`summary.json#textual_claims_audit`）：每条陈述带
+  「出处（文件）+ 判定方式 + 实测值 + 结论」；凡举不出判定方式的陈述不在此列
+  （要么删掉，要么改成可判定的）。
+- **扫描器自身要能被打破**（反空转）：脚本里有正例（四个目标在真实文件里全部零命中）
+  与负例（向 `README.md` 注入一句被禁的旧因果后必须能检出，且失败消息同时含
+  **具体文件名与被禁短语**），还有一条覆盖面自检（每个目标注入禁语后命中数都会增加，
+  防止某个目标被静默跳过）。
+
+`overdue_days` 的 0 条 when 引用写在 `source_map.json#state_fields.overdue_days.note` 与
+`summary.json#field_reachability`，两处都是可机检的具体陈述（含现算的引用条数、
+引用它的规则、以及它属于 slots 值来源而非 when 输入）。
+
 **下一步缺的（都不在本卡白名单内）**：
 
 1. **正式的工单适配器** —— 真实业务系统不在公开仓；等形态稳定后再进 `adapters/`，
@@ -158,3 +198,7 @@ T21c 做了两件事：
 2. **状态层 → 资产层的规范**（T22）—— 「什么状态该说什么话」目前靠 `trigger.json` 手工写。
 3. **`greeting` 的优先级值得业务侧复核** —— 它排在所有日期/负责人规则之前，一条已逾期且仍标
    「处理中」的工单只会听到问候语。这是 `packs/` 的话术设计问题（属 `packs/`），本实验只如实记录。
+4. **前置包的 key/字段可达性检查**（跨批待办 3）—— `overdue_days` 被声明为 `state_field`
+   但 0 条 `when` 引用它（它是 `overdue` 规则 `units[].slots` 的值来源）。这类「声明了但触发层
+   没人引用」的字段值得在 `packs/` 侧建一道静态检查；**本目录没有为了"全部字段都被引用"去改包**。
+   同类已登记项：`phrases.json` 里有 key 只被 `script.json` 引用。

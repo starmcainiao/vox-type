@@ -3,6 +3,7 @@
     "kind": "synthetic",
     "statement": "全部为自造数据：工单号、客户标识、负责人姓名、手机号均为虚构字符串，不含任何真实用户的录音、会话或个人信息。",
     "shape": "工单系统导出的公开 demo 形态。字段形状照常见工单系统导出列名；days_left / is_overdue / overdue_days 由工单系统自己算好带在导出里（本实验不重算，直接透传，见 source_map.json#state_fields）。",
+    "field_usage_in_rules": "逾期相关三个字段的用途按 trigger.json 现算：days_left 被 due_tonight、due_days_left 的 when 引用；is_overdue 被 overdue、due_tonight、due_days_left 的 when 引用；overdue_days 0 条规则的 when 引用它——它是 overdue 的 units[].slots 值来源（播报插值），不是 when 的判定输入。逐条判定见 summary.json#field_reachability 与 #textual_claims_audit。",
     "sensitive_columns_declared_in": "source_map.json#sensitive_fields",
     "rules_drivable": "T21b 已扩充：demo-brief 的 6 条规则全部至少被驱动一次。驱动条件见 README.md「规则覆盖」表；命中顺序与逐条匹配情况由 run_e2e.py 从实际运行结果生成并落盘 summary.json#rule_reachability_from_source 与 #rule_matching_matrix"
   },

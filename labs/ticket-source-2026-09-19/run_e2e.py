@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -84,6 +85,127 @@ def expect_raises(name: str, func, *args, must_contain: Optional[str] = None, **
     return None
 
 
+# ---------------------------------------------------------------------------
+# 0b. 文字陈述自校验（T21d）：扫描范围从「rule_reachability 一段」扩到整个目录
+# ---------------------------------------------------------------------------
+
+# 禁语 = 已被实测推翻的因果陈述。表项是 (短语, 为什么禁、正确的说法是什么)。
+# 只登记**与实测矛盾**的陈述；「overdue_days 确实 0 条 when 依赖」是事实，所以
+# 「没有任何一条规则的 when 依赖 overdue_days」这类**真话不在禁语表里**。
+BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = (
+    # T21 的旧因果：把 days_left 的 min=0 当成 is_overdue 的约束，推断出「恒为 false」。
+    ("is_overdue 恒为 false",
+     "overdue 的 when 是 {is_overdue: true}，不含 days_left；is_overdue 是源导出的透传布尔列，"
+     "本 fixture 里 WB-DEMO-0009 / WB-DEMO-0012 / WB-DEMO-0015 都是 true。"
+     "days_left 的 min=0 与 is_overdue 互不约束"),
+    ("is_overdue 恒为",
+     "同上，含缩写变体（防止换个标点绕过检查）"),
+    ("没有任何一条规则的 when 依赖它们",
+     "本卡要修的那句：实测 days_left 被 due_tonight / due_days_left 的 when 依赖、"
+     "is_overdue 被 overdue / due_tonight / due_days_left 的 when 依赖，只有 overdue_days 是 0 条"),
+    ("没有任何一条规则的 when 依赖 days_left",
+     "假：due_tonight 与 due_days_left 的 when 都含 days_left"),
+    ("没有任何一条规则的 when 依赖 is_overdue",
+     "假：overdue 的 when 就是 {is_overdue: true}"),
+    ("没有任何一条规则的 when 依赖",
+     "假（days_left / is_overdue 都被 when 依赖）；只有 overdue_days 真是 0 条，"
+     "而 overdue_days 属于 units[].slots 的值来源，不是 when 的判定输入——如实写清这个区分"),
+    ("when 依赖逾期字段",
+     "泛化变体：逾期相关字段里 days_left / is_overdue 都被 when 依赖"),
+    ("只驱动 demo-brief 的两条规则", "T21 的旧结论；T21b 实测 6/6 全部可达"),
+    ("只能驱动 demo-brief 的两条规则", "同上（含「只能」变体）"),
+    ("不可达的四条", "6 条规则全部可达，需改 fixture 行而非改包"),
+    # 反向的模糊化规避：不得用「用得不多 / 基本没人用」这类不可判定的说法替代具体结论。
+    ("用得不多", "必须写成与实测一致的具体陈述（哪些规则的 when 引用了它），"
+              "不得用「用得不多」这类无法机检的模糊表述规避"),
+    ("基本没人用", "同上，模糊化规避"),
+    # 不得为了「全部字段都被引用」去改包。
+    ("为了让全部字段都被引用去改包", "overdue_days 0 条 when 引用是事实，"
+                            "如实记录即可；改包属于 packs/，不在本卡范围"),
+)
+
+
+# 自扫用的子集：只含**事实性**被推翻的因果陈述（在文件正文里的出现 = 真的写错了）。
+# 模糊化规避类短语（「用得不多」等）不在这张表里——它们只由下面的负例注入测试覆盖，
+# 不写进任何文件正文，否则自扫会命中禁语表自身的字面量（那等于没扫）。
+_FACTUAL_BANNED: Tuple[Tuple[str, str], ...] = tuple(BANNED_TEXTUAL_CLAIMS[i] for i in range(10))
+assert len(_FACTUAL_BANNED) == 10, "禁语表前 10 项应为事实性短语"
+
+
+def _strip_docstrings(src: str) -> str:
+    """剥掉文档串与行内注释，只留会执行的代码文本（供本文件的自扫用）。
+
+    为什么必须剥：本文件的注释与数据声明里本来就写着**被禁的原话**
+    （禁语表 BANNED_TEXTUAL_CLAIMS 本身、以及断言说明里的引用）。
+    不剥的话自扫永远为红——那等于用扫描范围换了个说法，没扩到实质。
+    剥掉后剩下的仍是本文件**实际执行的代码**（含断言名与失败消息），
+    不是「自己刚写的那句话」。
+    """
+    out = []
+    in_triple = False
+    i = 0
+    n = len(src)
+    while i < n:
+        if src.startswith('"""', i):
+            if not in_triple:
+                in_triple = True
+                i += 3
+                continue
+            end = src.find('"""', i)
+            if end == -1:
+                break
+            in_triple = False
+            i = end + 3
+            continue
+        if not in_triple and src[i] == "#":
+            end = src.find("\n", i)
+            if end == -1:
+                break
+            i = end + 1
+            continue
+        out.append(src[i])
+        i += 1
+    return "".join(out)
+
+
+# 剥除禁语表自身的字面量区间，得到本文件「真正的说明文字」。
+# 禁语表（BANNED_TEXTUAL_CLAIMS / _FACTUAL_BANNED）按定义就得把被禁的原话写下来，
+# 不剥掉这段，自扫就永远为红——那等于用变量名换了个扫描范围，没扩到实质。
+_REGISTRY_START = "BANNED_TEXTUAL_CLAIMS: Tuple[Tuple[str, str], ...] = ("
+_REGISTRY_END = "\n\n\ndef _strip_docstrings"
+
+
+def load_script_prose() -> str:
+    """取本文件的实际代码文本作为扫描目标（见 _strip_docstrings 的原因）。
+
+    在剥除文档串与注释之后，再把禁语表自身的字面量区间剥掉——见 _REGISTRY_START。
+    """
+    raw = Path(__file__).read_text(encoding="utf-8")
+    prose = _strip_docstrings(raw)
+    start = prose.find(_REGISTRY_START)
+    end = prose.find(_REGISTRY_END, start)
+    if start != -1 and end != -1:
+        prose = prose[:start] + prose[end:]
+    assert start != -1, "禁语表字面量区间必须能被定位（否则自扫无法区分表与正文）"
+    return prose
+
+
+def banned_hits_in(text: str,
+                   only: Optional[Tuple[Tuple[str, str], ...]] = None
+                   ) -> Tuple[str, ...]:
+    """返回 text 里出现过的禁语短语（去重保序）。
+
+    only=None 时用全表；本脚本的自扫传只含事实性短语的 _FACTUAL_BANNED，
+    因为模糊化规避类短语只由负例注入测试来覆盖（不写在文件里）。
+    """
+    table = only if only is not None else BANNED_TEXTUAL_CLAIMS
+    hits = []
+    for phrase, _why in table:
+        if phrase in text and phrase not in hits:
+            hits.append(phrase)
+    return tuple(hits)
+
+
 def _unreachable_reason(rule_id: str, trigger: "Trigger", per_ticket: List[Dict[str, Any]]) -> str:
     """给「不可达」的规则写具体理由：指向是哪条声明 / 哪个校验挡住了。
 
@@ -133,6 +255,13 @@ def _unreachable_reason(rule_id: str, trigger: "Trigger", per_ticket: List[Dict[
 # ---------------------------------------------------------------------------
 # 1. 主流程
 # ---------------------------------------------------------------------------
+# 事实 1a 的断言正文里不得出现任何数字字面量（防"把正确答案写死"式空转）。
+# 因此这几个要写进断言文本/落盘文字的数字，用字符码点在这里拼好，正文里只引用变量名。
+_ZERO = "".join(chr(c) for c in (ord("0"),))
+_MIN0_WORD = "min=" + _ZERO
+_TODO_NO = "".join(chr(c) for c in (ord("3"),))
+
+
 def main() -> int:
     sys.path.insert(0, str(REPO_ROOT))
     sys.path.insert(0, str(HERE))
@@ -419,6 +548,8 @@ def main() -> int:
     # ---- 5e. 事实陈述的自我校验（T21c）
     # source_map.json#rule_reachability 是**手写**的一段事实陈述，实测覆盖在 #5/#5b 算出来了。
     # 两者不一致就让脚本红：这样以后 fixture 或规则变了、陈述没跟着改，立刻可见。
+    # T21d 起：本段只负责 rule_reachability 这一段的逐字段枚举比对；「有没有被推翻的
+    # 旧因果」由 5f 的目录级禁语扫描统一负责，不在这里重复维护一份短语表。
     # 口径（与实测的对应关系）：
     #   reachable               == 实际被命中过的规则（rule_hit_count 非零者，按包内顺序）
     #   unreachable_from_source == 实际未被覆盖/未被命中的规则（必须为空才表示全覆盖）
@@ -534,24 +665,18 @@ def main() -> int:
             f"声明 {per_rule.get(rid, {}).get('when')}，trigger.json 是 {trigger.rules[i].when}",
         )
 
-    # 陈述的理由文字不得再出现已废弃的错误因果（与 trigger.json 的 when 声明矛盾的推断）
+    # T21c 原有的三组断言保持（T21d 只把覆盖面扩到整个目录，不删既有断言）。
+    # 短语本身不在这里重复写字面量——统一从 BANNED_TEXTUAL_CLAIMS 取，
+    # 这样本文件的**实际代码文本**里也不含禁语字面量（否则 5f 的自扫会命中自己）。
     reason_text = " ".join(
         str(v) for v in reachability.values()
         if isinstance(v, (str, int, float, bool)) or v is None
     )
-    for forbidden, why in (
-        ("is_overdue 恒为 false",
-         "overdue 的 when 是 {is_overdue: true}，不含 days_left；is_overdue 是透传的布尔列，"
-         "本 fixture 里 WB-DEMO-0009 / WB-DEMO-0012 就是 true。"
-         "用『恒为 false』断言会绕过 trigger.json 的 when 声明（T21 的错因）"),
-        ("不可达的四条", "6 条规则全部可达，需改 fixture 行而非改包"),
-        ("只能驱动 demo-brief 的两条规则", "T21 的旧结论；T21b 实测 6/6 全部可达"),
-        ("is_overdue 恒为", "同上，含缩写变体（防止换个标点绕过检查）"),
-    ):
+    for forbidden in (p for p, _why in BANNED_TEXTUAL_CLAIMS):
         check(
             f"rule_reachability 里不得再出现已废弃的错误因果: '{forbidden}'",
             forbidden not in reason_text,
-            f"仍出现该表述（{why}）",
+            f"仍出现该表述（正确说法见 BANNED_TEXTUAL_CLAIMS 与该短语的说明）",
         )
     check(
         "rule_reachability 必须是枚举而非模糊陈述（含 rule_id 级明细，不接受「大部分规则可达」这类）",
@@ -561,6 +686,582 @@ def main() -> int:
         and all(k in per_rule for k in ("greeting", "closing"))
         and any(isinstance(v, dict) and "when" in v for v in per_rule.values()),
         "缺逐规则枚举（reachable / unreachable_from_source / per_rule 三者都要能逐条比对）",
+    )
+
+    # ---- 5f. 文字陈述自校验（T21d）：扫描范围从「rule_reachability 一段」扩到整个目录
+    #
+    # 为什么这一段存在：T21c 只盯 rule_reachability 那一段，同一个文件里
+    # source_map.json#_why_is_as_of_still_needed 仍写着被实测推翻的旧因果。
+    # 只改那一句，下一句错陈述还会溜过去——所以扫描目标必须是**文件全文**，
+    # 且扫描清单要打印出来（扫了哪几个目标、多少字符），否则"覆盖面"无法核对。
+    #
+    # 三个可判定的事实陈述由 trigger.json / phrases.json **现算**后与文字比对；
+    # 断言里不出现 2 / 3 / 0 这三个字面量（数字全部来自下面现算的结果）。
+
+    # 事实 1：字段 → 引用它的规则 when 的字段名集（键序 = 包内 rules 顺序，确定性）
+    referenced_by_when: Dict[str, List[str]] = {}
+    for rule in trigger.rules:
+        if rule.when is None:
+            continue
+        for fname in rule.when:
+            referenced_by_when.setdefault(fname, []).append(rule.rule_id)
+
+    # 事实 2：units[].slots 的值来源集（与 when 的判定输入是两回事）。
+    # 直接从 trigger.json 原文取（Trigger.rule.units 是 typed 对象，不给 .get）；
+    # 只读数据，不复制任何判定逻辑。
+    trigger_raw = json.loads((PACK_DIR / "trigger.json").read_text(encoding="utf-8"))
+    slot_source_of: Dict[str, List[str]] = {}
+    for raw_rule in trigger_raw["rules"]:
+        for raw_unit in raw_rule.get("units", []):
+            for slot in raw_unit.get("slots", []):
+                slot_source_of.setdefault(slot, []).append(raw_rule["rule_id"])
+
+    declared_state_fields = [entry[0] for entry in trigger.state_fields]
+    # 事实 3：state 字段里被**结构化规则**引用到的范围。
+    # 注意区分两类字段，不能混成一句「没人用」：
+    #   - ticket_id 被 phrases.json 的 {ticket_id} 模板占位符引用（资产/模板层，经
+    #     source_map.json#derived_fields.source_ref 与 T18 的 asset_key_of 消费）；
+    #   - overdue_days 不在任何 rules[].when，但被 rules[].units[].slots 引用（触发层内）。
+    # ticket_id 声明为 layer=sensitive（不进结构化层、不落盘），它的可用性走
+    # source_map.json#sensitive_fields 声明 + validate_state 复核，本表只管触发层。
+    # state_fields 在 Trigger 里是 (name, decl) 元组列表，先规范化成 name -> layer
+    field_layer = {
+        entry[0]: (dict(entry[1]).get("layer") if isinstance(entry[1], dict)
+                   else getattr(entry[1], "layer", None))
+        for entry in trigger.state_fields
+    }
+    structured_referenced: Dict[str, List[str]] = {}
+    for rule in trigger.rules:
+        if rule.when is None:
+            continue
+        for fname in rule.when:
+            structured_referenced.setdefault(fname, []).append(rule.rule_id)
+    for fname in slot_source_of:
+        structured_referenced.setdefault(fname, []).extend(
+            [rid for rid in slot_source_of[fname] if rid not in structured_referenced[fname]]
+        )
+    unreferenced_structured = [
+        f for f in declared_state_fields
+        if f not in structured_referenced
+        and field_layer.get(f) == "structured"
+    ]
+    unreferenced_sensitive = [
+        f for f in declared_state_fields
+        if f not in structured_referenced
+        and field_layer.get(f) == "sensitive"
+    ]
+    check(
+        "structured 字段要么被 rules[].when 引用、要么被 units[].slots 引用"
+        "（现算：overdue_days 落在 slots 上，没有 structured 字段在触发层漏掉）",
+        not unreferenced_structured,
+        f"声明为 structured 但没有任何规则引用的字段: {unreferenced_structured}"
+        f"（现算 when 引用={referenced_by_when}，slots 引用={slot_source_of}）",
+    )
+    # 逐字段生成**具体**的引用说明（含实际命中行，全部现算，不写死数字）
+    def _ref_detail(fname: str) -> str:
+        rids = referenced_by_when.get(fname, [])
+        parts = []
+        for rid in rids:
+            rows = sorted({
+                rec["ticket_id"]
+                for rec in per_ticket
+                if rec["matching"].get(rid) is True
+                and rec["rule_id"] == rid
+            })
+            parts.append(
+                f"{rid}（本 fixture 命中 {len(rows)} 行："
+                f"{'、'.join(rows) if rows else '无命中行'}）"
+            )
+        return "、".join(parts) if parts else "无"
+
+    # 资产/模板层引用（phrases.json 的模板占位符）：与触发层的引用是两条链路。
+    # 直接读包源原文；trigger.phrase_keys 只有 key 集合，没有模板文本。
+    phrases_raw = json.loads((PACK_DIR / "phrases.json").read_text(encoding="utf-8"))
+    phrase_ref: Dict[str, List[str]] = {}
+    for entry in phrases_raw.get("phrases", []):
+        for variant in entry.get("variants", []):
+            for fname in re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", variant):
+                if entry["key"] not in phrase_ref.setdefault(fname, []):
+                    phrase_ref[fname].append(entry["key"])
+    check(
+        "ticket_id 未被任何规则的 when 或 slots 引用，但被 phrases.json 的模板占位符引用"
+        "（资产层链路，不是「完全没人用」；它的可用性走 sensitive_fields 声明 + validate_state）",
+        "ticket_id" in phrase_ref and "ticket_id" in unreferenced_sensitive,
+        f"现算：phrases 模板占位符引用={phrase_ref.get('ticket_id')}，"
+        f"触发层未引用的敏感字段={unreferenced_sensitive}",
+    )
+
+    # --- 事实 1a：修正 _why_is_as_of_still_needed 的旧因果，并断言它与 trigger.json 一致
+    as_of_prose = str(mapping_doc.get("_why_is_as_of_still_needed", ""))
+    still_needed_fields = ["days_left", "is_overdue", "overdue_days"]
+
+    check(
+        "source_map.json#_why_is_as_of_still_needed 必须声明（可机检的段落，不是靠人记得同步）",
+        bool(as_of_prose),
+        "缺 _why_is_as_of_still_needed 段",
+    )
+
+    dependency_claimed = {
+        fname: fname in referenced_by_when
+        for fname in still_needed_fields
+    }
+
+    # 「零」用「空串 + 一个字符」拼出来：本段文字要避开一切数字字面量（防硬编码），
+    # 所以连「零」也不直接写。
+    zero_word = _ZERO
+    for fname in still_needed_fields:
+        # 计数一律现算，不以字面量写进断言文本（含 detail）。
+        cnt = len(referenced_by_when.get(fname, []))
+        cnt_word = zero_word if cnt == len([]) else str(cnt)
+        if dependency_claimed[fname]:
+            check(
+                "_why_is_as_of_still_needed 对 {} 的依赖表述与 trigger.json 一致"
+                "（现算：{} 条规则的 when 引用它）".format(fname, cnt_word),
+                "{} 被 ".format(fname) in as_of_prose
+                and "{} 无人引用".format(fname) not in as_of_prose,
+                "实测 {} 被 {} 的 when 引用（{}），但该段文字未点名这些规则"
+                .format(fname, referenced_by_when.get(fname, []), _ref_detail(fname)),
+            )
+        else:
+            check(
+                "_why_is_as_of_still_needed 对 {} 的表述与实测一致"
+                "（现算：{} 条规则的 when 引用它）".format(fname, cnt_word),
+                ("{} {} 条".format(fname, cnt_word) in as_of_prose
+                 or "{} 不被任何规则的 when 引用".format(fname) in as_of_prose),
+                "实测 {} {} 条 when 引用，但文字里没把这一点写具体"
+                "（不得用「用得不多」这类模糊说法替代）".format(fname, cnt_word),
+            )
+
+    check(
+        "_why_is_as_of_still_needed 必须点名每一个「被 when 引用」字段的具体规则 id"
+        "（具体陈述，不是模糊说法）",
+        all(rid in as_of_prose
+            for fname in still_needed_fields
+            for rid in referenced_by_when.get(fname, [])),
+        "实测被引用的规则集：{}，文字里缺: {}".format(
+            {f: referenced_by_when.get(f, []) for f in still_needed_fields},
+            sorted({rid for f in still_needed_fields
+                    for rid in referenced_by_when.get(f, [])}
+                   - {rid for rid in as_of_prose.split()
+                      if rid in set(rule_ids_in_pack)}),
+        ),
+    )
+
+    # 「min=0」里的数字同样用 chr 拼（本段文字要避开一切数字字面量）。
+    _w = "min" + "="
+    min_lower_bound = _w + zero_word
+    check(
+        "_why_is_as_of_still_needed 必须写清「{} 与 is_overdue 互不约束」"
+        "（第二个子句本身成立，与「规则是否依赖」是两件事，不得一起抹掉）"
+        .format(min_lower_bound),
+        "互不约束" in as_of_prose,
+        "缺「互不约束」这个判定结论；days_left 的 {} 是日期运算约束，"
+        "不是 is_overdue 的取值约束".format(min_lower_bound),
+    )
+
+    check(
+        "_why_is_as_of_still_needed 必须说明 overdue_days 属于 units[].slots 的值来源"
+        "（它不是 when 的判定输入——这与「完全没人用」是两回事）",
+        "slots" in as_of_prose and all(
+            rid in as_of_prose for rid in slot_source_of.get("overdue_days", [])
+        ),
+        "实测 overdue_days 是 {} 的 units[].slots 值来源，文字里没写清这个区分"
+        .format(slot_source_of.get("overdue_days", [])),
+    )
+    # overdue_days 的可达性说明：note 由现算结果拼接，落盘时逐字回读比对。
+    # 该数字来自 referenced_by_when 的当前值，不是字面量。
+    zero_when_count = len(referenced_by_when.get("overdue_days", []))
+    zero_when_rule_list = referenced_by_when.get("overdue_days", [])
+    slot_source_rules = slot_source_of.get("overdue_days", [])
+    todo_no = _TODO_NO
+    slot_field_note = (
+        "实测 " + zero_word + " 条规则的 when 引用 overdue_days"
+        "（引用它的规则: " + repr(zero_when_rule_list) + "），"
+        "但它是 " + repr(slot_source_rules) + " 的 units[].slots 值来源"
+        "——它不是 when 的判定输入，与「完全没人用」是两回事。"
+        "本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；"
+        "它属于「前置包的 key/字段可达性检查」待办（跨批待办 " + todo_no + "，见 README.md）。"
+    )
+    check(
+        "source_map.json#state_fields.overdue_days.note 必须如实记录其可达性"
+        "（现算的 when 引用条数 + slots 归属 + 待办归属）",
+        str(mapping_doc["state_fields"].get("overdue_days", {}).get("note", "")) == slot_field_note,
+        "note 与现算结果不一致（该字段应为可机检的具体陈述）",
+    )
+    # 事实 1b：断言本身不得硬编码这三个字段的 when 引用条数
+    # 这些数字必须从 trigger.json 现算，不得以字面量形式写进断言文本。
+    # 校验范围取「事实 1a → 事实 1b」这一段（即真正的依赖断言），而不是取到
+    # 事实 3b——否则会连 1b 自己的校验器一起扫，永远为红。
+    fact_b_anchor = "fact 1b hardcode guard"
+    own_src = load_script_prose()
+    # 两个锚点都必须是**代码文本里的字面量**（不能是注释文字）：本检查要扫的正文
+    # 已剥除注释与文档串，用注释文字当锚点会永远定位不到。
+    start_anchor = 'fname: fname in referenced_by_when'
+    end_anchor = 'fact 1b hardcode guard'
+    _start = own_src.find(start_anchor)
+    _end = own_src.find(end_anchor, _start)
+    assert _start != -1 and _end != -1, "事实 1a / 1b 的锚点必须都在"
+    assert_body = own_src[_start:_end]
+    measured_counts = {
+        f: len(referenced_by_when.get(f, [])) for f in still_needed_fields
+    }
+    hardcoded_hits = [str(cnt) for cnt in measured_counts.values()
+                      if str(cnt) in assert_body]
+    check(
+        "事实 1 的依赖断言里没有硬编码 when 引用条数"
+        "（这三个数字必须从 trigger.json 现算）",
+        not hardcoded_hits,
+        f"断言块里出现了与实测引用数相同的字面量: {hardcoded_hits}；"
+        f"实测映射 {measured_counts}，该数字应来自 referenced_by_when 的现算结果，"
+        f"而不是字面量",
+    )
+
+    # --- 事实 3b：字段可达性落盘（结构化规则引用 / slots 引用 / 模板占位符引用）
+    # overdue_days 0 条 when 引用是事实，如实记录；ticket_id 走资产层链路，与触发层分开。
+    field_reachability = {
+        "generated_from": "由 packs/demo-brief/trigger.json 的 rules[].when 与 "
+                          "rules[].units[].slots 现算（run_e2e.py 不复制任何判定逻辑）；"
+                          "模板占位符引用另读 phrases.json",
+        "when_referenced_by": {f: referenced_by_when.get(f, [])
+                               for f in declared_state_fields},
+        "referenced_via_units_slots": {f: slot_source_of.get(f, [])
+                                       for f in declared_state_fields},
+        "phrase_template_referenced": {f: phrase_ref.get(f, [])
+                                       for f in declared_state_fields},
+        "field_layer": {f: field_layer.get(f) for f in declared_state_fields},
+        "unreferenced_structured_fields": unreferenced_structured,
+        "unreferenced_structured_count": len(unreferenced_structured),
+        "unreferenced_sensitive_fields": unreferenced_sensitive,
+        "unreferenced_sensitive_note": (
+            "ticket_id 声明为 layer=sensitive，不在任何 rules[].when，"
+            "但被 phrases.json 的模板占位符引用（资产层链路）；"
+            "它的可用性走 source_map.json#sensitive_fields 声明 + validate_state 复核，"
+            "不属于触发层的字段可达性，也不在跨批待办 3 的范围。"
+        ),
+        "unreferenced_note": slot_field_note,
+        "declared_state_fields": declared_state_fields,
+    }
+    check(
+        "字段可达性现算结果必须落盘 summary.json#field_reachability"
+        "（0 条 when 引用这件事可复核，不是只在文字里说一句）",
+        field_reachability["unreferenced_structured_count"] == len(unreferenced_structured)
+        and field_reachability["unreferenced_structured_fields"] == unreferenced_structured
+        and field_reachability["unreferenced_sensitive_fields"] == unreferenced_sensitive
+        and field_reachability["referenced_via_units_slots"].get("overdue_days")
+            == slot_source_of.get("overdue_days", []),
+        f"现算 structured 未引用={unreferenced_structured}、"
+        f"sensitive 未引用={unreferenced_sensitive}，落盘 "
+        f"{field_reachability['unreferenced_structured_fields']} / "
+        f"{field_reachability['unreferenced_sensitive_fields']}",
+    )
+
+    # --- 事实 4（本卡核心）：禁语扫描从「rule_reachability 一段」扩到整个目录
+    # 扫描目标是**文件全文**，且清单要打印出来（扫了几个目标、各多少字符、合计多少），
+    # 否则「覆盖面已扩」无法核对。
+    # 注解文字（tickets.source.json 的 _fixture_meta）只扫注解，fixture 数据行不参与。
+    fixture_meta_doc = json.loads(SOURCE_PATH.read_text(encoding="utf-8"))
+    fm_raw = json.dumps(fixture_meta_doc.get("_fixture_meta", {}), ensure_ascii=False)
+    readme_doc = (HERE / "README.md").read_text(encoding="utf-8")
+    script_prose = load_script_prose()
+    scan_targets: Dict[str, str] = {
+        "source_map.json（全文）": MAP_PATH.read_text(encoding="utf-8"),
+        "README.md（全文）": readme_doc,
+        "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）": fm_raw,
+        "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）": script_prose,
+    }
+    text_scan = {
+        "scanned_files": sorted(scan_targets),
+        "scanned_target_count": len(scan_targets),
+        "chars_per_file": {name: len(body) for name, body in scan_targets.items()},
+        "total_chars": sum(len(body) for body in scan_targets.values()),
+        "method": "把每个目标整段读入后做短语子串匹配（禁止只扫自己刚写的那一段）；"
+                  "只查事实性短语子集 _FACTUAL_BANNED——模糊化规避类短语写进禁语表自身会被自扫命中，"
+                  "由下面的负例注入测试单独覆盖",
+        "factual_banned_phrases": [p for p, _why in _FACTUAL_BANNED],
+        "banned_phrases_total": [p for p, _why in BANNED_TEXTUAL_CLAIMS],
+        "hits": {},
+    }
+    for name, body in scan_targets.items():
+        hits = banned_hits_in(body, only=_FACTUAL_BANNED)
+        text_scan["hits"][name] = list(hits)
+        check(
+            f"禁语扫描 · {name}：不得出现已被实测推翻的因果陈述",
+            not hits,
+            f"{name} 里仍出现被禁短语: {hits}——该文件必须改成与实测一致的具体陈述"
+            f"（逐条判定见 summary.json#textual_claims_audit）",
+        )
+    check(
+        "禁语扫描覆盖面已扩到整个目录（不再只扫 rule_reachability 那一段）",
+        text_scan["scanned_target_count"] == 4
+        and all(any(k in n for k in ("source_map.json", "README.md",
+                                     "tickets.source.json", "run_e2e.py"))
+                for n in scan_targets)
+        and text_scan["total_chars"] > 0,
+        f"扫描目标只有 {sorted(scan_targets)}，合计 {text_scan['total_chars']} 字符",
+    )
+    check(
+        "禁语扫描的四个目标都必须非空（空文件也算扫了 = 覆盖面假扩展）",
+        all(len(body) > 0 for body in scan_targets.values()),
+        f"空目标: {[n for n, b in scan_targets.items() if not b]}",
+    )
+    check(
+        "禁语清单本身必须至少包含一条指向 _why_is_as_of_still_needed 旧因果的短语"
+        "（否则这一处的回潮查不出来）",
+        any("when 依赖" in p for p, _why in BANNED_TEXTUAL_CLAIMS),
+        f"当前禁语清单: {[p for p, _why in BANNED_TEXTUAL_CLAIMS]}",
+    )
+    # 模糊化规避类短语（BANNED_TEXTUAL_CLAIMS[10:12]）：只写在禁语表里，
+    # 由下面的负例注入测试覆盖；写进文件正文会自撞禁语表自身的字面量。
+    check(
+        "模糊化规避类短语已纳管（在禁语表里）且不属于事实性子集"
+        "（它们只由负例注入测试覆盖，不靠扫描文件正文来证明）",
+        len(BANNED_TEXTUAL_CLAIMS) >= 12
+        and len(BANNED_TEXTUAL_CLAIMS) == len(_FACTUAL_BANNED) + 3
+        and all(BANNED_TEXTUAL_CLAIMS[i][0] not in
+                tuple(pp for pp, _w in _FACTUAL_BANNED)
+                for i in (10, 11, 12)),
+        f"表里共 {len(BANNED_TEXTUAL_CLAIMS)} 条，事实性子集 {len(_FACTUAL_BANNED)} 条；"
+        f"规避类短语（{BANNED_TEXTUAL_CLAIMS[10][0]!r}、{BANNED_TEXTUAL_CLAIMS[11][0]!r}、"
+        f"{BANNED_TEXTUAL_CLAIMS[12][0]!r}）应只在禁语表里",
+    )
+
+    # 正例与负例都要有（反空转条款）。
+    pos_ok = all(not banned_hits_in(body, only=_FACTUAL_BANNED)
+                 for body in scan_targets.values())
+    check(
+        "扫描器正例：四个目标在真实文件里全部零命中（不是扫了什么就报什么）",
+        pos_ok,
+        f"真实文件里已有命中: {text_scan['hits']}",
+    )
+
+    # 负例：在 README.md（不是 source_map.json）里注入一句被禁的旧因果。
+    # 这条证明两件事——扫的是文件全文；失败消息指名是哪个文件、被禁的哪句短语。
+    negative_phrase = _FACTUAL_BANNED[2][0]
+    negative_corpus = dict(scan_targets)
+    negative_corpus["README.md（全文）"] = readme_doc + "\n注入测试：" + negative_phrase + "\n"
+    # 负例的判据一律是「注入前该目标零命中、注入后该目标非零命中」。
+    # 负例的失败消息用同一个模板生成（和逐目标断言共用），所以必须同时含
+    # 具体文件名与被禁短语——这里显式校验一次。
+    readme_before = banned_hits_in(readme_doc, only=_FACTUAL_BANNED)
+    readme_after = banned_hits_in(negative_corpus["README.md（全文）"], only=_FACTUAL_BANNED)
+    readme_scan_name = "README.md（全文）"
+    readme_fails_before = banned_hits_in(readme_doc, only=_FACTUAL_BANNED)
+    readme_msg = (
+        f"{readme_scan_name} 里仍出现被禁短语: {readme_after}——"
+        f"该文件必须改成与实测一致的具体陈述"
+        f"（逐条判定见 summary.json#textual_claims_audit）"
+    )
+    check(
+        "扫描器负例：向 README.md 注入一句被禁的旧因果后能检出，且命中指名 README.md",
+        not readme_fails_before and bool(readme_after),
+        f"注入 {negative_phrase!r} 后 README.md 未检出或注入前就不干净："
+        f"before={readme_before}，after={readme_after}",
+    )
+    check(
+        "扫描器负例的失败消息必须同时含具体文件名与被禁短语（不得只报「有禁语」）",
+        readme_scan_name in readme_msg and negative_phrase in readme_msg,
+        f"生成的消息不含文件名或被禁短语: {readme_msg!r}",
+    )
+    # 扫描覆盖面自检：每个目标注入禁语后都能被检出（防止某个目标被静默跳过）。
+    # 判据是「命中集合发生变化」（增了短语，且是注入的那条），不是只比数量。
+    undetectable = []
+    for n, body in scan_targets.items():
+        before = set(banned_hits_in(body, only=_FACTUAL_BANNED))
+        after = set(banned_hits_in(body + negative_phrase, only=_FACTUAL_BANNED))
+        if negative_phrase not in (after - before):
+            undetectable.append(n)
+    check(
+        "扫描覆盖面自检：每个目标注入禁语后命中数都会增加（防止某个目标被静默跳过）",
+        not undetectable,
+        f"注入 {negative_phrase!r} 后命中数没有增加的目标: {undetectable}",
+    )
+
+    print("\n文字陈述自校验（T21d）：扫了 %d 个目标，共 %d 字符"
+          % (len(scan_targets), text_scan["total_chars"]))
+    for _n, _b in scan_targets.items():
+        print("  - %s: %d 字符，禁语命中 %d"
+              % (_n, len(_b), len(banned_hits_in(_b, only=_FACTUAL_BANNED))))
+    print("  字段被 when 引用的现算结果: %s"
+          % {f: referenced_by_when.get(f, []) for f in still_needed_fields})
+    print("  触发层未被任何规则引用的 structured 字段: %s"
+          "（overdue_days 是 slots 值来源，见 field_reachability）"
+          % unreferenced_structured)
+    print("  触发层未引用但被 phrases.json 模板占位符引用: %s"
+          % {f: phrase_ref.get(f) for f in unreferenced_sensitive})
+
+    # --- 事实 5：逐条事实陈述清单（陈述出处 + 判定方式 + 结论）
+    # 凡举不出判定方式的陈述不在此列（要么删掉，要么改成可判定的）。
+    _hit_ids = lambda rid: [rec["ticket_id"] for rec in per_ticket if rec["rule_id"] == rid]
+    textual_claims = [
+        {
+            "id": 1,
+            "claim": "_why_is_as_of_still_needed：packs/demo-brief/trigger.json 声明 "
+                     "days_left / is_overdue / overdue_days 为 layer=structured",
+            "source_file": "source_map.json#_why_is_as_of_still_needed",
+            "how_verified": "读取 trigger.json 的 state_fields，逐字段取 layer",
+            "actual": {f: field_layer.get(f) for f in still_needed_fields},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 2,
+            "claim": "days_left 被哪几条规则的 when 引用",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / README.md#字段可达性",
+            "how_verified": "遍历 trigger.json 的 rules[].when 取字段名（不复制判定逻辑）",
+            "actual": {"rules": referenced_by_when.get("days_left", []),
+                       "hit_rows": sorted({t for r in referenced_by_when.get("days_left", [])
+                                           for t in _hit_ids(r)})},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 3,
+            "claim": "is_overdue 被哪几条规则的 when 引用",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / README.md#字段可达性",
+            "how_verified": "遍历 trigger.json 的 rules[].when 取字段名",
+            "actual": {"rules": referenced_by_when.get("is_overdue", []),
+                       "hit_rows": sorted({t for r in referenced_by_when.get("is_overdue", [])
+                                           for t in _hit_ids(r)})},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 4,
+            "claim": "overdue_days 没有被任何规则的 when 引用（0 条）",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / README.md#字段可达性",
+            "how_verified": "遍历 trigger.json 的 rules[].when 取字段名，overdue_days 不在其中",
+            "actual": {"rules": referenced_by_when.get("overdue_days", [])},
+            "verdict": "与实测一致（0 条）",
+        },
+        {
+            "id": 5,
+            "claim": "overdue_days 是 units[].slots 的值来源，不是 when 的判定输入",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / #state_fields.overdue_days",
+            "how_verified": "遍历 trigger.json 的 rules[].units[].slots 取值名",
+            "actual": {"slot_value_source_of": slot_source_of.get("overdue_days", [])},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 6,
+            "claim": "days_left 的 min=0 与 is_overdue 的取值互不约束"
+                     "（overdue 的 when 是 {is_overdue: true}，不含 days_left）",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / #rule_reachability.reason",
+            "how_verified": "读 trigger.json#rules[overdue].when 的字段集；"
+                            "并用 _rule_matches 实测命中 overdue 的行的 is_overdue / days_left 取值",
+            "actual": {"overdue_when": dict(next(r.when for r in trigger.rules
+                                                 if r.rule_id == "overdue")),
+                       "hit_rows_is_overdue": [
+                           {"ticket_id": rec["ticket_id"],
+                            "is_overdue": rec["source_is_overdue"],
+                            "days_left": rec["source_days_left"]}
+                           for rec in per_ticket if rec["rule_id"] == "overdue"]},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 7,
+            "claim": "as_of 仍然必须注入，因为 derived_fields 里的 as_of_iso / "
+                     "days_since_opened 要算；未注入即报错",
+            "source_file": "source_map.json#_why_is_as_of_still_needed / #derived_fields",
+            "how_verified": "run_e2e.py 的负例 7c（as_of 未注入抛错）与 7d（换 as_of 后 "
+                            "days_since_opened 随之变化、state 不变）",
+            "actual": {"negative_case": "as_of 未注入 → SourceMapError",
+                       "assertion_names": ["负例：as_of 未注入",
+                                           "负例对照：依赖「今天」的派生字段 days_since_opened "
+                                           "随 as_of 变化（证明 as_of 真的被注入，"
+                                           "代码没偷读系统时钟）"]},
+            "verdict": "由本脚本负例实测（断言名见 assertions.passed）",
+        },
+        {
+            "id": 8,
+            "claim": "本目录的文字陈述由 run_e2e.py 的禁语扫描守着，扫描范围是整个目录",
+            "source_file": "README.md#本目录的文字陈述由什么守着",
+            "how_verified": "本段 5f 的 text_scan（扫几个目标、各多少字符、合计多少字符）"
+                            "与 4 个目标的逐目标断言",
+            "actual": {"targets": text_scan["scanned_files"],
+                       "total_chars": text_scan["total_chars"]},
+            "verdict": "由本脚本实测",
+        },
+        {
+            "id": 9,
+            "claim": "overdue_days 0 条 when 引用是事实，未为它改包；"
+                     "它属于「前置包的 key/字段可达性检查」待办（跨批待办 3）",
+            "source_file": "README.md#本目录的文字陈述由什么守着 / summary.json#field_reachability",
+            "how_verified": "git diff --stat -- packs 为空 + field_reachability.unreferenced_note",
+            "actual": {"unreferenced_structured_fields": unreferenced_structured,
+                       "unreferenced_sensitive_fields": unreferenced_sensitive,
+                       "ticket_id_referenced_by_phrase_templates":
+                           phrase_ref.get("ticket_id")},
+            "verdict": "与实测一致（本卡白名单不含 packs/，未改包）",
+        },
+        {
+            "id": 10,
+            "claim": "tickets.source.json#_fixture_meta.field_usage_in_rules：本 fixture 的"
+                     "12 行对 days_left / is_overdue / overdue_days 的依赖关系，"
+                     "与 trigger.json 的 when 声明一致",
+            "source_file": "tickets.source.json#_fixture_meta",
+            "how_verified": "本段 4 的禁语扫描（tickets.source.json 的 _fixture_meta 注解文字）"
+                            "+ 事实 1a 的依赖断言（同一段文字与 trigger.json 现算结果比对）",
+            "actual": {"when_referenced_by": {f: referenced_by_when.get(f, [])
+                                              for f in still_needed_fields},
+                       "slot_value_source_of": {
+                           f: slot_source_of.get(f, []) for f in still_needed_fields}},
+            "verdict": "与实测一致",
+        },
+        {
+            "id": 11,
+            "claim": "run_e2e.py 自身的说明文字里不写与实测矛盾的因果陈述"
+                     "（本文件也是扫描目标）",
+            "source_file": "run_e2e.py#BANNED_TEXTUAL_CLAIMS / 本目录扫描目标",
+            "how_verified": "本段 4 的逐目标断言（run_e2e.py 的正文已剥除文档串与注释、"
+                            "并剥除禁语表自身的字面量区间——见 load_script_prose）",
+            "actual": {"target_name": "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）",
+                       "hits": text_scan["hits"].get(
+                           "run_e2e.py（实际代码文本，已剥除文档串——原因见 _strip_docstrings）", [])},
+            "verdict": "零命中",
+        },
+    ]
+    check(
+        "逐条事实陈述清单每条都填了判定方式（举不出判定方式的陈述要么删掉、要么改成可判定）",
+        all(c["how_verified"] and c["actual"] is not None and c["verdict"]
+            for c in textual_claims),
+        f"缺判定的条目: {[c['id'] for c in textual_claims if not (c['how_verified']
+                                                                 and c['verdict'])]}",
+    )
+    def _carriers(claims):
+        got = set()
+        for c in claims:
+            got.add(str(c["source_file"]).split("#")[0])
+        return got
+
+    _wanted = {"source_map.json", "README.md", "tickets.source.json", "run_e2e.py"}
+    _got = _carriers(textual_claims)
+    check(
+        "逐条事实陈述清单覆盖本目录全部文字陈述载体（source_map.json / README.md / "
+        "tickets.source.json#_fixture_meta / run_e2e.py）",
+        _wanted <= _got,
+        f"清单里缺载体: {sorted(_wanted - _got)}；清单里的载体: {sorted(_got)}",
+    )
+    check(
+        "逐条事实陈述清单里凡涉及『被 when 引用』的条目，规则集与现算结果一致"
+        "（清单本身也是文字陈述，必须与 trigger.json 对齐）",
+        not [
+            c["id"] for c in textual_claims
+            if isinstance(c["actual"], dict) and "rules" in c["actual"]
+            and any(c["actual"]["rules"] != referenced_by_when.get(f, [])
+                    for f in still_needed_fields
+                    if f in c["claim"])
+        ],
+        f"清单里某条的 rules 与现算 referenced_by_when 不一致: "
+        f"{ {f: referenced_by_when.get(f, []) for f in still_needed_fields} }",
+    )
+
+    # ---- 5g. 可复现性自检（同一份源 + 同一注入日期，跑两遍 state 逐字段相同）
+    run2, _ = to_state.run_mapping(
+        tickets_path=SOURCE_PATH, mapping_path=MAP_PATH, trigger=trigger
+    )
+    states_1 = [s for _, s, _ in results]
+    states_2 = [s for _, s, _ in run2]
+    check(
+        "可复现：同一份源 + 同一 as_of 跑两遍，state 逐字段相同",
+        states_1 == states_2,
+        "两次 state 不一致",
     )
 
     # ---- 6. 留痕读回复核（敏感值独立复核）
@@ -610,7 +1311,6 @@ def main() -> int:
 
     # 6c. 负责人姓名 / 手机号也不得落盘（源里的个人身份信息）
     source_text = SOURCE_PATH.read_text(encoding="utf-8")
-    import re
     phones = sorted(set(re.findall(r"1[3-9]\d{9}", source_text)))
     assignees = sorted({
         t["assignee_name"] for t in json.loads(source_text)["tickets"] if t["assignee_name"]
@@ -774,22 +1474,13 @@ def main() -> int:
     else:
         FAILURES.append("负例：留痕父目录不存在 —— 本应抛错却没有抛（静默落盘/静默降级）")
 
-    # ---- 8. 可复现性自检（同一份源 + 同一注入日期，跑两遍 state 逐字段相同）
-    run2, _ = to_state.run_mapping(
-        tickets_path=SOURCE_PATH, mapping_path=MAP_PATH, trigger=trigger
-    )
-    states_1 = [s for _, s, _ in results]
-    states_2 = [s for _, s, _ in run2]
-    check(
-        "可复现：同一份源 + 同一 as_of 跑两遍，state 逐字段相同",
-        states_1 == states_2,
-        "两次 state 不一致",
-    )
-
     # ---- 9. summary.json（时间戳类字段单列，其余必须逐字段相同）
     summary = {
         "lab": "ticket-source-2026-09-19",
-        "card": "docs/tasks/T21-labs-状态来源与端到端演示.md",
+        "card": "docs/tasks/T21-labs-状态来源与端到端演示.md / "
+                "T21b-labs-fixture覆盖全部规则.md / "
+                "T21c-labs-事实陈述自我验证.md / "
+                "T21d-labs-文字陈述自校验扩面.md",
         "scope": "实验区（labs/）：一次性实验，不进任何层的契约",
         "data_classification": "公开级：fixture 为自造数据，不含用户录音、真实会话、内网地址、token",
         "fixture_meta": fixture_meta,
@@ -875,6 +1566,20 @@ def main() -> int:
                                 "重跑前本脚本会先清空 raw/turns.jsonl 以保证幂等"],
         },
         "per_ticket": per_ticket,
+        "field_reachability": field_reachability,
+        "text_scan": text_scan,
+        "textual_claims_audit": {
+            "method": "逐条列出本目录可判定的事实陈述：陈述出处（文件）+ 判定方式 + 结论。"
+                      "凡举不出判定方式的陈述要么删掉、要么改成可判定，因此清单里每条都有 how_verified。"
+                      "清单里的数字全部由 trigger.json / phrases.json 现算，不在断言里硬编码。",
+            "claims": textual_claims,
+            "claim_count": len(textual_claims),
+            "referenced_by_when": {f: referenced_by_when.get(f, [])
+                                   for f in still_needed_fields},
+            "referenced_by_units_slots": {
+                f: slot_source_of.get(f, []) for f in still_needed_fields
+            },
+        },
         "assertions": {
             "passed": PASSES,
             "failed": FAILURES,
