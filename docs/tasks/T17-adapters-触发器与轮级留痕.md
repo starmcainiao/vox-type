@@ -57,6 +57,12 @@ T16 定死了 `state` 快照格式与 `packs/<前置包>/trigger.json` 的映射
 允许新增：adapters/state_trigger/{trigger.py,ledger.py,README.md}
 允许新增：adapters/state_trigger/tests/{test_trigger.py,test_ledger.py}
 允许修改：adapters/state_trigger/__init__.py（只允许追加导出，不得删改既有导出）
+允许修改：adapters/state_trigger/format.py —— **只允许改一处**：把 `from compiler.source import SourceError, load_source`
+          改为从**公开面** import（`from compiler import SourceError, load_source`）。
+          理由：`adapters/AGENTS.md §⑤` 禁止 import compiler 的**内部实现**；
+          而 `load_source` / `SourceError` 都在 `compiler/__init__.py` 的 `__all__` 里，
+          走 `compiler.source` 是内部模块路径（本卡第 ⑧ 节登记的例外条款第 1 条）。
+          **除这一行外不得改动 format.py 的任何字符**（含注释与空行）。
 禁止触碰：其他一切文件——尤其不得改 core/ rules/ compiler/ assets/ runtime/ eval/ cli/（冻结区）、
           不得改 docs/、不得改 README.md / AGENTS.md、不得改 packs/
 ```
@@ -92,7 +98,12 @@ T16 定死了 `state` 快照格式与 `packs/<前置包>/trigger.json` 的映射
 9. **字段名合规**：`grep` 断言留痕的 `turn_id` / `plan_id` 字面量与 `core/metrics_spec` 的常量一致
    （不得自造字段名）；
 10. `git status --porcelain -uall` 的新增/修改文件**全部**落在白名单内；
-    冻结区零 diff（我会跑 `git diff --stat -- core rules compiler assets runtime eval cli` 应为空）。
+    冻结区零 diff（我会跑 `git diff --stat -- core rules compiler assets runtime eval cli` 应为空）；
+11. **依赖改走公开面**：`grep -n 'from compiler.source' adapters/state_trigger/format.py` → **0 命中**；
+    `grep -n 'from compiler import' adapters/state_trigger/format.py` → **≥1 命中**；
+    且 `adapters/state_trigger/format.py` 除该行外**逐字节未变**（我会用 `git diff --numstat` 核对增删行数）；
+12. 冻结区零 diff 之外，还要断言**内核没有反向依赖本模块**：
+    `grep -rn 'state_trigger' runtime/ assets/ eval/ cli/ compiler/ core/` → **0 命中**。
 
 ## 反空转条款（每张卡必带，T01 教训）
 

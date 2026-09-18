@@ -1,0 +1,57 @@
+{
+  "trigger_version": 1,
+  "trigger_id": "demo-brief.ticket-reminder",
+  "budget_chars": 60,
+  "state_fields": {
+    "ticket_id": {"layer": "sensitive", "type": "str"},
+    "ticket_status": {"layer": "structured", "type": "str", "enum": ["待受理", "处理中", "待验收", "已关闭"]},
+    "days_left": {"layer": "structured", "type": "int", "min": 0, "max": 365},
+    "overdue_days": {"layer": "structured", "type": "int", "min": 0, "max": 3650},
+    "is_overdue": {"layer": "structured", "type": "bool"},
+    "assignee_confirmed": {"layer": "structured", "type": "bool"}
+  },
+  "rules": [
+    {
+      "rule_id": "greeting",
+      "when": {"ticket_status": "处理中"},
+      "units": [
+        {"key": "greeting_ticket", "rate": "normal", "variant": 0}
+      ]
+    },
+    {
+      "rule_id": "overdue",
+      "when": {"is_overdue": true},
+      "units": [
+        {"key": "already_overdue", "rate": "normal", "variant": 0, "slots": ["overdue_days"]}
+      ]
+    },
+    {
+      "rule_id": "due_tonight",
+      "when": {"is_overdue": false, "days_left": {"lte": 0}},
+      "units": [
+        {"key": "due_tonight", "rate": "normal", "variant": 0}
+      ]
+    },
+    {
+      "rule_id": "due_days_left",
+      "when": {"is_overdue": false, "days_left": {"gt": 0, "lte": 14}},
+      "units": [
+        {"key": "due_days_left", "rate": "normal", "variant": 0, "slots": ["days_left"]}
+      ]
+    },
+    {
+      "rule_id": "ask_assignee",
+      "when": {"assignee_confirmed": false},
+      "units": [
+        {"key": "ask_assignee", "rate": "normal", "variant": 0}
+      ]
+    },
+    {
+      "rule_id": "closing",
+      "when": null,
+      "units": [
+        {"key": "closing_brief", "rate": "normal", "variant": 0}
+      ]
+    }
+  ]
+}
