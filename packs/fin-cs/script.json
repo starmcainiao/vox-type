@@ -1,0 +1,27 @@
+{
+  "script_version": 1,
+  "terminal_keys": ["closing_thanks", "handoff_human", "off_script_handoff"],
+  "live_whitelist": ["detail_not_prebaked", "fact_without_prebake"],
+  "max_retry": 3,
+  "units": [
+    {"key": "greeting_inbound", "rate": "normal", "variant": "auto"},
+    {"key": "compliance_notice", "rate": "normal"},
+    {"key": "verify_identity", "rate": "normal"},
+    {"action": "SAY_LIVE", "text": "请您提供一下手机尾号的后四位，方便我核对。", "reason": "detail_not_prebaked", "rate": "normal"},
+    {"key": "asr_clarify", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "restate_issue", "rate": "normal"},
+    {"key": "probe_detail", "rate": "normal"},
+    {"key": "empathy_hardship", "rate": "normal"},
+    {"key": "hold_notice", "rate": "normal"},
+    {"key": "inform_fact", "rate": "normal", "slots": {"amount": "977.41 元", "overdue_days": "6 天"}},
+    {"action": "SAY_LIVE", "text": "具体的到账时间以短信通知为准，我现在给您念一遍。", "reason": "fact_without_prebake", "rate": "normal"},
+    {"key": "offer_options", "rate": "normal"},
+    {"key": "execute_solution", "rate": "normal"},
+    {"key": "ask_feedback", "rate": "normal"},
+    {"key": "relationship_extend", "rate": "normal"},
+    {"key": "closing_thanks", "rate": "normal"}
+  ]
+}
