@@ -84,6 +84,52 @@ def expect_raises(name: str, func, *args, must_contain: Optional[str] = None, **
     return None
 
 
+def _unreachable_reason(rule_id: str, trigger: "Trigger", per_ticket: List[Dict[str, Any]]) -> str:
+    """给「不可达」的规则写具体理由：指向是哪条声明 / 哪个校验挡住了。
+
+    不允许只写一句 unreachable——这里逐条列出该规则 when 的每个条件，
+    并说明本实验的源数据里为什么凑不出同时满足的 state。
+    """
+    rule = next(r for r in trigger.rules if r.rule_id == rule_id)
+    when = rule.when
+    if when is None:
+        return (
+            f"{rule_id} 的 when 是 null（兜底规则），任何 state 都匹配；"
+            f"它不可达只可能是被排在前面的条件规则全部先命中，"
+            f"即本实验 12 条源行都至少命中一条条件规则。"
+        )
+    conj = []
+    for field, expected in when.items():
+        cond_desc = json.dumps(expected, ensure_ascii=False)
+        values = sorted({rec["state"].get(field) for rec in per_ticket})
+        conj.append(
+            f"{field}={cond_desc}（本实验源里该字段的实际取值集合 = {values}）"
+        )
+    blocking = []
+    for field, expected in when.items():
+        if field == "is_overdue" and expected is True:
+            blocking.append(
+                "is_overdue=true 必须与 greeting 的 when={ticket_status:'处理中'} 不冲突，"
+                "否则会先命中 greeting；source_map.json 把 ticket_status 的 enum 定为 "
+                "['待受理','处理中','待验收','已关闭']，'处理中' 之外的取值都能绕开 greeting"
+            )
+        if field == "days_left" and isinstance(expected, dict) and "lte" in expected:
+            blocking.append(
+                f"days_left 的声明是 trigger.json#state_fields.days_left.min=0 / max=365，"
+                f"负值会被 T16 的 validate_state 拒掉（min=0 越界），这是正确行为，不能用负值硬凑"
+            )
+        if field == "assignee_confirmed" and expected is False:
+            blocking.append(
+                "assignee_confirmed=false 同时必须不被 greeting 吃掉，"
+                "即 ticket_status 不能是 '处理中'"
+            )
+    return (
+        f"{rule_id} 的 when = {json.dumps(when, ensure_ascii=False)}，"
+        f"条件是「{'」且「'.join(conj)}」的合取。"
+        f"本实验 12 条源行里没有一行同时满足：{"；".join(blocking) if blocking else '见 when 条件与源字段的实际取值集合'}。"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. 主流程
 # ---------------------------------------------------------------------------
@@ -100,6 +146,9 @@ def main() -> int:
         record_turn,
         validate_state,
     )
+    # 逐条规则的匹配判定直接复用引擎的公开判定函数——本实验不复制 when 的匹配逻辑
+    # （反空转：覆盖表必须由实际运行结果生成，所以这里真的去判定每一条规则）
+    from adapters.state_trigger.trigger import _rule_matches
     import to_state
     from to_state import SourceMapError, to_state as to_state_one
 
@@ -146,6 +195,10 @@ def main() -> int:
         #     「源 → state 通过 validate_state」有一条独立的、可观测的调用记录）
         validate_state(state, trigger)
 
+        # 4a2. 逐条规则的匹配判定（真实判定，非手写）：覆盖表、兜底语义与优先级断言
+        #      全部由这份矩阵驱动，改坏一条映射 / 把某条规则条件改到不可能满足时必现红色
+        matching = {rule.rule_id: _rule_matches(rule, state) for rule in trigger.rules}
+
         # 4b. build_plan（内部还会再校验一次 state、复核 key、强制预算）
         turn_id = f"{TURN_ID_PREFIX}{item['_item_index']:03d}"
         plan_id = f"{trigger.trigger_id}:{turn_id}"
@@ -175,6 +228,7 @@ def main() -> int:
         )
         turns_written += 1
 
+        matched_ids = [rid for rid, m in matching.items() if m]
         per_ticket.append({
             "ticket_id": item["ticket_id"],
             "customer_code": item["customer_code"],
@@ -184,6 +238,14 @@ def main() -> int:
             "source_overdue_days": item["overdue_days"],
             "source_is_overdue": item["is_overdue"],
             "state": state,
+            "matching": matching,
+            "matched_rules": matched_ids,
+            "matching_count": len(matched_ids),
+            "fallback_matched": any(
+                trigger.rules[i].when is None
+                for i, rid in enumerate(rule_ids_in_pack)
+                if rid in matched_ids
+            ),
             "rule_id": plan.rule_id,
             "keys": list(plan.keys),
             "chars": plan.chars,
@@ -197,6 +259,35 @@ def main() -> int:
     print(f"命中分布   : {rule_hit_count}")
     print(f"plan key 汇总: {sorted(set(keys_seen))}")
 
+    # ---- 4d. 覆盖表（由实际运行结果生成，非手写）
+    # 覆盖 = 某条源行的 state 真实判定出该规则匹配；命中 = 引擎按 rules 顺序取到的第一条匹配。
+    # 覆盖表逐条打印，落到 summary.json 的 rule_matching_matrix。
+    rows_covering: Dict[str, List[str]] = {rid: [] for rid in rule_ids_in_pack}
+    for rec in per_ticket:
+        for rid in rec["matched_rules"]:
+            rows_covering[rid].append(rec["ticket_id"])
+
+    covered = {rid: rows_covering[rid] for rid in rule_ids_in_pack}
+    coverage_unreachable = [rid for rid in rule_ids_in_pack if not rows_covering[rid]]
+    # 不可达的理由必须指向具体声明/校验，不允许只写一句 unreachable
+    unreachable_reasons: Dict[str, str] = {
+        rid: _unreachable_reason(rid, trigger, per_ticket)
+        for rid in coverage_unreachable
+    }
+
+    print("\n=== 规则覆盖表（由实际运行判定生成）===")
+    print(f"{'规则':<16}{'包内顺序':<9}{'when 声明':<44}{'匹配行数':<9}{'命中行数':<9}覆盖到的行")
+    for i, rid in enumerate(rule_ids_in_pack):
+        rule = trigger.rules[i]
+        when_txt = json.dumps(rule.when, ensure_ascii=False) if rule.when is not None else "(null 兜底)"
+        if len(when_txt) > 42:
+            when_txt = when_txt[:39] + "..."
+        m_cnt = len(rows_covering[rid])
+        h_cnt = rule_hit_count.get(rid, 0)
+        ids = ",".join(rows_covering[rid]) if rows_covering[rid] else "——（不可达）"
+        print(f"{rid:<16}{i + 1:<9}{when_txt:<44}{m_cnt:<9}{h_cnt:<9}{ids}")
+
+    # ---- 5. 正例断言
     # ---- 5. 正例断言
     check(
         "留痕行数 == 处理条数",
@@ -222,6 +313,107 @@ def main() -> int:
         "至少一条非 greeting 规则被命中（演示价值：不是全部兜到 greeting）",
         any(rid != "greeting" for rid in rule_hit_count),
         f"全部落在 greeting: {rule_hit_count}",
+    )
+
+    # ---- 5b. 覆盖断言（T21b 验收标准 2）：6 条规则每条至少被驱动一次
+    check(
+        "6 条规则全部至少被源数据驱动一次（覆盖表来自实际运行判定）",
+        not coverage_unreachable,
+        f"未覆盖的规则: {coverage_unreachable}（理由见 summary.json#rule_reachability_from_source.unreachable_reasons）",
+    )
+    check(
+        "6 条规则全部被真实命中（不只是条件匹配，还要按 rules 顺序被引擎选中）",
+        all(rule_hit_count.get(rid, 0) > 0 for rid in rule_ids_in_pack),
+        f"未被命中的规则: {[rid for rid in rule_ids_in_pack if rule_hit_count.get(rid, 0) == 0]}"
+        f"，命中分布 {rule_hit_count}",
+    )
+    check(
+        "规则覆盖数 == 包内规则总数",
+        len(rule_ids_in_pack) == 6 and len(rows_covering) == 6,
+        f"包内规则 {len(rule_ids_in_pack)} 条，覆盖表 {len(rows_covering)} 条",
+    )
+
+    # ---- 5c. 兜底语义（T21b 验收标准 3）：至少一行只有 closing 匹配
+    fallback_only = [rec for rec in per_ticket if rec["matching_count"] == 1
+                     and rec["matched_rules"] == ["closing"]]
+    check(
+        "兜底语义被演示：至少一行只有 closing 匹配（前 5 条条件规则全不匹配）",
+        len(fallback_only) >= 1,
+        f"没有任何一行是「只有 closing 匹配」——"
+        f"每条源的匹配情况: {[(r['ticket_id'], r['matched_rules']) for r in per_ticket]}",
+    )
+    for rec in fallback_only:
+        condition_hits = [rid for rid in rec["matched_rules"]
+                          if rid != trigger.rules[-1].rule_id]
+        check(
+            f"兜底行 {rec['ticket_id']}：除 closing 外的 5 条条件规则全不匹配",
+            not condition_hits,
+            f"该行还匹配了条件规则 {condition_hits}",
+        )
+        check(
+            f"兜底行 {rec['ticket_id']}：引擎实际命中的是 closing（最后手段）",
+            rec["rule_id"] == "closing",
+            f"实际命中 {rec['rule_id']}，命中集合 {rec['matched_rules']}",
+        )
+
+    # ---- 5d. 优先级（T21b 验收标准 4）：同时匹配条件规则与兜底 → 必须命中条件规则
+    fallback_index = [i for i, r in enumerate(trigger.rules) if r.when is None]
+    check(
+        "兜底规则 when=null 且排在 rules 最后（T17b 的语义前提）",
+        len(fallback_index) == 1 and fallback_index[0] == len(trigger.rules) - 1,
+        f"when=null 的规则在包内的位置: {fallback_index}，共 {len(trigger.rules)} 条",
+    )
+    both = [rec for rec in per_ticket
+            if rec["fallback_matched"] and rec["matching_count"] >= 2
+            and rec["rule_id"] != "closing"]
+    check(
+        "优先级被演示：至少一行同时匹配条件规则与兜底",
+        len(both) >= 1,
+        f"没有任何一行同时匹配条件规则与兜底——"
+        f"{[(r['ticket_id'], r['matched_rules']) for r in per_ticket]}",
+    )
+    for rec in both:
+        condition_ids = [rid for rid in rec["matched_rules"] if rid != "closing"]
+        first_condition = condition_ids[0]
+        check(
+            f"优先级 {rec['ticket_id']}：同时匹配条件规则与兜底时，命中的是条件规则 {rec['rule_id']}",
+            rec["rule_id"] == first_condition,
+            f"matched_rules={rec['matched_rules']}（按包内顺序的第一个条件规则应为 {first_condition}），"
+            f"实际命中 {rec['rule_id']}",
+        )
+        check(
+            f"优先级 {rec['ticket_id']}：命中的不是兜底 closing",
+            rec["rule_id"] != "closing",
+            f"兜底先于条件规则生效了：matched_rules={rec['matched_rules']}，命中 {rec['rule_id']}",
+        )
+    check(
+        "优先级方向：每条源命中的都是其 matched_rules 里包内顺序最靠前的那条",
+        all(rec["rule_id"] == rec["matched_rules"][0] for rec in per_ticket),
+        "存在命中结果不是匹配集合中第一条的记录: "
+        + str([(r["ticket_id"], r["rule_id"], r["matched_rules"])
+               for r in per_ticket if r["rule_id"] != r["matched_rules"][0]]),
+    )
+    check(
+        "优先级方向：命中 closing 的行必须只有 closing 一条匹配（兜底只能是最后手段）",
+        all(not rec["fallback_matched"] or rec["matched_rules"] == ["closing"]
+            for rec in per_ticket if rec["rule_id"] == "closing"),
+        "存在同时匹配条件规则却命中兜底的行: "
+        + str([(r["ticket_id"], r["matched_rules"]) for r in per_ticket
+               if r["rule_id"] == "closing" and len(r["matched_rules"]) > 1]),
+    )
+    check(
+        "覆盖表与命中表一致：被命中的行必被引擎判定为匹配该规则",
+        all(rec["matching"].get(rec["rule_id"]) is True for rec in per_ticket),
+        "存在命中规则与实际判定结果矛盾的记录: "
+        + str([(r["ticket_id"], r["rule_id"], r["matching"])
+               for r in per_ticket if r["matching"].get(r["rule_id"]) is not True]),
+    )
+    check(
+        "覆盖表逐行判定与命中结果无矛盾：命中行必在其 own 匹配集合内",
+        all(rec["rule_id"] in rec["matched_rules"] for rec in per_ticket),
+        "存在命中结果不在该行匹配集合内的记录: "
+        + str([(r["ticket_id"], r["rule_id"], r["matched_rules"])
+               for r in per_ticket if r["rule_id"] not in r["matched_rules"]]),
     )
 
     # ---- 6. 留痕读回复核（敏感值独立复核）
@@ -390,6 +582,30 @@ def main() -> int:
         must_contain="phone",
     )
 
+    # 7e3. T21b 硬约束：不得用 days_left 的负值硬凑 overdue。
+    #      trigger.json 声明 days_left min=0，负值被 validate_state 拒掉是正确行为；
+    #      overdue 必须靠 is_overdue=True 驱动，不靠绕过校验。
+    negative_days = copy.deepcopy(first_state)
+    negative_days["days_left"] = -3
+    expect_raises(
+        "负例：days_left 负值被 T16 拦下（min=0；overdue 只能用 is_overdue 驱动）",
+        validate_state, negative_days, trigger,
+        must_contain="days_left",
+    )
+    check(
+        "覆盖 overdue 的行没有用 days_left 负值绕过 min=0",
+        all(rec["source_days_left"] >= 0 for rec in per_ticket),
+        f"存在负 days_left 的源行: "
+        f"{[(r['ticket_id'], r['source_days_left']) for r in per_ticket if r['source_days_left'] < 0]}",
+    )
+    overdue_rows = [rec for rec in per_ticket if rec["rule_id"] == "overdue"]
+    check(
+        "命中 overdue 的行都是 is_overdue=True 驱动的（不是靠日期绕出来的）",
+        overdue_rows and all(rec["source_is_overdue"] is True for rec in overdue_rows),
+        f"overdue 命中行的 is_overdue 取值: "
+        f"{[(r['ticket_id'], r['source_is_overdue']) for r in overdue_rows]}",
+    )
+
     # 7f. 留痕写不进 → 必须抛 LedgerError 且消息含目标路径（不静默丢弃）
     bad_path = HERE / "raw" / "不存在的目录" / "turns.jsonl"
     try:
@@ -453,14 +669,44 @@ def main() -> int:
         },
         "rule_reachability_from_source": {
             "reachable": sorted(set(rule_hit_count)),
+            "covered_from_source": [rid for rid in rule_ids_in_pack if rows_covering[rid]],
             "declared_in_pack": rule_ids_in_pack,
-            "unreachable_from_source": [
-                rid for rid in rule_ids_in_pack if rid not in rule_hit_count
+            "unreachable_from_source": coverage_unreachable,
+            "unreachable_reasons": unreachable_reasons,
+            "reason_generation": "逐条列出该规则 when 的每个合取条件，以及本实验源里对应字段的实际取值集合；"
+                                 "理由来自实际判定结果，不是手写的一句话。",
+            "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改）。"
+                    "T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，"
+                    "packs/demo-brief/ 一行未改。",
+        },
+        "rule_matching_matrix": {
+            "generated_from": "adapters.state_trigger.trigger._rule_matches 对每条源行 state 的真实判定结果（非手写）",
+            "rule_order_in_pack": rule_ids_in_pack,
+            "fallback_rule": trigger.rules[-1].rule_id,
+            "per_ticket": [
+                {
+                    "ticket_id": rec["ticket_id"],
+                    "matching": rec["matching"],
+                    "matched_rules": rec["matched_rules"],
+                    "matching_count": rec["matching_count"],
+                    "hit_rule_id": rec["rule_id"],
+                    "fallback_only": rec["matched_rules"] == ["closing"],
+                    "conditional_and_fallback": rec["fallback_matched"] and rec["matching_count"] >= 2,
+                }
+                for rec in per_ticket
             ],
-            "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中；"
-                    "greeting 排在所有日期/负责人规则之前，且 days_left 声明 min=0 与 "
-                    "is_overdue 的语义冲突，导致 overdue/due_tonight/ask_assignee 无法被源数据驱动。"
-                    "这是 packs/demo-brief/trigger.json 的规则顺序问题，本实验只如实记录，不改 packs/。",
+            "rows_covering_each_rule": rows_covering,
+        },
+        "fallback_semantics": {
+            "fallback_rule": "closing",
+            "fallback_when": None,
+            "rows_only_closing_matched": [rec["ticket_id"] for rec in fallback_only],
+            "rows_conditional_plus_fallback": [rec["ticket_id"] for rec in both],
+            "asserted": "至少一行只有 closing 匹配；且至少一行同时匹配条件规则与兜底并命中条件规则"
+                        "（T17b 修的「兜底只是最后手段」语义在端到端链路上被证明）。",
+            "hit_is_first_match_of_matched_set": all(
+                rec["rule_id"] == rec["matched_rules"][0] for rec in per_ticket
+            ),
         },
         "sensitive_scan": {
             "ledger_file": str(TURNS_PATH.relative_to(REPO_ROOT)),

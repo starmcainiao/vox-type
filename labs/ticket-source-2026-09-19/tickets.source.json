@@ -4,7 +4,7 @@
     "statement": "全部为自造数据：工单号、客户标识、负责人姓名、手机号均为虚构字符串，不含任何真实用户的录音、会话或个人信息。",
     "shape": "工单系统导出的公开 demo 形态。字段形状照常见工单系统导出列名；days_left / is_overdue / overdue_days 由工单系统自己算好带在导出里（本实验不重算，直接透传，见 source_map.json#state_fields）。",
     "sensitive_columns_declared_in": "source_map.json#sensitive_fields",
-    "rules_drivable": "只驱动 demo-brief 的 greeting 与 closing 两条规则（覆盖边界见 source_map.json#rule_reachability）"
+    "rules_drivable": "T21b 已扩充：demo-brief 的 6 条规则全部至少被驱动一次。驱动条件见 README.md「规则覆盖」表；命中顺序与逐条匹配情况由 run_e2e.py 从实际运行结果生成并落盘 summary.json#rule_reachability_from_source 与 #rule_matching_matrix"
   },
   "tickets": [
     {
@@ -142,6 +142,74 @@
       "priority": "P2",
       "ticket_subject": "考勤机指纹录入失败",
       "last_remark": "修复已上线，客户验收通过"
+    },
+    {
+      "ticket_id": "WB-DEMO-0015",
+      "customer_code": "CUS-J9711",
+      "assignee_name": "郑晓芸",
+      "contact_phone": "13800138015",
+      "ticket_status": "待验收",
+      "assignee_confirmed": true,
+      "due_at": "2026-09-12T18:00:00+08:00",
+      "opened_at": "2026-09-01T09:00:00+08:00",
+      "sla_hours": 48,
+      "days_left": 0,
+      "overdue_days": 7,
+      "is_overdue": true,
+      "priority": "P1",
+      "ticket_subject": "核心账务对账差异无法归零",
+      "last_remark": "供应商未响应，已升级"
+    },
+    {
+      "ticket_id": "WB-DEMO-0016",
+      "customer_code": "CUS-K0822",
+      "assignee_name": "何佳琪",
+      "contact_phone": "13800138016",
+      "ticket_status": "待验收",
+      "assignee_confirmed": true,
+      "due_at": "2026-09-19T18:00:00+08:00",
+      "opened_at": "2026-09-14T15:30:00+08:00",
+      "sla_hours": 24,
+      "days_left": 0,
+      "overdue_days": 0,
+      "is_overdue": false,
+      "priority": "P1",
+      "ticket_subject": "邮件网关证书当天到期",
+      "last_remark": "已提交变更窗口申请"
+    },
+    {
+      "ticket_id": "WB-DEMO-0017",
+      "customer_code": "CUS-L1933",
+      "assignee_name": "",
+      "contact_phone": "13800138017",
+      "ticket_status": "待受理",
+      "assignee_confirmed": false,
+      "due_at": "2026-10-15T18:00:00+08:00",
+      "opened_at": "2026-09-15T10:15:00+08:00",
+      "sla_hours": 168,
+      "days_left": 26,
+      "overdue_days": 0,
+      "is_overdue": false,
+      "priority": "P3",
+      "ticket_subject": "数据中台报表权限批量申请",
+      "last_remark": "待分配负责人"
+    },
+    {
+      "ticket_id": "WB-DEMO-0018",
+      "customer_code": "CUS-M2044",
+      "assignee_name": "冯雨萱",
+      "contact_phone": "13800138018",
+      "ticket_status": "已关闭",
+      "assignee_confirmed": true,
+      "due_at": "2026-11-01T18:00:00+08:00",
+      "opened_at": "2026-09-10T13:40:00+08:00",
+      "sla_hours": 72,
+      "days_left": 43,
+      "overdue_days": 0,
+      "is_overdue": false,
+      "priority": "P3",
+      "ticket_subject": "客户门户首页改版需求已交付",
+      "last_remark": "已上线并关闭"
     }
   ]
 }

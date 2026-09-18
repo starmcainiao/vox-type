@@ -8,7 +8,7 @@
     "statement": "全部为自造数据：工单号、客户标识、负责人姓名、手机号均为虚构字符串，不含任何真实用户的录音、会话或个人信息。",
     "shape": "工单系统导出的公开 demo 形态。字段形状照常见工单系统导出列名；days_left / is_overdue / overdue_days 由工单系统自己算好带在导出里（本实验不重算，直接透传，见 source_map.json#state_fields）。",
     "sensitive_columns_declared_in": "source_map.json#sensitive_fields",
-    "rules_drivable": "只驱动 demo-brief 的 greeting 与 closing 两条规则（覆盖边界见 source_map.json#rule_reachability）"
+    "rules_drivable": "T21b 已扩充：demo-brief 的 6 条规则全部至少被驱动一次。驱动条件见 README.md「规则覆盖」表；命中顺序与逐条匹配情况由 run_e2e.py 从实际运行结果生成并落盘 summary.json#rule_reachability_from_source 与 #rule_matching_matrix"
   },
   "pack": {
     "dir": "packs/demo-brief",
@@ -36,37 +36,57 @@
   "as_of_injected": "2026-09-19T10:00:00+08:00",
   "ts_policy": "留痕的 ts 由本脚本注入（确定性值），不读系统时钟",
   "counts": {
-    "source_tickets": 8,
-    "states_validated": 8,
-    "turns_recorded": 8,
-    "ledger_lines_on_disk": 8
+    "source_tickets": 12,
+    "states_validated": 12,
+    "turns_recorded": 12,
+    "ledger_lines_on_disk": 12
   },
   "rule_hit_distribution": {
     "greeting": 5,
-    "due_days_left": 3
+    "due_days_left": 3,
+    "overdue": 1,
+    "due_tonight": 1,
+    "ask_assignee": 1,
+    "closing": 1
   },
   "keys_used": [
+    "already_overdue",
+    "ask_assignee",
+    "closing_brief",
     "due_days_left",
+    "due_tonight",
     "greeting_ticket"
   ],
   "key_coverage": {
     "used": [
-      "due_days_left",
-      "greeting_ticket"
-    ],
-    "unused_in_pack": [
       "already_overdue",
       "ask_assignee",
       "closing_brief",
+      "due_days_left",
       "due_tonight",
+      "greeting_ticket"
+    ],
+    "unused_in_pack": [
       "offer_help",
       "ticket_status"
     ]
   },
   "rule_reachability_from_source": {
     "reachable": [
+      "ask_assignee",
+      "closing",
       "due_days_left",
-      "greeting"
+      "due_tonight",
+      "greeting",
+      "overdue"
+    ],
+    "covered_from_source": [
+      "greeting",
+      "overdue",
+      "due_tonight",
+      "due_days_left",
+      "ask_assignee",
+      "closing"
     ],
     "declared_in_pack": [
       "greeting",
@@ -76,13 +96,320 @@
       "ask_assignee",
       "closing"
     ],
-    "unreachable_from_source": [
+    "unreachable_from_source": [],
+    "unreachable_reasons": {},
+    "reason_generation": "逐条列出该规则 when 的每个合取条件，以及本实验源里对应字段的实际取值集合；理由来自实际判定结果，不是手写的一句话。",
+    "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改）。T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，packs/demo-brief/ 一行未改。"
+  },
+  "rule_matching_matrix": {
+    "generated_from": "adapters.state_trigger.trigger._rule_matches 对每条源行 state 的真实判定结果（非手写）",
+    "rule_order_in_pack": [
+      "greeting",
       "overdue",
       "due_tonight",
+      "due_days_left",
       "ask_assignee",
       "closing"
     ],
-    "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中；greeting 排在所有日期/负责人规则之前，且 days_left 声明 min=0 与 is_overdue 的语义冲突，导致 overdue/due_tonight/ask_assignee 无法被源数据驱动。这是 packs/demo-brief/trigger.json 的规则顺序问题，本实验只如实记录，不改 packs/。"
+    "fallback_rule": "closing",
+    "per_ticket": [
+      {
+        "ticket_id": "WB-DEMO-0007",
+        "matching": {
+          "greeting": true,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": true,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "greeting",
+          "due_days_left",
+          "closing"
+        ],
+        "matching_count": 3,
+        "hit_rule_id": "greeting",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0008",
+        "matching": {
+          "greeting": true,
+          "overdue": false,
+          "due_tonight": true,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "greeting",
+          "due_tonight",
+          "closing"
+        ],
+        "matching_count": 3,
+        "hit_rule_id": "greeting",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0009",
+        "matching": {
+          "greeting": true,
+          "overdue": true,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "greeting",
+          "overdue",
+          "closing"
+        ],
+        "matching_count": 3,
+        "hit_rule_id": "greeting",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0010",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": true,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "due_days_left",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "due_days_left",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0011",
+        "matching": {
+          "greeting": true,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": true,
+          "closing": true
+        },
+        "matched_rules": [
+          "greeting",
+          "ask_assignee",
+          "closing"
+        ],
+        "matching_count": 3,
+        "hit_rule_id": "greeting",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0012",
+        "matching": {
+          "greeting": true,
+          "overdue": true,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "greeting",
+          "overdue",
+          "closing"
+        ],
+        "matching_count": 3,
+        "hit_rule_id": "greeting",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0013",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": true,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "due_days_left",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "due_days_left",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0014",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": true,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "due_days_left",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "due_days_left",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0015",
+        "matching": {
+          "greeting": false,
+          "overdue": true,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "overdue",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "overdue",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0016",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": true,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "due_tonight",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "due_tonight",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0017",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": true,
+          "closing": true
+        },
+        "matched_rules": [
+          "ask_assignee",
+          "closing"
+        ],
+        "matching_count": 2,
+        "hit_rule_id": "ask_assignee",
+        "fallback_only": false,
+        "conditional_and_fallback": true
+      },
+      {
+        "ticket_id": "WB-DEMO-0018",
+        "matching": {
+          "greeting": false,
+          "overdue": false,
+          "due_tonight": false,
+          "due_days_left": false,
+          "ask_assignee": false,
+          "closing": true
+        },
+        "matched_rules": [
+          "closing"
+        ],
+        "matching_count": 1,
+        "hit_rule_id": "closing",
+        "fallback_only": true,
+        "conditional_and_fallback": false
+      }
+    ],
+    "rows_covering_each_rule": {
+      "greeting": [
+        "WB-DEMO-0007",
+        "WB-DEMO-0008",
+        "WB-DEMO-0009",
+        "WB-DEMO-0011",
+        "WB-DEMO-0012"
+      ],
+      "overdue": [
+        "WB-DEMO-0009",
+        "WB-DEMO-0012",
+        "WB-DEMO-0015"
+      ],
+      "due_tonight": [
+        "WB-DEMO-0008",
+        "WB-DEMO-0016"
+      ],
+      "due_days_left": [
+        "WB-DEMO-0007",
+        "WB-DEMO-0010",
+        "WB-DEMO-0013",
+        "WB-DEMO-0014"
+      ],
+      "ask_assignee": [
+        "WB-DEMO-0011",
+        "WB-DEMO-0017"
+      ],
+      "closing": [
+        "WB-DEMO-0007",
+        "WB-DEMO-0008",
+        "WB-DEMO-0009",
+        "WB-DEMO-0010",
+        "WB-DEMO-0011",
+        "WB-DEMO-0012",
+        "WB-DEMO-0013",
+        "WB-DEMO-0014",
+        "WB-DEMO-0015",
+        "WB-DEMO-0016",
+        "WB-DEMO-0017",
+        "WB-DEMO-0018"
+      ]
+    }
+  },
+  "fallback_semantics": {
+    "fallback_rule": "closing",
+    "fallback_when": null,
+    "rows_only_closing_matched": [
+      "WB-DEMO-0018"
+    ],
+    "rows_conditional_plus_fallback": [
+      "WB-DEMO-0007",
+      "WB-DEMO-0008",
+      "WB-DEMO-0009",
+      "WB-DEMO-0010",
+      "WB-DEMO-0011",
+      "WB-DEMO-0012",
+      "WB-DEMO-0013",
+      "WB-DEMO-0014",
+      "WB-DEMO-0015",
+      "WB-DEMO-0016",
+      "WB-DEMO-0017"
+    ],
+    "asserted": "至少一行只有 closing 匹配；且至少一行同时匹配条件规则与兜底并命中条件规则（T17b 修的「兜底只是最后手段」语义在端到端链路上被证明）。",
+    "hit_is_first_match_of_matched_set": true
   },
   "sensitive_scan": {
     "ledger_file": "labs/ticket-source-2026-09-19/raw/turns.jsonl",
@@ -102,7 +429,11 @@
           "WB-DEMO-0011",
           "WB-DEMO-0012",
           "WB-DEMO-0013",
-          "WB-DEMO-0014"
+          "WB-DEMO-0014",
+          "WB-DEMO-0015",
+          "WB-DEMO-0016",
+          "WB-DEMO-0017",
+          "WB-DEMO-0018"
         ],
         "hit_count": 0,
         "hits": []
@@ -116,7 +447,11 @@
           "CUS-E5377",
           "CUS-F6488",
           "CUS-G7599",
-          "CUS-H8600"
+          "CUS-H8600",
+          "CUS-J9711",
+          "CUS-K0822",
+          "CUS-L1933",
+          "CUS-M2044"
         ],
         "hit_count": 0,
         "hits": []
@@ -130,19 +465,26 @@
           "13800138011",
           "13800138012",
           "13800138013",
-          "13800138014"
+          "13800138014",
+          "13800138015",
+          "13800138016",
+          "13800138017",
+          "13800138018"
         ],
         "hit_count": 0,
         "hits": []
       },
       "assignee_name": {
         "checked_values": [
+          "何佳琪",
+          "冯雨萱",
           "吴嘉欣",
           "周文博",
           "孙丽华",
           "李慧敏",
           "王志强",
           "赵建国",
+          "郑晓芸",
           "陈雨桐"
         ],
         "hit_count": 0,
@@ -188,6 +530,21 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0007"
       },
+      "matching": {
+        "greeting": true,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": true,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "greeting",
+        "due_days_left",
+        "closing"
+      ],
+      "matching_count": 3,
+      "fallback_matched": true,
       "rule_id": "greeting",
       "keys": [
         "greeting_ticket"
@@ -213,6 +570,21 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0008"
       },
+      "matching": {
+        "greeting": true,
+        "overdue": false,
+        "due_tonight": true,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "greeting",
+        "due_tonight",
+        "closing"
+      ],
+      "matching_count": 3,
+      "fallback_matched": true,
       "rule_id": "greeting",
       "keys": [
         "greeting_ticket"
@@ -238,6 +610,21 @@
         "is_overdue": true,
         "ticket_id": "WB-DEMO-0009"
       },
+      "matching": {
+        "greeting": true,
+        "overdue": true,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "greeting",
+        "overdue",
+        "closing"
+      ],
+      "matching_count": 3,
+      "fallback_matched": true,
       "rule_id": "greeting",
       "keys": [
         "greeting_ticket"
@@ -263,6 +650,20 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0010"
       },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": true,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "due_days_left",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
       "rule_id": "due_days_left",
       "keys": [
         "due_days_left"
@@ -288,6 +689,21 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0011"
       },
+      "matching": {
+        "greeting": true,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": true,
+        "closing": true
+      },
+      "matched_rules": [
+        "greeting",
+        "ask_assignee",
+        "closing"
+      ],
+      "matching_count": 3,
+      "fallback_matched": true,
       "rule_id": "greeting",
       "keys": [
         "greeting_ticket"
@@ -313,6 +729,21 @@
         "is_overdue": true,
         "ticket_id": "WB-DEMO-0012"
       },
+      "matching": {
+        "greeting": true,
+        "overdue": true,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "greeting",
+        "overdue",
+        "closing"
+      ],
+      "matching_count": 3,
+      "fallback_matched": true,
       "rule_id": "greeting",
       "keys": [
         "greeting_ticket"
@@ -338,6 +769,20 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0013"
       },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": true,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "due_days_left",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
       "rule_id": "due_days_left",
       "keys": [
         "due_days_left"
@@ -363,11 +808,180 @@
         "is_overdue": false,
         "ticket_id": "WB-DEMO-0014"
       },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": true,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "due_days_left",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
       "rule_id": "due_days_left",
       "keys": [
         "due_days_left"
       ],
       "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0015",
+      "customer_code": "CUS-J9711",
+      "source_status": "待验收",
+      "source_assignee_confirmed": true,
+      "source_days_left": 0,
+      "source_overdue_days": 7,
+      "source_is_overdue": true,
+      "state": {
+        "ticket_status": "待验收",
+        "assignee_confirmed": true,
+        "days_left": 0,
+        "overdue_days": 7,
+        "is_overdue": true,
+        "ticket_id": "WB-DEMO-0015"
+      },
+      "matching": {
+        "greeting": false,
+        "overdue": true,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "overdue",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
+      "rule_id": "overdue",
+      "keys": [
+        "already_overdue"
+      ],
+      "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0016",
+      "customer_code": "CUS-K0822",
+      "source_status": "待验收",
+      "source_assignee_confirmed": true,
+      "source_days_left": 0,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "待验收",
+        "assignee_confirmed": true,
+        "days_left": 0,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0016"
+      },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": true,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "due_tonight",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
+      "rule_id": "due_tonight",
+      "keys": [
+        "due_tonight"
+      ],
+      "chars": 18,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0017",
+      "customer_code": "CUS-L1933",
+      "source_status": "待受理",
+      "source_assignee_confirmed": false,
+      "source_days_left": 26,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "待受理",
+        "assignee_confirmed": false,
+        "days_left": 26,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0017"
+      },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": true,
+        "closing": true
+      },
+      "matched_rules": [
+        "ask_assignee",
+        "closing"
+      ],
+      "matching_count": 2,
+      "fallback_matched": true,
+      "rule_id": "ask_assignee",
+      "keys": [
+        "ask_assignee"
+      ],
+      "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0018",
+      "customer_code": "CUS-M2044",
+      "source_status": "已关闭",
+      "source_assignee_confirmed": true,
+      "source_days_left": 43,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "已关闭",
+        "assignee_confirmed": true,
+        "days_left": 43,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0018"
+      },
+      "matching": {
+        "greeting": false,
+        "overdue": false,
+        "due_tonight": false,
+        "due_days_left": false,
+        "ask_assignee": false,
+        "closing": true
+      },
+      "matched_rules": [
+        "closing"
+      ],
+      "matching_count": 1,
+      "fallback_matched": true,
+      "rule_id": "closing",
+      "keys": [
+        "closing_brief"
+      ],
+      "chars": 12,
       "budget": 60,
       "sla_breached": true,
       "as_of_iso": "2026-09-19T10:00:00+08:00"
@@ -391,11 +1005,53 @@
       "命中规则 ∈ 包内真实 rule_id（ticket-007）",
       "plan key ∈ phrases.json（ticket-008）",
       "命中规则 ∈ 包内真实 rule_id（ticket-008）",
+      "plan key ∈ phrases.json（ticket-009）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-009）",
+      "plan key ∈ phrases.json（ticket-010）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-010）",
+      "plan key ∈ phrases.json（ticket-011）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-011）",
+      "plan key ∈ phrases.json（ticket-012）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-012）",
       "留痕行数 == 处理条数",
       "所有 plan key 都 ∈ phrases.json",
       "plan 字数未超预算",
       "至少两条不同的 rule 被命中（不是只打到兜底）",
       "至少一条非 greeting 规则被命中（演示价值：不是全部兜到 greeting）",
+      "6 条规则全部至少被源数据驱动一次（覆盖表来自实际运行判定）",
+      "6 条规则全部被真实命中（不只是条件匹配，还要按 rules 顺序被引擎选中）",
+      "规则覆盖数 == 包内规则总数",
+      "兜底语义被演示：至少一行只有 closing 匹配（前 5 条条件规则全不匹配）",
+      "兜底行 WB-DEMO-0018：除 closing 外的 5 条条件规则全不匹配",
+      "兜底行 WB-DEMO-0018：引擎实际命中的是 closing（最后手段）",
+      "兜底规则 when=null 且排在 rules 最后（T17b 的语义前提）",
+      "优先级被演示：至少一行同时匹配条件规则与兜底",
+      "优先级 WB-DEMO-0007：同时匹配条件规则与兜底时，命中的是条件规则 greeting",
+      "优先级 WB-DEMO-0007：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0008：同时匹配条件规则与兜底时，命中的是条件规则 greeting",
+      "优先级 WB-DEMO-0008：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0009：同时匹配条件规则与兜底时，命中的是条件规则 greeting",
+      "优先级 WB-DEMO-0009：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0010：同时匹配条件规则与兜底时，命中的是条件规则 due_days_left",
+      "优先级 WB-DEMO-0010：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0011：同时匹配条件规则与兜底时，命中的是条件规则 greeting",
+      "优先级 WB-DEMO-0011：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0012：同时匹配条件规则与兜底时，命中的是条件规则 greeting",
+      "优先级 WB-DEMO-0012：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0013：同时匹配条件规则与兜底时，命中的是条件规则 due_days_left",
+      "优先级 WB-DEMO-0013：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0014：同时匹配条件规则与兜底时，命中的是条件规则 due_days_left",
+      "优先级 WB-DEMO-0014：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0015：同时匹配条件规则与兜底时，命中的是条件规则 overdue",
+      "优先级 WB-DEMO-0015：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0016：同时匹配条件规则与兜底时，命中的是条件规则 due_tonight",
+      "优先级 WB-DEMO-0016：命中的不是兜底 closing",
+      "优先级 WB-DEMO-0017：同时匹配条件规则与兜底时，命中的是条件规则 ask_assignee",
+      "优先级 WB-DEMO-0017：命中的不是兜底 closing",
+      "优先级方向：每条源命中的都是其 matched_rules 里包内顺序最靠前的那条",
+      "优先级方向：命中 closing 的行必须只有 closing 一条匹配（兜底只能是最后手段）",
+      "覆盖表与命中表一致：被命中的行必被引擎判定为匹配该规则",
+      "覆盖表逐行判定与命中结果无矛盾：命中行必在其 own 匹配集合内",
       "读回的留痕条数 == 处理条数",
       "留痕的 state 块只含结构化层字段名",
       "留痕文件里 grep ticket_id → 0 命中",
@@ -412,11 +1068,14 @@
       "注入不同的 as_of 不改变 state 内容（state 里不含任何日期派生字段）",
       "负例：未声明的敏感字段进 state 会被 T16 拦下（StateError，消息含 'contact_phone'）",
       "负例：敏感字段被声明为结构化层会被 T16 的 layer 检查拦下（StateError，消息含 'phone'）",
+      "负例：days_left 负值被 T16 拦下（min=0；overdue 只能用 is_overdue 驱动）（StateError，消息含 'days_left'）",
+      "覆盖 overdue 的行没有用 days_left 负值绕过 min=0",
+      "命中 overdue 的行都是 is_overdue=True 驱动的（不是靠日期绕出来的）",
       "负例：留痕父目录不存在抛 LedgerError 且消息含目标路径",
       "可复现：同一份源 + 同一 as_of 跑两遍，state 逐字段相同"
     ],
     "failed": [],
-    "passed_count": 39,
+    "passed_count": 84,
     "failed_count": 0
   }
 }

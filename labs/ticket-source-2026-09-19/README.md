@@ -1,4 +1,4 @@
-# labs/ticket-source-2026-09-19 — 状态来源 + 前置包端到端演示（T21）
+# labs/ticket-source-2026-09-19 — 状态来源 + 前置包端到端演示（T21 / T21b）
 
 **这是 `labs/` 实验区的产物：不进任何层的契约。**
 
@@ -25,10 +25,10 @@
 
 | 文件 | 是什么 |
 |---|---|
-| `tickets.source.json` | 产物 1：工单系统导出的公开 demo 形态（8 条自造工单） |
-| `source_map.json` | 产物 2：**显式映射表** —— 源字段 → state 字段、派生字段的计算规则、敏感字段声明。**可 Review、可 diff** |
+| `tickets.source.json` | 产物 1：工单系统导出的公开 demo 形态（T21b 后 **12 条**自造工单，见下「规则覆盖」表） |
+| `source_map.json` | 产物 2：**显式映射表** —— 源字段 → state 字段、派生字段的计算规则、敏感字段声明。**可 Review、可 diff。T21b 未改一行** |
 | `to_state.py` | 产物 3：读源 + 套映射 → state 快照；**调用 T16 的 `validate_state`** |
-| `run_e2e.py` | 产物 4：端到端 + 自断言（正例 6 条 + 负例 6 类 + 可复现性）；失败即非零退出 |
+| `run_e2e.py` | 产物 4：端到端 + 自断言（正例 + 覆盖表 + 兜底/优先级语义 + 负例 7 类 + 可复现性）；失败即非零退出 |
 | `raw/turns.jsonl` | 产物 5a：留痕，一行一条（`record_turn` 写的） |
 | `summary.json` | 产物 5b：口径、命中分布、敏感值复核、可复现性结果 |
 | `README.md` | 产物 5c：本文件 |
@@ -63,27 +63,59 @@ git diff --stat -- core rules compiler assets runtime eval cli adapters packs
   结果写进 `summary.json#sensitive_scan.hits`（四项必须全 0）。
 - **预算**：单轮 60 字（`trigger.json#budget_chars`），`build_plan` 内部强制校验。
 
-## 这条线现在走到哪、下一步缺什么
+## 这条线现在走到哪
 
 **已经通了**：源数据 → state（过 T16 校验）→ plan（过 key/预算复核）→ 留痕（只落结构化层）。
-断言 38 条全过，`summary.json` 两次运行逐字段相同。
+断言 **84 条全过**，`summary.json` 两次运行逐字段相同。
 
-**本实验只打到了 6 条规则里的 2 条**（`greeting` 5 次、`due_days_left` 3 次）。这是
-`packs/demo-brief/trigger.json` 的规则顺序问题，不是本实验的映射问题，且本实验不改 `packs/`：
+### 规则覆盖：6 条全驱动（T21b）
 
-1. `greeting` 的 `when` 是 `{ticket_status: "处理中"}`，在 `rules` 里排在**所有**日期/负责人规则之前；
-   `build_plan` 按 `rules` 顺序取第一条命中（`trigger.py` 的既有口径），所以任何处理中的工单先命中 `greeting`。
-2. `state_fields` 声明 `days_left` 的 `min: 0`，而 `is_overdue` 的语义是「到期日之前」= `days_left < 0`，
-   两者在 T16 的校验范围内不可同时满足 → `is_overdue` 恒为 `false` → `overdue` / `due_tonight` 永远打不到。
-3. `ask_assignee`（`when: {assignee_confirmed: false}`）被 `greeting` 遮住。
+T21 只驱动了 6 条规则里的 2 条，T21 的执行方已如实报告根因是**行覆盖不足**。T21b 只加 fixture 行，
+把 6 条全部驱动起来 —— **`packs/demo-brief/` 一行未改，`source_map.json` 一行未改**。
 
-`summary.json#rule_reachability_from_source` 把这份覆盖边界记录在案 —— 本实验记录的是**覆盖边界**，
-不是假装六条规则都跑到了。
+| 规则（包内顺序） | `when` | 驱动它的行 | 匹配 | 命中 |
+|---|---|---|---|---|
+| 1 `greeting` | `{ticket_status: "处理中"}` | 0007/0008/0009/0011/0012 | 5 | 5 |
+| 2 `overdue` | `{is_overdue: true}` | **0015**（status=待验收）+ 0009/0012 | 3 | 1 |
+| 3 `due_tonight` | `{is_overdue: false, days_left: {lte: 0}}` | **0016**（status=待验收，days_left=0）+ 0008 | 2 | 1 |
+| 4 `due_days_left` | `{is_overdue: false, days_left: {gt: 0, lte: 14}}` | 0007/0010/0013/0014 | 4 | 3 |
+| 5 `ask_assignee` | `{assignee_confirmed: false}` | **0017**（status=待受理，days_left=26）+ 0011 | 2 | 1 |
+| 6 `closing` | `null`（兜底） | **0018**（status=已关闭，days_left=43）+ 其余全部 | 12 | 1 |
+
+**匹配 ≠ 命中**。`closing` 是 `when: null`，**每一行都匹配**（12 行）；但按 `rules` 顺序取第一条，
+只有前面的条件规则全不匹配时它才会被命中（仅 0018）。这正是 T17b 修的「兜底只是最后手段」语义，
+本实验在端到端链路上证明它生效：
+
+- **兜底语义**：0018 是**唯一**只有 `closing` 匹配的行（前 5 条条件规则全不匹配）→ 命中 `closing`。
+- **优先级**：其余 11 行**同时**匹配条件规则与兜底 `closing`，断言命中的是**包内顺序最靠前的条件规则**。
+  其中 0009（`处理中` + `is_overdue=true`，同时匹配 `greeting` 与 `overdue`）命中 `greeting` ——
+  这就是 T21 报告里「`overdue` 被 `greeting` 吃掉」的那条；T21b 的做法不是改包，而是另加一行
+  `ticket_status="待验收"` 的 0015 绕开 `greeting`，让 `overdue` 真正被驱动。
+
+四条条件算子都被真实驱动：`==`（`ticket_status`）、`bool` 判定（`is_overdue` / `assignee_confirmed`）、
+`lte`（`due_tonight`）、`gt` + `lte` 合取（`due_days_left`）。
+
+**覆盖表是跑出来的，不是写出来的**：脚本用引擎的 `_rule_matches` 对每条源行的 state 逐条判定，
+生成 `summary.json#rule_matching_matrix`（含逐行匹配布尔矩阵）与 `#fallback_semantics`。
+断言里有一条方向性检查：`命中结果 == 该行匹配集合里包内顺序最靠前的那条`。
+
+**`days_left` 的 `min: 0` 没有被绕过**。`overdue` 靠 `is_overdue: true` 驱动，不靠把 `days_left` 塞负值。
+脚本有一条负例断言证明负值被 T16 的 `validate_state` 拒掉（越界 `min=0`，这是正确行为），
+并额外断言所有源行 `days_left >= 0`、命中 `overdue` 的行 `is_overdue` 都是 `true`。
+
+**反空转（实测变红，rc=3）**：
+
+| 改动 | 结果 |
+|---|---|
+| 改坏一条映射（`source_map.json` 把 `ticket_status` 指到不存在的源列） | `SourceMapError`，rc 3 |
+| 把某条规则的条件改到不可能满足（全部 `is_overdue=false`） | 3 条断言失败，rc 3 |
+| 改坏一行源字段（0015 的 `is_overdue` 翻成 `false`） | 2 条断言失败，rc 3 |
+| 全部 `assignee_confirmed=true` | rc 3，且 `unreachable_from_source` 给出带具体取值集合的理由 |
 
 **下一步缺的（都不在本卡白名单内）**：
 
-1. `packs/demo-brief/trigger.json` 的规则顺序 / `days_left` 的 `min` —— 要让 `overdue`、
-   `due_tonight`、`ask_assignee` 可被源数据驱动，得动这里（属 `packs/`）。
-2. **正式的工单适配器** —— 真实业务系统不在公开仓；等形态稳定后再进 `adapters/`，
+1. **正式的工单适配器** —— 真实业务系统不在公开仓；等形态稳定后再进 `adapters/`，
    并先解决 `adapters/AGENTS.md §⑧` 关于「非引擎同类模块」的约束。
-3. **状态层 → 资产层的规范**（T22）—— 「什么状态该说什么话」目前靠 `trigger.json` 手工写。
+2. **状态层 → 资产层的规范**（T22）—— 「什么状态该说什么话」目前靠 `trigger.json` 手工写。
+3. **`greeting` 的优先级值得业务侧复核** —— 它排在所有日期/负责人规则之前，一条已逾期且仍标
+   「处理中」的工单只会听到问候语。这是 `packs/` 的话术设计问题（属 `packs/`），本实验只如实记录。
