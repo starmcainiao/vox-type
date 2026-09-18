@@ -178,18 +178,27 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 它只能靠：① 自建流程（`packs/repair` 就是这个形态，T11 实测 key 档 100% 命中）；
 ② 或未来的真实业务数据。**不要把它写成已验证的事实。**
 
-## 七、方言这块的实况（诚实记录：本批没拿到可用音频）
+## 七、方言这块的实况（**音频已到手，只差一个能读 parquet 的解释器**）
+
+> **状态更正（2026-09-18 深夜）**：早先有一次后台下载**成功**取到了 Wu-Bench 的 `asr.parquet`
+> （另有两次因 socket read 超时失败——同一份文件、网络波动，成败都有）。
+> 也就是说**下载不再是阻塞项**，剩下的唯一阻塞是**读**它（见下）。
+> 这是本目录里唯一一处"文档先说未下载、后被现实推翻"的地方，按纪律更正而不是把文件删掉重来。
 
 | 候选 | 结果 |
 |---|---|
+| `ASLP-lab/WenetSpeech-Wu-Bench` | ✅ **可用，且文件已在盘上**。许可 apache-2.0（正文无 NC 条款，已全文核过）；`understanding/asr.parquet` **1,030,709,745 字节已下载，sha256 与平台 LFS oid 逐字相符**（`verified_against_platform=true`）。内容：吴语 ASR 9.75 小时（上海话/苏州话/普通话混说），**按 CER 评测**——正是方言链路需要的口径。**唯一阻塞：parquet 需 pyarrow，而本机主解释器是 Python 3.14、PyPI 与清华镜像都没有 3.14 wheel**（`from versions: none`） |
 | `tomsawyerhu/cantonese-dialect` | ✅ 许可过，**但仓内只有转写清单、没有音频**（CSV 指向仓外的 Common Voice wav 路径，该目录不存在）→ 只能当「粤语说法文本」用，不能做 ASR 评测 |
 | `MagicDataTech` / `MagicHub` 方言 TTS | ❌ 禁商用（见 §三） |
 | 粤语相关 20 个数据集 | ❌ 全无许可声明 |
-| `ASLP-lab/WenetSpeech-Wu-Bench` | ✅ 许可干净（apache-2.0，正文无 NC 条款，已全文核过），**但本批未下载**：ASR 主体在 `understanding/asr.parquet`（**1030.7 MB**），且 parquet 需 pyarrow——**本机主解释器是 Python 3.14，pyarrow 在 PyPI 与清华镜像都"from versions: none"（无 3.14 wheel）** |
+| `WenetSpeech-Yue` / `-Chuan` | ❌ CC-BY-NC 禁商用，且 TB 级 |
 
-**批 3（方言链路）的两个前置条件**（二选一，需在卡里写明）：
-1. 用另一个解释器读 parquet（`/Volumes/macos/blackiron-agent/organs/voice/.venv` 是 3.13.3，或 Miniforge 3.12）→ 再下 1.03 GB 的 `asr.parquet`；
-2. 换一个 **wav + txt 纯文件**的许可干净方言集（本批搜到的都不满足，需再找）。
+**批 3（方言链路）的前置条件现在是**：
+1. **能读 parquet 的解释器**（`/Volumes/macos/blackiron-agent/organs/voice/.venv` 是 3.13.3，或 Miniforge 3.12）——**这是唯一的阻塞**；
+2. （可选）补一个 **wav + txt 纯文件**的许可干净方言集，让链路不依赖 parquet 读取能力——本批搜到的不满足，需再找。
+
+**另有一条工具纪律**：Wu-Bench 在 `sources.json` 里是 `optional: true`，**缺省跑不会碰它**
+（1 GB 不该在例行跑里被拉）。要更新它用 `python3 fetch.py --only ASLP-lab/WenetSpeech-Wu-Bench`。
 
 ## 八、本目录文件清单
 
@@ -219,6 +228,13 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 
 > 这两条都是**fail-closed 的方向**：坑 1 让"不该下的被下了"，坑 2 让"失败原因读不出来"。
 > 前者靠显式闸门 + 响亮声明解决，后者靠流式 + 残留 `.part` 可识别解决。
+
+**坑 3：台账写入不是原子的，并发跑会互相覆盖。** 实测：一个早先启动、后被判定为"陈旧"的后台下载
+在我提交 5 条台账之后才真正结束，又把台账重写成了 6 条（它真的把 1 GB 的 Wu-Bench 下成功了，
+而后来那次同命令因 socket 超时失败——同一份文件、网络波动，成败都有）。
+**影响**：台账的 read-modify-write 没有加锁，两个实例并发跑会丢条目。
+**当前处置**：单用户实验工具，记录为已知限制；**T12 提升为工具时应改为原子写（临时文件 + rename）
+并在检测到并发时拒绝启动**，不要让两个实例同时写同一份台账。
 
 ## 九、边界与未做
 

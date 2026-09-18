@@ -60,7 +60,7 @@
       "expect_license": ["apache-2.0"],
       "optional": true,
       "why": "吴语 ASR benchmark（上海话/苏州话/普通话混说 9.75 小时，按 CER 评测）——方言链路的正解来源。许可干净：front-matter 与正文均无禁商用条款（已全文核过）。",
-      "notes_override": "**本批不下载**：asr.parquet 单文件 1030.7 MB，且 parquet 需 pyarrow 才能读（本机主解释器未装、pypi 吞吐实测极低）。留作批 3（方言链路）的可选项，一行命令可拉。**不要**下整库——另有 ast/age/emotion/gender 四个 parquet 共 1.35 GB 与本项目无关。"
+      "notes_override": "**optional：缺省跑不碰它**（1 GB 不该在例行跑里被拉；要更新用 --only）。asr.parquet 单文件 1030.7 MB，parquet 需 pyarrow 才能读（本机主解释器是 Python 3.14，PyPI 与清华镜像都无 3.14 wheel）→ 读它要换解释器。**文件已实际下载并校验通过**（sha256 与平台 LFS oid 逐字相符）。**不要**下整库——另有 ast/age/emotion/gender 四个 parquet 共 1.35 GB 与本项目无关。"
     }
   ],
   "rejected_sources": [
