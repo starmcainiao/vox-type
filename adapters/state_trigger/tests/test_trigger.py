@@ -1,10 +1,13 @@
 """
 adapters.state_trigger.tests.test_trigger — T17 触发器（state → plan）测试
 
-覆盖 T17 卡的验收标准：
+覆盖 T17 卡的验收标准（T17b 修订：`when: null` = 显式兜底，必须命中）：
   2  正例：demo 包合法 state → build_plan 产出 plan，每个 key ∈ phrases.json
-  3  负例（无条件命中）：没有任何规则匹配的 state → 抛 TriggerError，
-                         不返回空 plan、不落任何留痕
+  2  正例（显式兜底生效）：demo 包条件规则全不匹配 → 命中兜底规则 closing，
+                          断言 rule_id == "closing"（不只断「没抛错」）
+  3  正例（条件规则优先）：同时匹配条件规则与兜底规则 → 命中条件规则
+  3  负例（无兜底仍 fail-closed）：不含 when: null 的 trigger + 无匹配 state
+     → 抛 TriggerError（消息含该 trigger_id），不产出 plan、不落留痕
   4  负例（超预算）：plan 撑到超过 turn_budget_chars → 抛 BudgetError，
                      消息含实际字数与预算
   7  确定性：同一 state + 同一 Trigger → plan 逐字段相同；
@@ -16,6 +19,8 @@ adapters.state_trigger.tests.test_trigger — T17 触发器（state → plan）�
   record_turn），不在测试里复制/重写被验逻辑。为构造负例，这里只有一份
   trigger.json 的**原始夹具**（JSON 形状的数据，不是校验实现），
   以及一份话术变体表夹具（数据，不是校验）——负例 = 改夹具 → 调产品 API → 断言异常。
+「无兜底 trigger」由**本测试自己**把兜底规则从夹具里删掉（测试内自建 fixture，
+不改 packs/demo-brief/），再走产品 API 的 load_trigger 装载。
 """
 
 import copy
@@ -57,9 +62,13 @@ def _state_processing(turn_id: str = "turn-1") -> dict:
     }
 
 
-def _state_no_match() -> dict:
-    """一份**没有任何规则匹配**的 state（days_left > 14 且未逾期、负责人已确认、
-    状态不是「处理中」）——demo 包六条规则（含一条兜底规则）都不会命中。"""
+def _state_no_conditional_match() -> dict:
+    """一份让 demo 包**五条条件规则全不匹配**的合法 state：
+    ticket_status 不是「处理中」（greeting 不中）、is_overdue 为 False（overdue /
+    due_tonight 不中）、days_left > 14（due_days_left 不中）、
+    assignee_confirmed 为 True（ask_assignee 不中）。
+    按 T17b 的语义，此时应命中 demo 包第 6 条显式兜底规则 `closing`（when: null）。
+    """
     return {
         "ticket_id": "T-SECRET-0000",
         "ticket_status": "待受理",
@@ -175,56 +184,117 @@ class TestBuildPlanPositive(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 验收 3：负例——无条件命中 → fail-closed
+# 验收 2：正例——显式兜底规则（when: null）必须生效
 # ---------------------------------------------------------------------------
-class TestNoMatchFailsClosed(unittest.TestCase):
+class TestExplicitFallbackHits(unittest.TestCase):
 
-    def test_no_rule_matches_raises_trigger_error(self):
+    def _demo_trigger(self):
         trigger = load_trigger(_DEMO_PACK)
-        state = _state_no_match()
-        with self.assertRaises(TriggerError) as ctx:
-            build_plan(trigger, state, turn_id="turn-1")
-        message = str(ctx.exception)
-        self.assertIn("没有任何规则命中", message)
-        self.assertIn("fail-closed", message)
+        fallbacks = [r for r in trigger.rules if r.when is None]
+        self.assertEqual(len(fallbacks), 1, "demo 包应只有一条兜底规则（T16 已校验）")
+        self.assertEqual(fallbacks[0].rule_id, "closing")
+        return trigger
 
-    def test_no_rule_matches_returns_no_plan(self):
-        """不得返回空 plan：抛错后调用方拿不到任何 plan 对象。"""
-        trigger = load_trigger(_DEMO_PACK)
-        state = _state_no_match()
-        produced = None
-        try:
-            produced = build_plan(trigger, state, turn_id="turn-1")
-        except TriggerError:
-            pass
-        self.assertIsNone(produced, "无条件命中必须抛错，不得返回空 plan")
+    def test_conditional_miss_hits_fallback_rule(self):
+        """验收 2：条件规则全不匹配 → build_plan 返回，且 rule_id == "closing"。"""
+        trigger = self._demo_trigger()
+        result = build_plan(trigger, _state_no_conditional_match(), turn_id="turn-1")
 
-    def test_no_rule_matches_writes_no_ledger(self):
-        """不得落任何留痕：抛错路径不得产生文件。"""
-        trigger = load_trigger(_DEMO_PACK)
-        state = _state_no_match()
+        self.assertEqual(result.rule_id, "closing",
+                         "条件规则全不匹配时应命中显式兜底规则 closing")
+
+    def test_fallback_plan_is_usable(self):
+        """兜底产物是一份完整可用的 plan：单元非空、不带自由文本、字数在预算内。"""
+        trigger = self._demo_trigger()
+        state = _state_no_conditional_match()
+        result = build_plan(trigger, state, turn_id="turn-1")
+
+        self.assertTrue(len(result.plan) >= 1, "兜底 plan 至少要有一个单元")
+        for unit in result.plan:
+            self.assertIsNone(unit.text, "兜底 plan 单元同样不得携带自由文本")
+            self.assertEqual(unit.action, "SAY")
+        self.assertIn(result.plan[0].key, trigger.phrase_keys)
+        self.assertLessEqual(result.chars, result.budget)
+        self.assertEqual(result.plan_id, "demo-brief.ticket-reminder:turn-1")
+
+    def test_fallback_hit_is_deterministic(self):
+        """兜底命中同样是纯函数：同一 state + 同一 turn_id → plan 逐字段相同。"""
+        trigger = self._demo_trigger()
+        state = _state_no_conditional_match()
+        first = build_plan(trigger, state, turn_id="turn-1")
+        second = build_plan(trigger, state, turn_id="turn-1")
+        self.assertEqual(_plan_signature(first), _plan_signature(second))
+
+    def test_fallback_hit_can_be_ledgered(self):
+        """兜底产物可直接进留痕（rule_id 落 "closing"，且只留结构化层字段）。"""
+        trigger = self._demo_trigger()
+        state = _state_no_conditional_match()
+        result = build_plan(trigger, state, turn_id="turn-1")
+
         with tempfile.TemporaryDirectory() as tmp:
             ledger_path = Path(tmp) / "turns.jsonl"
-            try:
-                plan = build_plan(trigger, state, turn_id="turn-1")
-            except TriggerError:
-                plan = None
-            self.assertIsNone(plan)
-            self.assertFalse(ledger_path.exists(), "抛错路径不得创建留痕文件")
-            self.assertEqual(len(list(Path(tmp).iterdir())), 0,
-                             "抛错路径不得在目录里留任何文件")
+            record_turn(trigger, state, result,
+                        turn_id="turn-1", plan_id=result.plan_id,
+                        ts="2026-09-18T00:00:00Z", path=ledger_path)
+            record = json.loads(ledger_path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(record["rule_id"], "closing")
+            self.assertNotIn("ticket_id", record["state"],
+                             "兜底留痕同样只取结构化层，敏感层不落盘")
 
-    def test_unconditional_fallback_rule_is_not_a_match(self):
-        """兜底规则（when = null）不算命中——否则 fail-closed 形同虚设。"""
+
+# ---------------------------------------------------------------------------
+# 验收 3：正例——条件规则优先于兜底（兜底只能最后生效）
+# ---------------------------------------------------------------------------
+class TestConditionalWinsOverFallback(unittest.TestCase):
+
+    def test_conditional_rule_wins_when_both_apply(self):
+        """同时匹配条件规则与兜底规则的 state → 命中条件规则（不是兜底）。
+
+        demo 包的 rules 顺序里兜底 closing 在最后，因此五条条件规则中任何一条
+        命中时都不应被兜底顶掉。
+        """
         trigger = load_trigger(_DEMO_PACK)
-        closing = [r for r in trigger.rules if r.when is None]
-        self.assertEqual(len(closing), 1, "demo 包应只有一条兜底规则")
-        # 同一份「无命中」state 仍然抛错，说明兜底规则没有被当成命中
-        with self.assertRaises(TriggerError):
-            build_plan(trigger, _state_no_match(), turn_id="turn-1")
+        self.assertEqual(trigger.rules[-1].rule_id, "closing",
+                         "前提：demo 包的兜底规则排在最后")
 
-    def test_multi_match_picks_first_rule_in_order(self):
-        """多条规则都匹配时取 trigger.json 里的第一条（顺序是既有契约，保证确定性）。"""
+        state = _state_processing()   # ticket_status = 处理中 → 命中 greeting
+        result = build_plan(trigger, state, turn_id="turn-1")
+        self.assertEqual(result.rule_id, "greeting",
+                         "条件规则命中时不得被兜底规则顶掉")
+
+    def test_every_conditional_rule_beats_fallback(self):
+        """逐条构造只命中单一条件规则的 state → 全部命中条件规则（一条也不漏）。
+
+        覆盖 greeting / overdue / due_tonight / due_days_left / ask_assignee，
+        逐条与兜底竞争；任何一条被兜底顶掉都会在这里失败。
+        """
+        trigger = load_trigger(_DEMO_PACK)
+        cases = [
+            ("greeting",
+             {"ticket_status": "处理中", "is_overdue": False,
+              "days_left": 100, "assignee_confirmed": True}),
+            ("overdue",
+             {"ticket_status": "已关闭", "is_overdue": True,
+              "days_left": 100, "assignee_confirmed": True}),
+            ("due_tonight",
+             {"ticket_status": "待验收", "is_overdue": False,
+              "days_left": 0, "assignee_confirmed": True}),
+            ("due_days_left",
+             {"ticket_status": "待验收", "is_overdue": False,
+              "days_left": 7, "assignee_confirmed": True}),
+            ("ask_assignee",
+             {"ticket_status": "待受理", "is_overdue": False,
+              "days_left": 100, "assignee_confirmed": False}),
+        ]
+        for expected_id, override in cases:
+            state = _state_no_conditional_match()
+            state.update(override)
+            result = build_plan(trigger, state, turn_id="turn-1")
+            self.assertEqual(result.rule_id, expected_id,
+                             f"{expected_id} 单独命中时不得被兜底规则顶掉")
+
+    def test_multi_conditional_match_picks_first_in_order(self):
+        """多条**条件**规则都匹配时取 trigger.json 里的第一条（顺序是既有契约）。"""
         trigger = load_trigger(_DEMO_PACK)
         state = {
             "ticket_id": "T-1",
@@ -240,12 +310,87 @@ class TestNoMatchFailsClosed(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# 验收 3 / 4：负例——无兜底规则 + 无匹配 → 仍必须 fail-closed
+# ---------------------------------------------------------------------------
+class TestNoFallbackFailsClosed(unittest.TestCase):
+
+    def _no_fallback_trigger(self):
+        """一份**不含 when: null** 的 trigger：把兜底规则从测试夹具里删掉。
+
+        fixture 由本测试自建（不改 packs/demo-brief/），装载与校验仍走产品 API
+        （load_trigger），所以「无兜底」这个前置条件是真实生效的，不是假造的。
+        """
+        doc = _trigger_doc()
+        self.assertNotIn("closing", [r["rule_id"] for r in doc["rules"]])
+        self.assertTrue(all(r["when"] is not None for r in doc["rules"]),
+                        "负例 fixture 里不得有任何 when: null 的兜底规则")
+        trigger = _materialize(doc)
+        self.assertTrue(all(r.when is not None for r in trigger.rules))
+        return trigger
+
+    def test_no_fallback_no_match_raises_trigger_error(self):
+        """无兜底 + 无匹配 → 抛 TriggerError，消息含该 trigger_id。"""
+        trigger = self._no_fallback_trigger()
+        state = _state_no_conditional_match()
+        with self.assertRaises(TriggerError) as ctx:
+            build_plan(trigger, state, turn_id="turn-1")
+        message = str(ctx.exception)
+        self.assertIn("没有任何规则命中", message)
+        self.assertIn("fail-closed", message)
+        self.assertIn(trigger.trigger_id, message,
+                      "消息必须含该 trigger_id，便于定位是哪个包缺覆盖")
+
+    def test_no_fallback_no_match_produces_no_plan_and_no_ledger(self):
+        """fail-closed 路径：既不产出 plan，也不落任何留痕。"""
+        trigger = self._no_fallback_trigger()
+        state = _state_no_conditional_match()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "turns.jsonl"
+            produced = None
+            try:
+                produced = build_plan(trigger, state, turn_id="turn-1")
+            except TriggerError:
+                pass
+            self.assertIsNone(produced, "无兜底 + 无匹配不得产出 plan（含空 plan）")
+            self.assertFalse(ledger_path.exists(), "抛错路径不得创建留痕文件")
+            self.assertEqual(len(list(Path(tmp).iterdir())), 0,
+                             "抛错路径不得在目录里留任何文件")
+
+    def test_no_fallback_no_match_cannot_be_ledgered(self):
+        """拿不到 plan → 也就没有留痕可写（record_turn 的前置条件不成立）。"""
+        trigger = self._no_fallback_trigger()
+        state = _state_no_conditional_match()
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "turns.jsonl"
+            plan = None
+            with self.assertRaises(TriggerError):
+                plan = build_plan(trigger, state, turn_id="turn-1")
+            self.assertIsNone(plan)
+            # 没有 plan 对象，就没有可写的一条留痕；文件不存在 = 未落留痕
+            self.assertFalse(ledger_path.exists())
+
+    def test_no_fallback_with_match_still_succeeds(self):
+        """收窄后的红线**只**收窄「无匹配」这一侧：有匹配时照旧正常产出 plan。"""
+        trigger = self._no_fallback_trigger()
+        state = _state_processing()   # ticket_status = 处理中 → 命中 greeting
+        result = build_plan(trigger, state, turn_id="turn-1",
+                            phrase_variants=_demo_variants())
+        self.assertEqual(result.rule_id, "greeting")
+        self.assertTrue(len(result.plan) >= 1)
+
+
+# ---------------------------------------------------------------------------
 # 验收 4：负例——超预算 → BudgetError，消息含实际字数与预算
 # ---------------------------------------------------------------------------
 class TestOverBudget(unittest.TestCase):
 
-    def _over_budget_trigger(self, budget_chars: int) -> "object":
-        """把某个 key 的变体撑到超长（改夹具 → 校验由产品 API 做）。"""
+    def _over_budget_trigger(self, budget_chars: int):
+        """把某个 key 的变体撑到超长（改夹具 → 校验由产品 API 做）。
+
+        夹具是**无兜底**的 trigger，且 state 命中其条件规则——这样「超预算」
+        这条红线与「无兜底 + 无匹配」互相独立，不会因兜底改写 rule_id 而失真。
+        """
         long_text = "这是一句刻意写得非常非常非常非常非常非常非常长的话" * 12
         variants = {"greeting_ticket": (long_text, long_text)}
         doc = _trigger_doc()
@@ -292,6 +437,19 @@ class TestOverBudget(unittest.TestCase):
         result = build_plan(trigger, state, turn_id="turn-1")
         check_budget([{"text": _expand_for_budget(trigger, result, state)}], trigger.budget_chars)
         self.assertLessEqual(result.chars, trigger.budget_chars)
+
+
+def _plan_signature(result) -> tuple:
+    """把一份 plan 结果压成可比较的签名（确定性断言用；只读结果，不复制匹配逻辑）。"""
+    return (
+        result.rule_id,
+        result.plan_id,
+        result.chars,
+        result.budget,
+        tuple(result.keys),
+        tuple((u.action, u.key, u.rate, u.variant, tuple(sorted(u.slots.items())))
+              for u in result.plan),
+    )
 
 
 def _expand_for_budget(trigger, result, state) -> str:

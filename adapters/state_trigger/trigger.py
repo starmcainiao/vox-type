@@ -12,11 +12,18 @@ adapters.state_trigger.trigger — state 快照 → plan（触发器，行为侧
       两者的错误消息口径一致（都含具体非法值），不互相降级。
 
 设计红线（逐条对齐本仓既有做法）：
-  1. **无条件命中 → fail-closed**：没有任何规则匹配该 state → 抛 TriggerError，
-     不返回空 plan、不回落到任何默认话术（AGENTS.md 红线 4）。
-     对齐 runtime/executor.py 的 allow_fallback=False：未命中就中止，不编造内容。
-     注意：trigger.json 里的「兜底规则」（when = null）**不算命中**——否则兜底规则
-     永远命中，fail-closed 条款形同虚设。
+  1. **无兜底 + 无匹配 → fail-closed**：**当且仅当**该包不含兜底规则、且没有任何
+     条件规则匹配该 state → 抛 TriggerError，不返回空 plan、不回落到任何默认话术
+     （AGENTS.md 红线 4）。对齐 runtime/executor.py 的 allow_fallback=False：
+     未命中就中止，不编造内容。
+     `when = null` 的兜底规则**是命中**（T16 的 format.py 已定「None/缺省 =
+     无条件兜底规则，至多一条」）——它写在 trigger.json 里、可 Review、可审批，
+     是**作者显式声明**的兜底，不是实现自己挑的。顺序按 rules 声明走：条件规则在前、
+     兜底通常最后，因此条件规则天然优先；兜底规则若被写在前，它自己就会先命中，
+     那是作者显式声明的顺序（T16 只约束「至多一条兜底」，不重排顺序）。
+     这条红线的真实含义是：**不得由本模块自行挑选兜底**——没有作者声明的兜底规则时，
+     本模块不替它找一条、不回落默认话术（「静默降级」指的是这种看不见的实现侧回落，
+     不是 trigger.json 里可见的兜底声明）。
   2. **确定性**：同一 state + 同一 Trigger + 同一 turn_id → plan 逐字段相同
      （含顺序、rate、variant）。不读时钟、不做随机选择；变体若由散列选择，
      输入只能是 turn_id 与单元序号（照 runtime/executor.py 对 variant: auto 的
@@ -75,14 +82,15 @@ _HASH_SEP: str = "\x00"
 def _rule_matches(rule: Any, state: Dict[str, Any]) -> bool:
     """判断一条规则是否匹配该 state。
 
-    when 为 None（兜底规则）→ 返回 False，理由见模块红线 1。
+    when 为 None（或缺省）→ **命中**（无条件兜底规则，作者显式声明；
+    T16 的 format.py 已校验「至多一条」，优先级靠 rules 声明顺序，见模块红线 1）。
     字段缺值 → 不命中（条件无法判定，不做静默当成满足）。
     比较符越界或类型不可比较 → 不命中（越界与类型错误由 validate_state 拦下，
     这里只做条件判定，两条路径都不静默放行）。
     """
     when = rule.when
     if when is None:
-        return False
+        return True
 
     for field_name, expected in when.items():
         if field_name not in state:
@@ -202,21 +210,29 @@ def build_plan(trigger: Any, state: Any, *, turn_id: Any = None,
     # 0. 复用 T16 的 state 校验器（不自造校验）
     validate_state(state, trigger)
 
-    # 1. 规则匹配：按 trigger.json 的规则顺序取第一条命中的规则（不排序，保确定性）
+    # 1. 规则匹配：按 trigger.json 的规则顺序取第一条命中的规则（不排序，保确定性）。
+    #    兜底规则（when = null）同样参与匹配，顺序由 rules 声明决定（见模块红线 1）。
     matched = None
+    has_fallback = False
     for rule in trigger.rules:
+        if rule.when is None:
+            has_fallback = True
         if _rule_matches(rule, state):
             matched = rule
             break
 
-    # 2. 无条件命中 → fail-closed：不返回空 plan、不回落默认话术
+    # 2. 无兜底 + 无匹配 → fail-closed：不返回空 plan、不回落默认话术。
+    #    兜底规则存在时它已被上面当成命中处理，走不到这里；只有「既没有作者声明的
+    #    兜底、又没有任何条件规则命中」才抛错（不得由本模块自行挑选兜底）。
     if matched is None:
         declared = [name for name, _decl in trigger.state_fields]
         rule_ids = [rule.rule_id for rule in trigger.rules]
         raise TriggerError(
             f"没有任何规则命中该 state（trigger_id={trigger.trigger_id!r}）："
             f"已声明字段 {declared}，state 值 {state!r}，"
-            f"规则 {rule_ids} 均未匹配 → fail-closed（不返回空 plan、不回落默认话术）"
+            f"规则 {rule_ids} 均未匹配，且该包未声明兜底规则（when = null）"
+            f"→ fail-closed（不返回空 plan、不回落默认话术）；"
+            f"请在 trigger.json 里显式声明一条兜底规则"
         )
 
     # 3. 话术变体表（供变体选择与文本展开）
