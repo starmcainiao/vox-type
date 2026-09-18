@@ -105,6 +105,9 @@ def http_get(url: str, *, timeout: int = HTTP_TIMEOUT, binary: bool = False) -> 
 
     带有限次重试（网络抖动是常态，但**绝不允许无限重试**——那会掩盖真实的不可达）。
     非 2xx 一律抛 FetchError，不做「失败返回空」这种静默降级。
+
+    **注意**：binary=True 会把整个body读进内存。大文件（>几十 MB）不要走这里，
+    用 `http_download_to_file`（流式）。
     """
     last_err: Optional[Exception] = None
     for attempt in range(1, HTTP_RETRIES + 1):
@@ -118,6 +121,44 @@ def http_get(url: str, *, timeout: int = HTTP_TIMEOUT, binary: bool = False) -> 
             if attempt < HTTP_RETRIES:
                 time.sleep(2 * attempt)
     raise FetchError(f"GET 失败（重试 {HTTP_RETRIES} 次）: {url} :: {last_err!r}")
+
+
+def http_download_to_file(url: str, dest: Path, *, chunk: int = 1 << 20) -> Tuple[int, str]:
+    """流式下载到 dest，边下边算 sha256，返回 (字节数, sha256)。
+
+    WHY 不能沿用 `http_get(binary=True)`：那是 `resp.read()` 一次性读进内存——
+    1 GB 的 parquet 就是 1 GB 内存占用。实测教训（2026-09-18）：`ASLP-lab/WenetSpeech-Wu-Bench`
+    的 `understanding/asr.parquet` 用一次性读法直接撞 socket read 超时，
+    失败信息只是 `TimeoutError('The read operation timed out')`，看不出是"体量太大"还是"网断了"。
+    流式读 + 逐块写盘至少保证：要么拿到完整文件，要么在磁盘上留下可识别的 `.part`。
+
+    先写 `.part` 再改名：中断不会留下半个文件被当成完整语料。
+    """
+    last_err: Optional[Exception] = None
+    for attempt in range(1, HTTP_RETRIES + 1):
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        h = hashlib.sha256()
+        total = 0
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "vox-corpus-fetch/1"})
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp, tmp.open("wb") as f:
+                while True:
+                    block = resp.read(chunk)
+                    if not block:
+                        break
+                    f.write(block)
+                    h.update(block)
+                    total += len(block)
+            tmp.replace(dest)
+            return total, h.hexdigest()
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_err = e
+            # 失败的半个文件必须删掉，否则下次可能被当成完整语料
+            tmp.unlink(missing_ok=True)
+            if attempt < HTTP_RETRIES:
+                time.sleep(2 * attempt)
+    raise FetchError(f"下载失败（流式，已重试 {HTTP_RETRIES} 次）: {url} :: {last_err!r}")
 
 
 class Platform:
@@ -416,15 +457,10 @@ def select_files(src: Dict[str, Any], tree: List[Dict[str, Any]]) -> List[Dict[s
 def download_file(src: Dict[str, Any], rec: Dict[str, Any], dest: Path) -> Tuple[int, str]:
     """下载单个文件到 dest，返回 (实测字节数, 实测 sha256)。
 
-    先写 `.part` 临时文件再改名，避免中断留下半个文件被当成完整语料。
+    走流式下载（大文件不进内存），先写 `.part` 再改名，避免中断留下半个文件被当成完整语料。
     """
     url = PLATFORMS[src["platform"]].download_url(src["id"], src.get("revision", "main"), rec["path"])
-    raw = http_get(url, binary=True)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    tmp.write_bytes(raw)
-    tmp.replace(dest)
-    return len(raw), hashlib.sha256(raw).hexdigest()
+    return http_download_to_file(url, dest)
 
 
 def manifest_digest(files: List[Dict[str, Any]]) -> str:
@@ -542,6 +578,11 @@ def recheck(out_root: Path) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="vox 公开语料获取器（先验许可后下载）")
     ap.add_argument("--dry-run", action="store_true", help="只做许可审计，不下载")
+    ap.add_argument(
+        "--include-optional",
+        action="store_true",
+        help="含 optional 来源（缺省跳过——大体量的可选项不该在例行跑里被拉下来）",
+    )
     ap.add_argument("--only", metavar="ID", help="只处理指定 id")
     ap.add_argument("--recheck", action="store_true", help="对已下载文件重算 sha256 与台账比对")
     ap.add_argument("--out-root", default=str(CORPUS_ROOT), help=f"语料落盘根（默认 {CORPUS_ROOT}）")
@@ -554,11 +595,20 @@ def main() -> int:
 
     doc = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
     sources = doc["sources"]
+    # optional 过滤：**缺省跳过**，且 `--only` 指定时必须能显式下（便于人工按需拉大件）。
+    # WHY：2026-09-18 实测教训——重写本脚本时漏掉了这个过滤，结果例行跑会去下
+    #      标着"本批不下载"的 1 GB parquet，白等一轮超时。
+    total_declared = len(sources)
     if args.only:
         sources = [s for s in sources if s["id"] == args.only]
         if not sources:
             print(f"未找到来源 id={args.only}", file=sys.stderr)
             return 2
+    elif not args.include_optional:
+        skipped = [s["id"] for s in sources if s.get("optional")]
+        sources = [s for s in sources if not s.get("optional")]
+        if skipped:
+            print(f"跳过 optional 来源 {skipped}（要下用 --include-optional 或 --only <id>）")
 
     out_root.mkdir(parents=True, exist_ok=True)
 

@@ -62,12 +62,17 @@
 6. **正例（派生）**：用一份 3~5 条的小 fixture 语料跑 `derive_golden`，断言
    ① 每条都带 `user_utterance` 与 `assistant_reply_free` **两个字段**（`docs/11 §11.9.3`）；
    ② 含占位符/超长/超短的用户话术被过滤；③ 策略 12「其它」产出 `expect_kind="unspecified"`；
-7. **回归**：搬完后用真实语料重跑一次，数字必须与本批 `labs/` 记录**逐位一致**——
+7. **两条已在 `labs/` 版本里修掉的坑，搬过去不许退化**（见 `labs/corpus-harvest-2026-09-18/README.md §8.1`）：
+   - **`optional` 闸门**：缺省必须跳过 optional 来源，且**响亮打印**跳过声明（静默跳过 = 让人以为已经下了）；
+     `--only <id>` 必须能显式拉单个 optional 项；
+   - **大文件流式下载**：不得用「一次性读进内存」的写法；必须分块写盘 + 边下边算 sha256；
+     断言：失败时**不留下**可被误认为完整语料的 `.part` 残留；
+8. **回归**：搬完后用真实语料重跑一次，数字必须与本批 `labs/` 记录**逐位一致**——
    - `fetch.py --recheck` → 异常 0 个
    - `baseline_literal.py` → `0/2433 = 0.00%`
    - `cross_check_template_rate.py` → 两份语料 1.8% / 0.2%
    （不一致 = 搬错了，整卡退回。这三个数是本批的回归基线）
-8. 根 `AGENTS.md` 只多了一行 `tools/`，`git diff --stat AGENTS.md` 必须显示 **+1 行**。
+9. 根 `AGENTS.md` 只多了一行 `tools/`，`git diff --stat AGENTS.md` 必须显示 **+1 行**。
 
 ## 反空转条款（每张卡必带，T01 教训）
 

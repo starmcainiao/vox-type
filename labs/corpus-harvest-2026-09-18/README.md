@@ -205,6 +205,21 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 | `raw/literal_baseline.json` | 逐字档逐条原始数据 |
 | `raw/semantic_probe.jsonl` + `semantic_probe_summary.json` | 语义档逐条提案与汇总 |
 
+### 8.1 下载器踩过的两个坑（**T12 提升为工具时不能丢**）
+
+**坑 1：`optional` 闸门在重写时丢了。** 重写 `fetch.py` 时漏掉 optional 过滤，
+结果例行跑会去下 `ASLP-lab/WenetSpeech-Wu-Bench` 那份**标着"本批不下载"的 1030.7 MB parquet**。
+现在缺省跳过并**响亮打印**跳过声明（静默跳过等于让人以为"已经下了"）。
+`--only <id>` 可显式拉单个 optional 项。
+
+**坑 2：大文件不能一次性读进内存。** 原来的 `http_get(binary=True)` 是 `resp.read()`——
+1 GB 文件就是 1 GB 内存，而且必然撞 socket read 超时，报错只有
+`TimeoutError('The read operation timed out')`，**看不出是"体量太大"还是"网断了"**。
+现已改为 `http_download_to_file`：流式分块 + 逐块写盘 + 边下边算 sha256 + 失败删 `.part`。
+
+> 这两条都是**fail-closed 的方向**：坑 1 让"不该下的被下了"，坑 2 让"失败原因读不出来"。
+> 前者靠显式闸门 + 响亮声明解决，后者靠流式 + 残留 `.part` 可识别解决。
+
 ## 九、边界与未做
 
 - 本目录**不进任何层契约**；语义提案**不出声**、不接 `runtime/`、不改内核（`docs/11` 裁定 1）；
