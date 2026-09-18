@@ -42,12 +42,29 @@
   },
   "_why_is_as_of_still_needed": "packs/demo-brief 的 trigger.json 声明 days_left / is_overdue / overdue_days 为 layer=structured，但没有任何一条规则的 when 依赖它们；且 days_left 的 min=0 与 is_overdue 的语义（到期日之前 = days_left < 0）在 T16 的校验范围内不可同时满足。因此这三个字段直接透传源数据，state 的映射里不含任何日期运算。as_of 仍然必须注入，因为 derived_fields（不进 state，只进 summary.json）里的 as_of_iso / days_since_opened 要算；未注入即报错，代码不读系统时钟。",
   "rule_reachability": {
-    "note": "本实验的源只能驱动 demo-brief 的两条规则；这是 packs/demo-brief/trigger.json 的规则顺序造成的，不是本实验的映射问题。",
-    "reachable": ["greeting", "closing"],
-    "unreachable_from_source": ["overdue", "due_tonight", "due_days_left", "ask_assignee"],
-    "reason": "greeting 规则的 when 是 {ticket_status: '处理中'}，在 rules 里排在所有日期/负责人规则之前；而 demo-brief 的 state_fields 声明 days_left min=0，与 is_overdue 的语义（到期日之前 = days_left < 0）在 T16 的校验范围内不可同时满足，因此 is_overdue 恒为 false。build_plan 按 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改），所以任何处理中的工单都先命中 greeting；ask_assignee 同理被 greeting 遮住。",
-    "verification": "run_e2e.py 断言「所有命中 rule_id ∈ 该包 rules 里真实存在的 rule_id」，并把这个覆盖情况写进 summary.json——本实验明确记录的是覆盖边界，不是假装五条规则都跑到了。",
-    "follow_up": "若要让 overdue / due_tonight / ask_assignee 可被源数据驱动，需要改 packs/demo-brief/trigger.json（调整 days_left 的 min 或规则顺序）——那是 packs/ 的事，不在本卡白名单内。"
+    "note": "本段是 packs/demo-brief/trigger.json 的 6 条规则在当前 fixture 下的可达性**枚举**，由 run_e2e.py 的断言与本表逐条比对；不一致即非零退出（rc 3）。改 fixture 或改包后必须同步改这里，否则脚本会立刻变红。",
+    "reachable": ["greeting", "overdue", "due_tonight", "due_days_left", "ask_assignee", "closing"],
+    "unreachable_from_source": [],
+    "hit_counts": {"greeting": 5, "overdue": 1, "due_tonight": 1, "due_days_left": 3, "ask_assignee": 1, "closing": 1},
+    "covered_by_ticket_id": {
+      "greeting": ["WB-DEMO-0007", "WB-DEMO-0008", "WB-DEMO-0009", "WB-DEMO-0011", "WB-DEMO-0012"],
+      "overdue": ["WB-DEMO-0009", "WB-DEMO-0012", "WB-DEMO-0015"],
+      "due_tonight": ["WB-DEMO-0008", "WB-DEMO-0016"],
+      "due_days_left": ["WB-DEMO-0007", "WB-DEMO-0010", "WB-DEMO-0013", "WB-DEMO-0014"],
+      "ask_assignee": ["WB-DEMO-0011", "WB-DEMO-0017"],
+      "closing": ["WB-DEMO-0007", "WB-DEMO-0008", "WB-DEMO-0009", "WB-DEMO-0010", "WB-DEMO-0011", "WB-DEMO-0012", "WB-DEMO-0013", "WB-DEMO-0014", "WB-DEMO-0015", "WB-DEMO-0016", "WB-DEMO-0017", "WB-DEMO-0018"]
+    },
+    "per_rule": {
+      "greeting": {"when": {"ticket_status": "处理中"}, "hits": 5, "covered_rows": 5, "source_fields": ["ticket_status"], "mechanism": "直接匹配"},
+      "overdue": {"when": {"is_overdue": true}, "hits": 1, "covered_rows": 3, "source_fields": ["is_overdue"], "mechanism": "直接匹配"},
+      "due_tonight": {"when": {"is_overdue": false, "days_left": {"lte": 0}}, "hits": 1, "covered_rows": 2, "source_fields": ["is_overdue", "days_left"], "mechanism": "条件算子 lte"},
+      "due_days_left": {"when": {"is_overdue": false, "days_left": {"gt": 0, "lte": 14}}, "hits": 3, "covered_rows": 4, "source_fields": ["is_overdue", "days_left"], "mechanism": "条件算子 gt + lte 合取"},
+      "ask_assignee": {"when": {"assignee_confirmed": false}, "hits": 1, "covered_rows": 2, "source_fields": ["assignee_confirmed"], "mechanism": "直接匹配"},
+      "closing": {"when": null, "hits": 1, "covered_rows": 12, "source_fields": [], "mechanism": "when=null 兜底：12 行全部匹配，只有前 5 条条件规则全不匹配时才被命中（仅 WB-DEMO-0018）"}
+    },
+    "reason": "overdue 的 when 是 {is_overdue: true}，只声明 is_overdue，不声明 days_left——is_overdue 是本表 state_fields 里直接透传的布尔列（源导出自带），因此 days_left 的 min=0 与 is_overdue 互不约束：本 fixture 里 WB-DEMO-0009（days_left=5）、WB-DEMO-0012（days_left=0）就是 is_overdue=true。T21 曾推断 is_overdue 取值恒定，该推断与 trigger.json 的 when 声明不符，已废弃（run_e2e.py 断言本段不得再出现 T21 的这句原话）。greeting 排在 rules 第一位（when={ticket_status: '处理中'}），仍会吃掉同时满足它的行（WB-DEMO-0009 与 WB-DEMO-0012 都匹配 overdue，但按 build_plan 的 rules 顺序口径取第一条，命中 greeting），所以让一条规则被**命中**而不仅是**匹配**，靠的是加一行 status 非「处理中」的源行（WB-DEMO-0015/0016/0017/0018），不是改包。",
+    "verification": "run_e2e.py 用引擎的 _rule_matches 对每条源行的 state 真实判定（不复制匹配逻辑），生成 summary.json#rule_matching_matrix 与 #rule_reachability_from_source，并逐条断言本表的 reachable / unreachable_from_source / hit_counts / covered_by_ticket_id / per_rule 与该实测结果一致；任一字段不一致即 rc 3 并在失败消息里点名具体规则。",
+    "follow_up": "T21b 已用 fixture 行覆盖全部 6 条规则，packs/demo-brief/ 未改动。仍需业务侧复核（属 packs/，不在本卡范围）：greeting 排在所有日期/负责人规则之前，一条已逾期且仍标「处理中」的工单只会听到问候语。"
   },
   "state_fields": {
     "ticket_status": {

@@ -416,6 +416,153 @@ def main() -> int:
                for r in per_ticket if r["rule_id"] not in r["matched_rules"]]),
     )
 
+    # ---- 5e. 事实陈述的自我校验（T21c）
+    # source_map.json#rule_reachability 是**手写**的一段事实陈述，实测覆盖在 #5/#5b 算出来了。
+    # 两者不一致就让脚本红：这样以后 fixture 或规则变了、陈述没跟着改，立刻可见。
+    # 口径（与实测的对应关系）：
+    #   reachable               == 实际被命中过的规则（rule_hit_count 非零者，按包内顺序）
+    #   unreachable_from_source == 实际未被覆盖/未被命中的规则（必须为空才表示全覆盖）
+    #   hit_counts[rid]         == rule_hit_count[rid]（命中行数）
+    #   covered_by_ticket_id[rid] == rows_covering[rid]（被 _rule_matches 判定匹配的行，含兜底）
+    #   per_rule[rid].when      == trigger.json 里该规则的 when 声明
+    mapping_doc = json.loads(MAP_PATH.read_text(encoding="utf-8"))
+    reachability = mapping_doc.get("rule_reachability")
+    check(
+        "source_map.json 必须声明 rule_reachability（可机检枚举，不是模糊的一句话）",
+        isinstance(reachability, dict) and bool(reachability),
+        f"缺 rule_reachability 段或不是对象，实际: {type(reachability).__name__}",
+    )
+    for _sub in ("reachable", "unreachable_from_source", "hit_counts",
+                 "covered_by_ticket_id", "per_rule"):
+        check(
+            f"rule_reachability.{_sub} 必须是可机检结构",
+            _sub in reachability
+            and isinstance(reachability[_sub], (list, dict)),
+            f"缺 {_sub} 或不是 list/dict，实际: "
+            f"{type(reachability.get(_sub)).__name__}" if _sub in reachability
+            else f"缺 {_sub}",
+        )
+
+    declared_reachable = reachability.get("reachable", [])
+    measured_reachable = [rid for rid in rule_ids_in_pack
+                          if rule_hit_count.get(rid, 0) > 0]
+    declared_unreachable = reachability.get("unreachable_from_source", [])
+    measured_unreachable = [rid for rid in rule_ids_in_pack
+                            if rule_hit_count.get(rid, 0) == 0]
+
+    check(
+        "rule_reachability.reachable 与实际被命中的规则完全一致（双向：不多、不少）",
+        declared_reachable == measured_reachable,
+        f"声明 {declared_reachable}，实测 {measured_reachable}；"
+        f"声明里有但实际未命中: {sorted(set(declared_reachable) - set(measured_reachable))}；"
+        f"实际命中了但声明里没列: {sorted(set(measured_reachable) - set(declared_reachable))}",
+    )
+    check(
+        "rule_reachability.unreachable_from_source 与实际一致"
+        "（当前 fixture 全覆盖时应为空列表）",
+        declared_unreachable == measured_unreachable,
+        f"声明 {declared_unreachable}，实测 {measured_unreachable}；"
+        f"声明里有但实际可达: {sorted(set(declared_unreachable) - set(measured_unreachable))}；"
+        f"实际不可达但声明里没列: {sorted(set(measured_unreachable) - set(declared_unreachable))}",
+    )
+
+    # reachable / unreachable 两个列表必须互斥且并集恰为包内规则全集（否则陈述自相矛盾）
+    overlap = sorted(set(declared_reachable) & set(declared_unreachable))
+    union_missing = [rid for rid in rule_ids_in_pack
+                     if rid not in declared_reachable and rid not in declared_unreachable]
+    check(
+        "rule_reachability 的两个列表互斥（同一条规则不得既在 reachable 又在 unreachable_from_source）",
+        not overlap,
+        f"同时出现在两个列表里的规则: {overlap}",
+    )
+    check(
+        "rule_reachability 的两个列表并集覆盖包内全部规则（每条规则都表态，不留空白）",
+        not union_missing,
+        f"包内有但两个列表都没提到的规则: {union_missing}",
+    )
+
+    declared_hits = reachability.get("hit_counts", {})
+    hits_mismatch = {rid: {"declared": declared_hits.get(rid),
+                           "measured": rule_hit_count.get(rid, 0)}
+                     for rid in rule_ids_in_pack
+                     if declared_hits.get(rid) != rule_hit_count.get(rid, 0)}
+    check(
+        "rule_reachability.hit_counts 与实测命中行数逐条一致",
+        not hits_mismatch,
+        f"不一致的规则: {hits_mismatch}"
+        + ("；另有多余声明: " + str(sorted(set(declared_hits) - set(rule_ids_in_pack)))
+           if set(declared_hits) - set(rule_ids_in_pack) else ""),
+    )
+
+    declared_covered = reachability.get("covered_by_ticket_id", {})
+    cover_mismatch = {rid: {"declared": declared_covered.get(rid),
+                            "measured": rows_covering[rid]}
+                      for rid in rule_ids_in_pack
+                      if declared_covered.get(rid) != rows_covering[rid]}
+    check(
+        "rule_reachability.covered_by_ticket_id 与实测覆盖到的源行逐条一致",
+        not cover_mismatch,
+        f"不一致的规则: {cover_mismatch}"
+        + ("；另有多余声明: " + str(sorted(set(declared_covered) - set(rule_ids_in_pack)))
+           if set(declared_covered) - set(rule_ids_in_pack) else ""),
+    )
+
+    per_rule = reachability.get("per_rule", {})
+    check(
+        "rule_reachability.per_rule 的键集 == 包内规则全集（每条规则都要有声明）",
+        set(per_rule) == set(rule_ids_in_pack),
+        f"缺声明: {sorted(set(rule_ids_in_pack) - set(per_rule))}；"
+        f"多余声明: {sorted(set(per_rule) - set(rule_ids_in_pack))}",
+    )
+    when_mismatch = {}
+    for i, rid in enumerate(rule_ids_in_pack):
+        actual_when = trigger.rules[i].when
+        if per_rule.get(rid, {}).get("when") != actual_when:
+            when_mismatch[rid] = {"declared": per_rule.get(rid, {}).get("when"),
+                                  "measured": actual_when}
+    check(
+        "rule_reachability.per_rule[*].when 与 trigger.json 的 when 声明逐条一致"
+        "（理由文字必须跟代码一致，不许再写出与 when 不符的因果）",
+        not when_mismatch,
+        f"when 不一致的规则: {when_mismatch}",
+    )
+    # 兜底规则的 when 必须是 null（closing 是唯一 when=null 的规则），陈述里不能写成有条件
+    for i, rid in enumerate(rule_ids_in_pack):
+        check(
+            f"rule_reachability.per_rule.{rid}.when 与 trigger.json 一致（触发器顺序第 {i + 1} 条）",
+            per_rule.get(rid, {}).get("when") == trigger.rules[i].when,
+            f"声明 {per_rule.get(rid, {}).get('when')}，trigger.json 是 {trigger.rules[i].when}",
+        )
+
+    # 陈述的理由文字不得再出现已废弃的错误因果（与 trigger.json 的 when 声明矛盾的推断）
+    reason_text = " ".join(
+        str(v) for v in reachability.values()
+        if isinstance(v, (str, int, float, bool)) or v is None
+    )
+    for forbidden, why in (
+        ("is_overdue 恒为 false",
+         "overdue 的 when 是 {is_overdue: true}，不含 days_left；is_overdue 是透传的布尔列，"
+         "本 fixture 里 WB-DEMO-0009 / WB-DEMO-0012 就是 true。"
+         "用『恒为 false』断言会绕过 trigger.json 的 when 声明（T21 的错因）"),
+        ("不可达的四条", "6 条规则全部可达，需改 fixture 行而非改包"),
+        ("只能驱动 demo-brief 的两条规则", "T21 的旧结论；T21b 实测 6/6 全部可达"),
+        ("is_overdue 恒为", "同上，含缩写变体（防止换个标点绕过检查）"),
+    ):
+        check(
+            f"rule_reachability 里不得再出现已废弃的错误因果: '{forbidden}'",
+            forbidden not in reason_text,
+            f"仍出现该表述（{why}）",
+        )
+    check(
+        "rule_reachability 必须是枚举而非模糊陈述（含 rule_id 级明细，不接受「大部分规则可达」这类）",
+        all(isinstance(rid, str) and rid for rid in declared_reachable)
+        and set(declared_reachable) | set(declared_unreachable) == set(rule_ids_in_pack)
+        and set(per_rule) == set(rule_ids_in_pack)
+        and all(k in per_rule for k in ("greeting", "closing"))
+        and any(isinstance(v, dict) and "when" in v for v in per_rule.values()),
+        "缺逐规则枚举（reachable / unreachable_from_source / per_rule 三者都要能逐条比对）",
+    )
+
     # ---- 6. 留痕读回复核（敏感值独立复核）
     records = read_turns(str(TURNS_PATH))
     check(
