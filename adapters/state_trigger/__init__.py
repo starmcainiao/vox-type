@@ -19,6 +19,19 @@ from adapters.state_trigger.format import (
     load_trigger,
     validate_state,
 )
+# T17 追加：触发器行为侧（state → plan）与轮级留痕
+from adapters.state_trigger.trigger import (
+    TriggerPlan,
+    build_plan,
+)
+from adapters.state_trigger.ledger import (
+    LedgerError,
+    default_ledger_path,
+    read_turns,
+    record_turn,
+    structured_record,
+    supervision_pairs,
+)
 
 __all__ = [
     # 公开 API（T16 卡要求的三个）
@@ -39,4 +52,14 @@ __all__ = [
     "TriggerError",
     "StateError",
     "BudgetError",
+    # T17 追加：触发器行为侧
+    "build_plan",
+    "TriggerPlan",
+    # T17 追加：轮级留痕
+    "record_turn",
+    "structured_record",
+    "read_turns",
+    "supervision_pairs",
+    "default_ledger_path",
+    "LedgerError",
 ]

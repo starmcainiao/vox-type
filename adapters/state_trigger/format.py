@@ -270,7 +270,7 @@ def _read_phrase_keys(root: Path) -> Tuple[str, ...]:
     话术表的装载与校验归 compiler（白名单分叉 = 静默降级的温床），这里只取 key 集合
     作为 C3b 的「已审核集合」判据输入。
     """
-    from compiler.source import SourceError, load_source
+    from compiler import SourceError, load_source
 
     try:
         source = load_source(root)
