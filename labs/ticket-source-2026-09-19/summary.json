@@ -1,0 +1,422 @@
+{
+  "lab": "ticket-source-2026-09-19",
+  "card": "docs/tasks/T21-labs-状态来源与端到端演示.md",
+  "scope": "实验区（labs/）：一次性实验，不进任何层的契约",
+  "data_classification": "公开级：fixture 为自造数据，不含用户录音、真实会话、内网地址、token",
+  "fixture_meta": {
+    "kind": "synthetic",
+    "statement": "全部为自造数据：工单号、客户标识、负责人姓名、手机号均为虚构字符串，不含任何真实用户的录音、会话或个人信息。",
+    "shape": "工单系统导出的公开 demo 形态。字段形状照常见工单系统导出列名；days_left / is_overdue / overdue_days 由工单系统自己算好带在导出里（本实验不重算，直接透传，见 source_map.json#state_fields）。",
+    "sensitive_columns_declared_in": "source_map.json#sensitive_fields",
+    "rules_drivable": "只驱动 demo-brief 的 greeting 与 closing 两条规则（覆盖边界见 source_map.json#rule_reachability）"
+  },
+  "pack": {
+    "dir": "packs/demo-brief",
+    "trigger_id": "demo-brief.ticket-reminder",
+    "budget_chars": 60,
+    "phrase_keys": [
+      "already_overdue",
+      "ask_assignee",
+      "closing_brief",
+      "due_days_left",
+      "due_tonight",
+      "greeting_ticket",
+      "offer_help",
+      "ticket_status"
+    ],
+    "rules_in_order": [
+      "greeting",
+      "overdue",
+      "due_tonight",
+      "due_days_left",
+      "ask_assignee",
+      "closing"
+    ]
+  },
+  "as_of_injected": "2026-09-19T10:00:00+08:00",
+  "ts_policy": "留痕的 ts 由本脚本注入（确定性值），不读系统时钟",
+  "counts": {
+    "source_tickets": 8,
+    "states_validated": 8,
+    "turns_recorded": 8,
+    "ledger_lines_on_disk": 8
+  },
+  "rule_hit_distribution": {
+    "greeting": 5,
+    "due_days_left": 3
+  },
+  "keys_used": [
+    "due_days_left",
+    "greeting_ticket"
+  ],
+  "key_coverage": {
+    "used": [
+      "due_days_left",
+      "greeting_ticket"
+    ],
+    "unused_in_pack": [
+      "already_overdue",
+      "ask_assignee",
+      "closing_brief",
+      "due_tonight",
+      "offer_help",
+      "ticket_status"
+    ]
+  },
+  "rule_reachability_from_source": {
+    "reachable": [
+      "due_days_left",
+      "greeting"
+    ],
+    "declared_in_pack": [
+      "greeting",
+      "overdue",
+      "due_tonight",
+      "due_days_left",
+      "ask_assignee",
+      "closing"
+    ],
+    "unreachable_from_source": [
+      "overdue",
+      "due_tonight",
+      "ask_assignee",
+      "closing"
+    ],
+    "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中；greeting 排在所有日期/负责人规则之前，且 days_left 声明 min=0 与 is_overdue 的语义冲突，导致 overdue/due_tonight/ask_assignee 无法被源数据驱动。这是 packs/demo-brief/trigger.json 的规则顺序问题，本实验只如实记录，不改 packs/。"
+  },
+  "sensitive_scan": {
+    "ledger_file": "labs/ticket-source-2026-09-19/raw/turns.jsonl",
+    "hits": {
+      "ticket_id": 0,
+      "customer_code": 0,
+      "contact_phone": 0,
+      "assignee_name": 0
+    },
+    "detail": {
+      "ticket_id": {
+        "checked_values": [
+          "WB-DEMO-0007",
+          "WB-DEMO-0008",
+          "WB-DEMO-0009",
+          "WB-DEMO-0010",
+          "WB-DEMO-0011",
+          "WB-DEMO-0012",
+          "WB-DEMO-0013",
+          "WB-DEMO-0014"
+        ],
+        "hit_count": 0,
+        "hits": []
+      },
+      "customer_code": {
+        "checked_values": [
+          "CUS-A1023",
+          "CUS-B2044",
+          "CUS-C3155",
+          "CUS-D4266",
+          "CUS-E5377",
+          "CUS-F6488",
+          "CUS-G7599",
+          "CUS-H8600"
+        ],
+        "hit_count": 0,
+        "hits": []
+      },
+      "contact_phone": {
+        "checked_values": [
+          "13800138007",
+          "13800138008",
+          "13800138009",
+          "13800138010",
+          "13800138011",
+          "13800138012",
+          "13800138013",
+          "13800138014"
+        ],
+        "hit_count": 0,
+        "hits": []
+      },
+      "assignee_name": {
+        "checked_values": [
+          "吴嘉欣",
+          "周文博",
+          "孙丽华",
+          "李慧敏",
+          "王志强",
+          "赵建国",
+          "陈雨桐"
+        ],
+        "hit_count": 0,
+        "hits": []
+      }
+    },
+    "verdict_rule": "全部为 0 才通过；任何一项 > 0 即视为敏感值落盘"
+  },
+  "layer_check": {
+    "structured_fields_declared": [
+      "ticket_status",
+      "days_left",
+      "overdue_days",
+      "is_overdue",
+      "assignee_confirmed"
+    ],
+    "sensitive_fields_declared": [
+      "ticket_id"
+    ],
+    "sensitive_layer_names_in_ledger_state_blocks": []
+  },
+  "reproducibility": {
+    "method": "同一份 tickets.source.json + 同一 as_of，映射跑两遍，state 列表逐字段比对",
+    "states_identical_across_runs": true,
+    "volatile_fields": [
+      "留痕的 ts 由本脚本按 as_of 注入，不是系统时钟；重跑前本脚本会先清空 raw/turns.jsonl 以保证幂等"
+    ]
+  },
+  "per_ticket": [
+    {
+      "ticket_id": "WB-DEMO-0007",
+      "customer_code": "CUS-A1023",
+      "source_status": "处理中",
+      "source_assignee_confirmed": true,
+      "source_days_left": 3,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "处理中",
+        "assignee_confirmed": true,
+        "days_left": 3,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0007"
+      },
+      "rule_id": "greeting",
+      "keys": [
+        "greeting_ticket"
+      ],
+      "chars": 11,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0008",
+      "customer_code": "CUS-B2044",
+      "source_status": "处理中",
+      "source_assignee_confirmed": true,
+      "source_days_left": 0,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "处理中",
+        "assignee_confirmed": true,
+        "days_left": 0,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0008"
+      },
+      "rule_id": "greeting",
+      "keys": [
+        "greeting_ticket"
+      ],
+      "chars": 11,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0009",
+      "customer_code": "CUS-C3155",
+      "source_status": "处理中",
+      "source_assignee_confirmed": true,
+      "source_days_left": 5,
+      "source_overdue_days": 2,
+      "source_is_overdue": true,
+      "state": {
+        "ticket_status": "处理中",
+        "assignee_confirmed": true,
+        "days_left": 5,
+        "overdue_days": 2,
+        "is_overdue": true,
+        "ticket_id": "WB-DEMO-0009"
+      },
+      "rule_id": "greeting",
+      "keys": [
+        "greeting_ticket"
+      ],
+      "chars": 11,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0010",
+      "customer_code": "CUS-D4266",
+      "source_status": "待验收",
+      "source_assignee_confirmed": true,
+      "source_days_left": 2,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "待验收",
+        "assignee_confirmed": true,
+        "days_left": 2,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0010"
+      },
+      "rule_id": "due_days_left",
+      "keys": [
+        "due_days_left"
+      ],
+      "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0011",
+      "customer_code": "CUS-E5377",
+      "source_status": "处理中",
+      "source_assignee_confirmed": false,
+      "source_days_left": 31,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "处理中",
+        "assignee_confirmed": false,
+        "days_left": 31,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0011"
+      },
+      "rule_id": "greeting",
+      "keys": [
+        "greeting_ticket"
+      ],
+      "chars": 11,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0012",
+      "customer_code": "CUS-F6488",
+      "source_status": "处理中",
+      "source_assignee_confirmed": true,
+      "source_days_left": 0,
+      "source_overdue_days": 1,
+      "source_is_overdue": true,
+      "state": {
+        "ticket_status": "处理中",
+        "assignee_confirmed": true,
+        "days_left": 0,
+        "overdue_days": 1,
+        "is_overdue": true,
+        "ticket_id": "WB-DEMO-0012"
+      },
+      "rule_id": "greeting",
+      "keys": [
+        "greeting_ticket"
+      ],
+      "chars": 11,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0013",
+      "customer_code": "CUS-G7599",
+      "source_status": "已关闭",
+      "source_assignee_confirmed": true,
+      "source_days_left": 6,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "已关闭",
+        "assignee_confirmed": true,
+        "days_left": 6,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0013"
+      },
+      "rule_id": "due_days_left",
+      "keys": [
+        "due_days_left"
+      ],
+      "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    },
+    {
+      "ticket_id": "WB-DEMO-0014",
+      "customer_code": "CUS-H8600",
+      "source_status": "已关闭",
+      "source_assignee_confirmed": true,
+      "source_days_left": 2,
+      "source_overdue_days": 0,
+      "source_is_overdue": false,
+      "state": {
+        "ticket_status": "已关闭",
+        "assignee_confirmed": true,
+        "days_left": 2,
+        "overdue_days": 0,
+        "is_overdue": false,
+        "ticket_id": "WB-DEMO-0014"
+      },
+      "rule_id": "due_days_left",
+      "keys": [
+        "due_days_left"
+      ],
+      "chars": 15,
+      "budget": 60,
+      "sla_breached": true,
+      "as_of_iso": "2026-09-19T10:00:00+08:00"
+    }
+  ],
+  "assertions": {
+    "passed": [
+      "plan key ∈ phrases.json（ticket-001）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-001）",
+      "plan key ∈ phrases.json（ticket-002）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-002）",
+      "plan key ∈ phrases.json（ticket-003）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-003）",
+      "plan key ∈ phrases.json（ticket-004）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-004）",
+      "plan key ∈ phrases.json（ticket-005）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-005）",
+      "plan key ∈ phrases.json（ticket-006）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-006）",
+      "plan key ∈ phrases.json（ticket-007）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-007）",
+      "plan key ∈ phrases.json（ticket-008）",
+      "命中规则 ∈ 包内真实 rule_id（ticket-008）",
+      "留痕行数 == 处理条数",
+      "所有 plan key 都 ∈ phrases.json",
+      "plan 字数未超预算",
+      "至少两条不同的 rule 被命中（不是只打到兜底）",
+      "至少一条非 greeting 规则被命中（演示价值：不是全部兜到 greeting）",
+      "读回的留痕条数 == 处理条数",
+      "留痕的 state 块只含结构化层字段名",
+      "留痕文件里 grep ticket_id → 0 命中",
+      "留痕文件里 grep customer_code → 0 命中",
+      "留痕文件里 grep contact_phone → 0 命中",
+      "留痕文件里 grep assignee_name → 0 命中",
+      "负例前置：合法输入不抛错（证明下面的负例断言不是恒真的空检查）",
+      "负例前置：合法的留痕路径写得出（证明「父目录不存在」这个负例针对的是路径，不是别的）",
+      "负例：源缺必需字段（SourceMapError，消息含 'ticket_status'）",
+      "负例：源含未映射的多余字段（SourceMapError，消息含 'unexpected_column_typo'）",
+      "负例：as_of 未注入（SourceMapError，消息含 'as_of'）",
+      "负例对照：注入不同的 as_of 后 as_of_iso 随之变化",
+      "负例对照：依赖「今天」的派生字段 days_since_opened 随 as_of 变化（证明 as_of 真的被注入，代码没偷读系统时钟）",
+      "注入不同的 as_of 不改变 state 内容（state 里不含任何日期派生字段）",
+      "负例：未声明的敏感字段进 state 会被 T16 拦下（StateError，消息含 'contact_phone'）",
+      "负例：敏感字段被声明为结构化层会被 T16 的 layer 检查拦下（StateError，消息含 'phone'）",
+      "负例：留痕父目录不存在抛 LedgerError 且消息含目标路径",
+      "可复现：同一份源 + 同一 as_of 跑两遍，state 逐字段相同"
+    ],
+    "failed": [],
+    "passed_count": 39,
+    "failed_count": 0
+  }
+}
