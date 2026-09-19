@@ -242,3 +242,18 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 - 语料只覆盖**催收/账户服务**一个场景，**1.8% / 23% 这两个数不能外推到别的业务**——流程驱动型业务（报修登记、查询播报）的可预铸率应显著更高，但那需要另一个业务的语料来测；
 - `fin-cs` 包的话术是**改写**的（`docs/11 §11.7` 禁止逐字复制语料原文）；
 - 时序数字在本目录一概不报——bench 用的离线替身，`timing_metrics_meaningful=false`；真实链路时序见 `docs/09`。
+
+## 十、回归对账（2026-09-19 已验证，验收方亲跑）
+
+> 对外引用的四个数字全部**逐位复现**。任何人对这些数字有疑，照下表命令重跑即可；
+> 期望值即表中数字，实测列是 2026-09-19 的对账结果（环境：主解释器 python3；嵌入走本机 oMLX bge-m3-mlx-fp16）。
+
+| 数字 | 命令（在本目录内跑） | 期望值 | 2026-09-19 实测 |
+|---|---|---|---|
+| 真实语料句式可复用率 | `python3 cross_check_template_rate.py --out /tmp/cc.json` | **1.8%** | 1.7978% ✓（`reusable_turns=464 / n_turns=25810`） |
+| 合成语料句式可复用率（对照） | 同上 | **0.2%** | 0.24% ✓ |
+| 语义档路线 A top-1 | `python3 semantic_probe.py --golden ../../packs/fin-cs/golden/corpus_derived.jsonl --pack ../../packs/fin-cs --out-jsonl /tmp/sp.jsonl` | **11.8%** | 11.8% ✓ |
+| 语义档路线 A top-3 | 同上 | **29.5%** | 29.5% ✓ |
+
+注：语义路线本身已被实测否掉（`docs/13 §八#1`，top-1 与门槛差 8 倍）；本节存证的是**数字的出处可复现**，
+不意味路线仍开放。脚本保留本目录原样（历史证据链，不固化进 tools/）。
