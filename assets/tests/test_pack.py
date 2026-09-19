@@ -11,6 +11,7 @@ assets.tests.test_pack — pack 模块的正例 + 负例测试
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -262,6 +263,8 @@ class TestLookup(unittest.TestCase):
     def _get_pack(self) -> tuple:
         """创建合法包并返回 (pack, entry)。"""
         tmp = tempfile.mkdtemp()
+        # T04d：mkdtemp 必须必然清理（unittest 正式机制，覆盖断言失败路径）
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         root = Path(tmp)
         _create_valid_pack(root)
         pack = load_pack(root)
@@ -619,6 +622,8 @@ class TestAssetPackMethodLookup(unittest.TestCase):
     def _get_pack(self) -> tuple:
         """创建合法包并返回 (pack, entry)。"""
         tmp = tempfile.mkdtemp()
+        # T04d：mkdtemp 必须必然清理（unittest 正式机制，覆盖断言失败路径）
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         root = Path(tmp)
         _create_valid_pack(root)
         pack = load_pack(root)

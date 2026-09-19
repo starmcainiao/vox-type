@@ -67,4 +67,6 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T04d-asset
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T04d 节）
+  - 验收方独立复跑：assets 59 全绿不变；泄漏口径（我跑两遍）`find "$TMPDIR" -maxdepth 1 -type d -name "tmp*"` before=59 after=59 **delta=0**；两处 mkdtemp 均紧随 `addCleanup(shutil.rmtree, ...)`；diff 仅 7 行（import + 2×addCleanup + 注释），断言零改动。
+  - **执行方加分项（记下）**：做了对照实验——`git stash` 回旧代码同口径实测 **+18 个泄漏目录**（9 调用 × 2 遍），证明该口径有灵敏度、不是恒零空测。这条测量方法已可复用。
