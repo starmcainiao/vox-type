@@ -12,10 +12,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -30,6 +32,7 @@ from tools.corpus_fetch.derive_golden import (  # noqa: E402
     derive,
     is_usable_utterance,
     load_strategy_map,
+    main,
 )
 
 
@@ -98,7 +101,7 @@ class StrategyTwelveTests(unittest.TestCase):
                 tmp,
                 [_dialogue(["我这边情况比较特殊", "具体怎么算分期"], strategy="策略12 其它")],
             )
-            cases = derive(corpus, cap_per_strategy=50)
+            cases, _unk = derive(corpus, cap_per_strategy=50)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -137,7 +140,7 @@ class TwoFieldTests(unittest.TestCase):
                     _dialogue(["我想问一下还款日期"], strategy="策略7 信息传达", agent_text="本期还款日是 15 号。"),
                 ],
             )
-            cases = derive(corpus, cap_per_strategy=50)
+            cases, _unk = derive(corpus, cap_per_strategy=50)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -173,7 +176,7 @@ class TwoFieldTests(unittest.TestCase):
                     }
                 ],
             )
-            cases = derive(corpus, cap_per_strategy=10)
+            cases, _unk = derive(corpus, cap_per_strategy=10)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -183,7 +186,12 @@ class TwoFieldTests(unittest.TestCase):
 
 
 class UnknownStrategyTests(unittest.TestCase):
-    """未知策略标签一律跳过并留痕，不猜（原脚本纪律）。"""
+    """T12b 修 4：未知策略标签跳过**必须留痕**（计数 + 打印 + 非零退出），不猜。
+
+    原来的形态是 `if strategy not in mapping: continue`，上一行注释写「一律跳过并留痕」，
+    实际**没有任何计数或日志**——轮次静默消失、golden set 静默残缺、命中率口径失真。
+    「注释说做了实际没做」正是本仓 hunted 的假陈述，所以这里把注释的行为钉成真的。
+    """
 
     def test_unknown_strategy_is_skipped_not_guessed(self):
         tmp = Path("/tmp/vox-derive-unknown")
@@ -195,11 +203,94 @@ class UnknownStrategyTests(unittest.TestCase):
                 tmp,
                 [_dialogue(["我想知道怎么注销"], strategy="策略99 不存在")],
             )
-            cases = derive(corpus, cap_per_strategy=50)
+            cases, unk = derive(corpus, cap_per_strategy=50)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
         self.assertEqual(cases, [])
+        # 修 4：跳过的未知策略必须**被记下来**（Counter 里点名 + 条数），不再是「无痕迹的 continue」
+        self.assertEqual(unk, {"策略99 不存在": 1})
+
+    def test_unknown_strategy_labels_are_counted_per_label(self):
+        tmp = Path("/tmp/vox-derive-unkcount")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        try:
+            corpus = _write_corpus(
+                tmp,
+                [
+                    _dialogue(["我想注销账户怎么办"], strategy="策略99 不存在"),
+                    _dialogue(["这个费率怎么算的"], strategy="策略99 不存在"),
+                    _dialogue(["我想问下额度问题"], strategy="策略88 也不存在"),
+                ],
+            )
+            cases, unk = derive(corpus, cap_per_strategy=50)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        self.assertEqual(cases, [])
+        self.assertEqual(unk["策略99 不存在"], 2)   # 按标签分别计数，不是只记总数
+        self.assertEqual(unk["策略88 也不存在"], 1)
+        self.assertEqual(sum(unk.values()), 3)
+        # 计数不污染 cases：跳过的轮次不产生任何用例
+        self.assertEqual(len(cases), 0)
+
+    def test_main_prints_the_skipped_labels_and_exits_nonzero(self):
+        """验收 5 实测：映射表外的策略标签 → 结尾打印跳过清单 + 退出码非 0。"""
+        tmp = Path("/tmp/vox-derive-unkcli")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        try:
+            corpus = _write_corpus(
+                tmp,
+                [
+                    _dialogue(["请问客服电话多少"], strategy="策略7 信息传达"),
+                    _dialogue(["我这边情况特殊一些"], strategy="策略77 未登记"),
+                ],
+            )
+            out = tmp / "out.jsonl"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = main(["--corpus", str(corpus), "--out", str(out)])
+            printed = buf.getvalue()
+            lines = out.read_text(encoding="utf-8").strip().splitlines()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        self.assertNotEqual(rc, 0)                     # 跑批铁律：非零退出码
+        self.assertEqual(rc, 4)
+        self.assertIn("策略77 未登记", printed)        # 必须打印被跳过的**具体标签**
+        self.assertIn("跳过", printed)
+        # 用例照写盘（已知的策略不受影响），但退出码已经表明产物不完整
+        self.assertEqual(len(lines), 1)
+
+    def test_main_exits_zero_and_prints_nothing_when_all_known(self):
+        """验收 5 正例：全部策略都在映射表内 → 打印里不含跳过项，退出码 0。"""
+        tmp = Path("/tmp/vox-derive-allknown")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        try:
+            corpus = _write_corpus(
+                tmp,
+                [
+                    _dialogue(["请问客服电话多少"], strategy="策略7 信息传达"),
+                    _dialogue(["我这边情况特殊一些"], strategy="策略12 其它"),
+                ],
+            )
+            out = tmp / "out.jsonl"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = main(["--corpus", str(corpus), "--out", str(out)])
+            printed = buf.getvalue()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        self.assertEqual(rc, 0)
+        self.assertNotIn("跳过", printed)              # 不含跳过项
+        self.assertNotIn("未登记", printed)
 
 
 class CapAndCapPerStrategyTests(unittest.TestCase):
@@ -219,7 +310,7 @@ class CapAndCapPerStrategyTests(unittest.TestCase):
                     _dialogue([f"特殊情况{i}" for i in range(4)], strategy="策略12 其它"),
                 ],
             )
-            cases = derive(corpus, cap_per_strategy=2)
+            cases, _unk = derive(corpus, cap_per_strategy=2)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -240,7 +331,7 @@ class StrategyMapTests(unittest.TestCase):
         try:
             corpus = _write_corpus(tmp, [_dialogue(["请问客服电话是多少"], strategy="策略7 信息传达")])
             custom = {"策略7 信息传达": "custom_contact_key"}
-            cases = derive(corpus, cap_per_strategy=10, strategy_to_key=custom)
+            cases, _unk = derive(corpus, cap_per_strategy=10, strategy_to_key=custom)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -314,7 +405,7 @@ class EmptyOutputTests(unittest.TestCase):
         tmp.mkdir()
         try:
             corpus = _write_corpus(tmp, [_dialogue(["好"], strategy="策略1 礼貌问候")])
-            self.assertEqual(derive(corpus, cap_per_strategy=50), [])
+            self.assertEqual(derive(corpus, cap_per_strategy=50)[0], [])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -329,6 +420,6 @@ class EmptyOutputTests(unittest.TestCase):
             # 迁到 tools/ 后统一走 DeriveError（原脚本是 ValueError）——断言的是「抛了」，
             # 不锁定异常类型，避免把实现细节当成口径。
             with self.assertRaises((DeriveError, ValueError)):
-                derive(p, cap_per_strategy=10)
+                derive(p, cap_per_strategy=10)[0]
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

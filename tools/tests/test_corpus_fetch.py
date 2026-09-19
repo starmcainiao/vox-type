@@ -15,7 +15,7 @@ import os
 import shutil
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -34,6 +34,8 @@ from tools.corpus_fetch.fetch import (  # noqa: E402
     release_lock,
     recheck,
     resolve_out_root,
+    select_files,
+    update_lock,
     write_lock,
 )
 
@@ -695,6 +697,169 @@ class StreamingDownloadTests(unittest.TestCase):
         self.assertFalse(dest.exists())
         self.assertFalse(dest.with_suffix(dest.suffix + ".part").exists())
         self.assertEqual(list(dest.parent.glob("*.part")), [])
+
+
+class SelectFilesDeclarationTests(unittest.TestCase):
+    """T12b 修 1：声明了具体路径时逐项核对，缺失就抛错——不静默丢弃。
+
+    旧逻辑只要还有 ≥1 个命中就放行，被改名/删除的声明文件会被静默丢掉：不完整语料
+    当完整入库，`manifest_digest` 只覆盖现存文件。
+    """
+
+    TREE = [
+        {"path": "a.txt", "size": 1, "declared_sha256": "", "is_lfs": False},
+        {"path": ".gitattributes", "size": 1, "declared_sha256": "", "is_lfs": False},
+    ]
+
+    def test_missing_declared_file_raises_with_its_full_name(self):
+        # 验收 2 负例：声明 [a.txt, 缺失.txt] 而树里只有 a.txt
+        with self.assertRaises(FetchError) as cm:
+            select_files({"id": "d/ns", "files": ["a.txt", "缺失.txt"]}, self.TREE)
+        msg = str(cm.exception)
+        self.assertIn("缺失.txt", msg)  # 必须点名缺失的文件，不能只说「有缺失」
+        self.assertIn("d/ns", msg)      # 以及来源 id
+        self.assertIn("不完整语料不得入库", msg)
+
+    def test_all_declared_files_present_passes(self):
+        # 验收 2 正例：全部命中 → 正常返回（按 path 排序）
+        picked = select_files(
+            {"id": "d/ns", "files": ["data/CSConv.json", "data/extra.json"]},
+            [
+                {"path": "data/extra.json", "size": 1, "declared_sha256": "", "is_lfs": False},
+                {"path": "data/CSConv.json", "size": 2, "declared_sha256": "", "is_lfs": False},
+            ],
+        )
+        self.assertEqual([f["path"] for f in picked], ["data/CSConv.json", "data/extra.json"])
+
+    def test_wildcard_declaration_keeps_the_old_behaviour(self):
+        # 验收 2：`["*"]` 行为不变——`*` 不存在「漏了哪个」，也不受逐个核对影响
+        picked = select_files({"id": "d/ns", "files": ["*"]}, self.TREE)
+        self.assertEqual([f["path"] for f in picked], ["a.txt"])  # `.` 开头的照旧被跳过
+        # 声明里同时含 `*` 与具体路径也走「不核对」分支（不因为多写一个路径就变严）
+        picked2 = select_files({"id": "d/ns", "files": ["*", "not/there.txt"]}, self.TREE)
+        self.assertEqual([f["path"] for f in picked2], ["a.txt"])
+
+    def test_declared_dotfile_is_not_reported_missing(self):
+        # 缺失核对只看**非 `.` 开头**的声明：声明里全是点文件时，不算「缺失」（否则会逼
+        # 人为 .gitattributes 建条目），走的是既有的「筛选结果为空」这一支。
+        with self.assertRaises(FetchError) as cm:
+            select_files({"id": "d/ns", "files": [".gitattributes"]}, self.TREE)
+        self.assertIn("文件筛选结果为空", str(cm.exception))
+        self.assertNotIn("不存在", str(cm.exception))
+
+
+class LockCriticalSectionTests(unittest.TestCase):
+    """T12b 修 2 / 修 3：台账的「读旧 → 合并 → 写」必须在同一个锁临界区内。
+
+    旧实现读在锁外、`write_lock` 只盖写：实例 B 在 A 提交前读到陈旧 old，A 释放锁后 B
+    才写入 → A 的条目被静默覆盖，B 照常打「台账已写」exit 0。
+    """
+
+    def setUp(self):
+        self.tmpdir = Path("/tmp/vox-fake-ucrit")
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+        self.tmpdir.mkdir(parents=True, exist_ok=True)
+        self.lock_path = self.tmpdir / "corpus.lock.json"
+        self.original = (
+            fetch_mod._hold_lease,
+            fetch_mod._read_old_entries,
+            fetch_mod._write_doc_locked,
+        )
+
+    def tearDown(self):
+        fetch_mod._hold_lease, fetch_mod._read_old_entries, fetch_mod._write_doc_locked = self.original
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_read_and_merge_happen_inside_the_held_lease(self):
+        """关键断言：读旧台账与写，都发生在持有 lease 期间；持锁外读到的值不会被写回。"""
+        observed = {}
+
+        def fake_read(path):
+            observed["read"] = observed.get("read", 0) + 1
+            # 在「读」这一刻记下 lease 是否仍被持有——这就是「读在锁内」的证据
+            observed["held_at_read"] = observed.get("held", None)
+            return [{"id": "old/x", "files": []}]
+
+        @contextmanager
+        def real_lease(path):
+            observed["held"] = True
+            try:
+                yield
+            finally:
+                observed["held"] = False
+
+        fetch_mod._read_old_entries = fake_read
+        fetch_mod._write_doc_locked = lambda p, e: observed.setdefault("write_entries", e)
+        old_lease = fetch_mod._hold_lease
+        fetch_mod._hold_lease = real_lease
+
+        try:
+            merged = update_lock(self.lock_path, lambda old: merge_lock(old, [{"id": "new/y", "files": []}]))
+        finally:
+            fetch_mod._hold_lease = old_lease
+
+        self.assertEqual(observed["read"], 1)
+        # 读旧台账是在**持有 lease 期间**发生的——而不是像旧实现那样在锁外读
+        self.assertEqual(observed["held_at_read"], True)
+        # 写也在持锁期间，且写的是**合并后**的条目（不是仅本次条目）
+        self.assertIn("write_entries", observed)
+        self.assertEqual([e["id"] for e in merged], ["new/y", "old/x"])
+        # 临界区结束后锁已释放
+        self.assertEqual(observed["held"], False)
+
+    def test_update_lock_sees_a_concurrent_write_it_made_inside_the_same_run(self):
+        """并发形态复现：B 在 A 释放锁前读到的不是陈旧值。
+
+        注入方式：在持锁期间（读旧台账之后、写之前）另一个「实例」写入了台账；
+        `update_lock` 因为读写同处一个 lease，B 的写入发生在持锁期**之后**，
+        于是 A 的读拿到的是**包含 B 条目**的台账，不会用陈旧 old 覆盖掉 B。
+        """
+        lock = self.lock_path
+
+        def reader_writing_second_instance(path):
+            path.write_text(
+                json.dumps(
+                    {"_schema": "vox-corpus-lock/1", "_note": "n",
+                     "entries": [{"id": "concurrent/w", "files": []}]},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            return [{"id": "concurrent/w", "files": []}]
+
+        # 第一实例（本进程内模拟）：持锁 → 读（此时读函数里已替第二实例写盘）→ 合并 → 写
+        fetch_mod._read_old_entries = reader_writing_second_instance
+        merged = update_lock(lock, lambda old: merge_lock(old, [{"id": "first/a", "files": []}]))
+
+        doc = json.loads(lock.read_text(encoding="utf-8"))
+        ids = [e["id"] for e in doc["entries"]]
+        # 关键断言：第二实例的条目**没有被覆盖**——这正是 2026-09-18 那次事故的形态
+        self.assertIn("concurrent/w", ids)
+        self.assertIn("first/a", ids)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(sorted(ids), sorted([e["id"] for e in merged]))
+
+    def test_malformed_old_ledger_fails_closed_without_touching_the_file(self):
+        """T12b 修 3：旧台账是坏 JSON → 抛 FetchError，且原文件字节**未被改动**。"""
+        bad = self.tmpdir / "corpus.lock.json"
+        payload = b'{bad json"entries": [\n'  # 故意坏
+        bad.write_bytes(payload)
+
+        with self.assertRaises(FetchError) as cm:
+            update_lock(bad, lambda old: merge_lock(old, [{"id": "n/new", "files": []}]))
+        msg = str(cm.exception)
+        self.assertIn("corpus.lock.json", msg)  # 消息含台账路径
+        self.assertIn("拒绝覆盖", msg)
+        self.assertIn("Expecting", msg)          # 以及解析错误摘要
+        # 关键断言：原文件字节一个都没动（不是「警告后覆盖」）
+        self.assertEqual(bad.read_bytes(), payload)
+        # 失败后不留临时文件
+        self.assertEqual(list(self.tmpdir.glob("corpus.lock.json.tmp")), [])
+        # 台账结构没被改掉后仍可正常更新
+        bad.write_text(json.dumps({"entries": [{"id": "recovered", "files": []}]}), encoding="utf-8")
+        merged = update_lock(bad, lambda old: merge_lock(old, [{"id": "n/new", "files": []}]))
+        self.assertEqual([e["id"] for e in merged], ["n/new", "recovered"])
 
 
 class LockAtomicityTests(unittest.TestCase):

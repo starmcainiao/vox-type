@@ -97,6 +97,10 @@ HTTP_TIMEOUT = 180  # 秒；大文件下载用
 HTTP_RETRIES = 3
 LOCK_LOCK_FILENAME = "corpus.lock.json.lock"  # 并发门禁用的占位文件（同目录，仓外）
 
+# 缺省 revision：三处（许可审计 / tree / 下载）必须**同一个**缺省，否则审计证据与实际入库
+# 内容会绑在不同版本（T12b 第 5 条：原先缺省在审计侧与下载侧取的不是同一个值）。
+DEFAULT_REVISION = "main"
+
 # 台账 _note：说明本批数据由谁生成（T12 提升后写死指向 tools/，不再是 labs/ 的一次性脚本）
 LOCK_NOTE = (
     "由 tools/corpus_fetch/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对"
@@ -386,7 +390,7 @@ def audit_license(src: Dict[str, Any]) -> Dict[str, Any]:
     返回审计记录（供台账使用）；任一不过 → 抛 LicenseRejected（带可读理由）。
     """
     sid = src["id"]
-    rev = src.get("revision", "master")
+    rev = src.get("revision", DEFAULT_REVISION)
     platform = PLATFORMS[src["platform"]]
     out: Dict[str, Any] = {"id": sid, "audit_checks": []}
 
@@ -465,12 +469,26 @@ def select_files(src: Dict[str, Any], tree: List[Dict[str, Any]]) -> List[Dict[s
     """按 sources.json 的 files 声明筛选要下的文件；`*` = 全部。
 
     以 `.` 开头的文件（.gitattributes / .DS_Store 等）一律跳过——对语料内容无意义。
+
+    **声明了具体路径时逐项核对（T12b 修 1）**：只要还有 ≥1 个命中就放行的旧逻辑，会让某个
+    被改名/删除的声明文件被**静默丢弃**——不完整语料当完整入库，`manifest_digest` 只覆盖
+    现存文件，而 recheck 之后也证明不了「这份语料是完整的」。所以这里对每个非 `.` 开头的
+    声明路径逐个比对 tree，有缺失就抛错、一个都不下。
     """
     pats = src.get("files", ["*"])
     picked = [f for f in tree if not Path(f["path"]).name.startswith(".") and ("*" in pats or f["path"] in pats)]
     picked.sort(key=lambda f: f["path"])
     if not picked:
         raise FetchError(f"{src['id']}: 文件筛选结果为空（声明 files={pats}）")
+    if "*" not in pats:
+        # 全量声明（`*`）不存在「漏了哪个」这个问题——只有具体路径才可能静默缺失
+        missing = [p for p in pats if not p.startswith(".") and p not in {f["path"] for f in picked}]
+        if missing:
+            raise FetchError(
+                f"{src['id']}: 声明的文件在平台文件树里不存在 {missing}"
+                f"（声明 files={pats}，tree 实有 {len(tree)} 个条目）——不完整语料不得入库，一个都不下。"
+                f"请核对 sources.json 的路径声明（改名/删除都会在这里暴露）"
+            )
     return picked
 
 
@@ -479,7 +497,7 @@ def download_file(src: Dict[str, Any], rec: Dict[str, Any], dest: Path) -> Tuple
 
     走流式下载（大文件不进内存），先写 `.part` 再改名，避免中断留下半个文件被当成完整语料。
     """
-    url = PLATFORMS[src["platform"]].download_url(src["id"], src.get("revision", "main"), rec["path"])
+    url = PLATFORMS[src["platform"]].download_url(src["id"], src.get("revision", DEFAULT_REVISION), rec["path"])
     return http_download_to_file(url, dest)
 
 
@@ -533,20 +551,59 @@ def _hold_lease(lock_path: Path) -> Generator[None, None, None]:
             os.close(fd)
 
 
+def _write_doc_locked(lock_path: Path, entries: List[Dict[str, Any]]) -> None:
+    """已在锁内时调用：临时文件 + rename 原子落盘，失败不留下半份台账。"""
+    doc = {
+        "_schema": "vox-corpus-lock/1",
+        "_note": LOCK_NOTE,
+        "entries": entries,
+    }
+    tmp = lock_path.with_suffix(lock_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(lock_path)
+
+
 def write_lock(lock_path: Path, entries: List[Dict[str, Any]]) -> None:
     """把台账写入 lock_path：**持锁 + 临时文件 + rename**（原子），失败不留下半份台账。
 
     条目顺序由调用方决定（`merge_lock` 已按 id 排序）——写入端不改语义，只做原子落盘。
     """
     with _hold_lease(lock_path):
-        doc = {
-            "_schema": "vox-corpus-lock/1",
-            "_note": LOCK_NOTE,
-            "entries": entries,
-        }
-        tmp = lock_path.with_suffix(lock_path.suffix + ".tmp")
-        tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(lock_path)
+        _write_doc_locked(lock_path, entries)
+
+
+def _read_old_entries(lock_path: Path) -> List[Dict[str, Any]]:
+    """读旧台账的 entries；文件不存在 → 空列表；**坏 JSON → 抛 FetchError 中止**。
+
+    修 3（T12b）：原来「警告一行就整体覆盖」会把旧条目全部丢掉、对应语料脱管
+    （recheck 不再巡检），exit 0——与本文件自己写的「宁可硬失败也不静默覆盖」相抵触。
+    所以这里是硬失败：让人手工裁决（备份/删除该台账）后重跑。
+    """
+    if not lock_path.exists():
+        return []
+    try:
+        return json.loads(lock_path.read_text(encoding="utf-8")).get("entries", [])
+    except json.JSONDecodeError as e:
+        raise FetchError(
+            f"旧台账解析失败，拒绝覆盖: {lock_path} :: {e}"
+            f"（旧条目会被整体丢掉、对应语料从此脱离巡检——不静默覆盖。"
+            f"请人工备份或删除该台账后重跑）"
+        ) from e
+
+
+def update_lock(lock_path: Path, merge_fn) -> List[Dict[str, Any]]:
+    """在锁临界区内完成「读旧台账 → merge_fn(old, new_entries) → 写」，返回写入的条目。
+
+    修 2（T12b）：旧实现把 `json.loads(read_text)` 放在锁外、`write_lock` 只盖写，
+    于是实例 B 在 A 提交前读到陈旧 old、A 释放锁后 B 才写入 → **A 的条目被静默覆盖**，
+    B 照常打「台账已写」exit 0。这正是 2026-09-18 那次并发事故的形态：锁没堵住它，
+    只是把窗口从「整段」缩到「读→写间隙」。现在读与写同处一个 lease，间隙不存在了。
+    """
+    with _hold_lease(lock_path):
+        old = _read_old_entries(lock_path)
+        merged = merge_fn(old)
+        _write_doc_locked(lock_path, merged)
+        return merged
 
 
 def merge_lock(old: List[Dict[str, Any]], new_entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -622,7 +679,7 @@ def process(
 ) -> Dict[str, Any]:
     """处理一份来源：审计许可 → （非 dry-run 时）下载并校验 → 返回台账条目。"""
     sid = src["id"]
-    rev = src.get("revision", "main")
+    rev = src.get("revision", DEFAULT_REVISION)
     platform = PLATFORMS[src["platform"]]
     print(f"\n=== {sid} [{platform.name}] ===")
 
@@ -790,15 +847,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if not args.dry_run and entries:
         # 台账合并写：保留本次未处理的旧条目，避免「跑 --only 一次就把台账清空」。
-        old: List[Dict[str, Any]] = []
-        if resolved_lock.exists():
-            try:
-                old = json.loads(resolved_lock.read_text(encoding="utf-8")).get("entries", [])
-            except json.JSONDecodeError:
-                print(f"警告：旧台账解析失败，将被覆盖: {resolved_lock}", file=sys.stderr)
+        # 「读旧台账 → 合并 → 写」必须在**同一个**锁临界区内完成（update_lock）——
+        # 读放在锁外会漏：另一个实例用陈旧 old 合并后写入，把本次条目静默覆盖掉。
         # 锁的创建与 mkdir 都在拿到 entries 之后：审计失败一个都不成 → 不建目录、不写台账
-        write_lock(resolved_lock, merge_lock(old, entries))
-        print(f"台账已写: {resolved_lock}（{len(merge_lock(old, entries))} 条）")
+        merged = update_lock(resolved_lock, lambda old: merge_lock(old, entries))
+        print(f"台账已写: {resolved_lock}（{len(merged)} 条）")
 
     print(f"\n{'[dry-run] ' if args.dry_run else ''}成功 {len(entries)} / 拒绝 {len(rejected)}")
     for sid, reason in rejected:

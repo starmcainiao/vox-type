@@ -37,9 +37,10 @@ import argparse
 import json
 import re
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # 缺省映射：DianJin-CSC 的 12 类「话轮功能」→ packs/fin-cs 的 key。
 # **这是业务判断，不是语料自带的事实**；换业务请用 `--strategy-map` 传入另一张表。
@@ -115,8 +116,12 @@ def derive(
     cap_per_strategy: int,
     strategy_to_key: Optional[Dict[str, Optional[str]]] = None,
     source_id: str = "tongyi_dianjin/DianJin-CSC-Data",
-) -> List[Dict[str, Any]]:
-    """把对话语料切成用例。返回用例列表（未写盘）。"""
+) -> Tuple[List[Dict[str, Any]], Counter]:
+    """把对话语料切成用例。
+
+    返回 (用例列表, 未知策略 Counter)——未知策略 = 映射表外的策略标签，被跳过但**必须留痕**：
+    静默跳过会让轮次悄悄消失、golden set 残缺、命中率口径失真。
+    """
     mapping = dict(strategy_to_key) if strategy_to_key is not None else dict(DEFAULT_STRATEGY_TO_KEY)
     corpus_path = Path(corpus_path)
     if not corpus_path.exists():
@@ -130,6 +135,7 @@ def derive(
 
     cases: List[Dict[str, Any]] = []
     per_strategy: Dict[str, int] = {}
+    unknown_strategies = Counter()  # 映射表外的策略标签：跳过并留痕，不猜
     seq = 0
     today = datetime.now(timezone.utc).astimezone().date().isoformat()
 
@@ -144,7 +150,10 @@ def derive(
                 continue
             strategy = nxt.get("strategy")
             if strategy not in mapping:
-                # 未知策略标签一律跳过并留痕，不猜（静默降级是头号红线）
+                # 未知策略标签一律跳过并留痕，不猜（静默降级是头号红线）。
+                # 计数在 `unknown_strategies`，结尾由 main 打印并据此非零退出——
+                # 轮次静默消失会让 golden set 残缺、命中率口径失真。
+                unknown_strategies[strategy] += 1
                 continue
             utter = (turn.get("text") or "").strip()
             if not is_usable_utterance(utter):
@@ -173,7 +182,7 @@ def derive(
                     "labeled_at": today,
                 }
             )
-    return cases
+    return cases, unknown_strategies
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -195,7 +204,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         mapping = load_strategy_map(strategy_path)
-        cases = derive(corpus_path, args.cap_per_strategy, strategy_to_key=mapping, source_id=args.source_id)
+        cases, unknown_strategies = derive(
+            corpus_path, args.cap_per_strategy, strategy_to_key=mapping, source_id=args.source_id
+        )
     except DeriveError as e:
         print(str(e), file=sys.stderr)
         return 2
@@ -210,14 +221,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
 
     # 分布摘要（人读）
-    from collections import Counter
-
     print(f"写出 {len(cases)} 条 → {out}")
     print("\n按 expect_key 分布：")
     for k, n in Counter(c["expect_key"] or "(unspecified)" for c in cases).most_common():
         print(f"  {n:5d}  {k}")
     n_unspec = sum(1 for c in cases if c["expect_kind"] == "unspecified")
     print(f"\n其中 unspecified（不该命中任何 key）: {n_unspec} ({n_unspec / len(cases) * 100:.1f}%)")
+
+    # 映射表外的策略标签：必须**打印**出来，并据此非零退出。
+    # 原来这里是 `continue` + 上一行注释「跳过并留痕」——实际没有任何计数或日志，
+    # 轮次静默消失、golden set 静默残缺、命中率口径失真（T12b 修 4）。
+    n_skipped = sum(unknown_strategies.values())
+    if n_skipped:
+        print(f"\n跳过：映射表外的策略标签（未生成用例，golden set 不完整）")
+        for strat, n in unknown_strategies.most_common():
+            print(f"  {n:5d}  {strat}")
+        print(f"  共 {n_skipped} 条被跳过——请补全 --strategy-map 后重跑", file=sys.stderr)
+        return 4
     return 0
 
 
