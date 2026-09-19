@@ -199,7 +199,8 @@ class TriggerRule:
     属性：
         rule_id: 规则标识（同一 trigger.json 内唯一）
         when:    匹配条件——字段名 → 期望值或 {"gt"/"gte"/"lt"/"lte": 值}；
-                 None = 无条件（兜底规则），**至多一条**（多条兜底 = 触发顺序不确定）
+                 None = 无条件（兜底规则），**至多一条且必须是 rules 的最后一条**
+                 （放在前面 = 每一条 state 都命中它，后面的条件规则一条都看不到，零留痕）
         units:   该规则产出的 plan 单元序列
     """
 
@@ -501,7 +502,7 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
     异常：
         TriggerError: 文件缺失 / 非合法 JSON / 缺必填字段 / 未知字段（typo 必须响）/
                       非法 layer 或 type / 引用未审核 key / 出现 SAY_LIVE 或 text /
-                      变体不是整数 / 兜底规则不止一条 / 重复 rule_id
+                      变体不是整数 / 兜底规则不止一条 / 兜底规则不是最后一条 / 重复 rule_id
     """
     root = Path(pack_dir)
     where = f"{TRIGGER_FILE_NAME}（{root}）"
@@ -582,6 +583,7 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
     seen_rule_ids: Dict[str, int] = {}
     unconditional_count = 0
     first_unconditional_id: Optional[str] = None
+    first_unconditional_index: Optional[int] = None
     for i, raw_rule in enumerate(rules_doc, start=1):
         r_where = f"{where} 的 rules[{i}]"
 
@@ -620,6 +622,7 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
                 )
             unconditional_count += 1
             first_unconditional_id = rule_id
+            first_unconditional_index = i
 
         units_doc = raw_rule["units"]
         if not isinstance(units_doc, list):
@@ -647,6 +650,30 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
             units.append(u)
 
         rules.append(TriggerRule(rule_id=rule_id, when=when, units=tuple(units)))
+
+    # 7b. 位置校验（T16b）：兜底规则（when: null）必须是 rules 的最后一条。
+    # WHY：trigger.build_plan 的匹配口径是「按声明顺序取第一条命中」，兜底规则对
+    #      **每一个** state 都命中。它若不是最后一条，后面的条件规则一条都轮不到被看到——
+    #      配置看起来有条件分支、实际全被兜底吃掉，零报错零留痕（与 T17b 的
+    #      「when: null 写成永不命中」是同一类静默降级）。这里只校验位置，
+    #      不改匹配口径（trigger.py 一行不动）。
+    # 放在整条 rules 解析完成**之后**：循环内若已有第二条 when: null，上面的
+    # 「至多一条」检查会先按旧口径抛错（消息与改动前同口径）；能走到这里的配置
+    # 恰好只有 0 或 1 条兜底规则，位置检查是**新增**的一条，不替换、不弱化旧检查。
+    if first_unconditional_index is not None and first_unconditional_index != len(rules_doc):
+        shadowed = len(rules_doc) - first_unconditional_index
+        shadowed_ids = [raw.get("rule_id") for raw in rules_doc[first_unconditional_index:]]
+        raise TriggerError(
+            f"{where} 的 rules[{first_unconditional_index}] "
+            f"的 rule_id='{first_unconditional_id}' 是无条件兜底规则，"
+            f"它后面还有 {shadowed} 条规则"
+            f"（rules[{first_unconditional_index + 1}]..rules[{len(rules_doc)}]，"
+            f"rule_id={shadowed_ids}）会被它遮蔽"
+            f"（trigger 按声明顺序取第一条命中，兜底对每一个 state 都命中，"
+            f"后面的条件规则一条都轮不到）；"
+            f"兜底规则必须是 rules 的最后一条（rules[{len(rules_doc)}]）"
+            f"（把 rule_id='{first_unconditional_id}' 挪到最后）"
+        )
 
     return Trigger(
         trigger_id=trigger_id,

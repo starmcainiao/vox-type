@@ -446,6 +446,134 @@ class TestTriggerUnknownField(unittest.TestCase):
 
 
 # ============================================================
+# 4b. 负例：兜底规则不是最后一条（T16b）
+# ============================================================
+class TestFallbackNotLast(unittest.TestCase):
+    """T16b 验收 2/3/5：when: null 的规则若不是 rules 的最后一条 → TriggerError。
+
+    trigger.build_plan 的匹配口径是「按声明顺序取第一条命中」，兜底规则对**每一个**
+    state 都命中，所以它放在前面会把后面的条件规则全部遮蔽——配置看起来有条件分支、
+    实际全被兜底吃掉，零留痕（静默降级）。本类只在装载期把它拦下。
+    """
+
+    def _load(self, doc):
+        """把 doc 写成合成包并走产品 API load_trigger（不在测试里自造位置判定）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            pack_dir = _write_pack(Path(tmp), doc)
+            return load_trigger(pack_dir)
+
+    def test_fallback_first_shadows_three_rules_raises(self):
+        """T16b 验收 2：兜底在 rules[1]、后面还有 3 条条件规则 → 报错。
+
+        消息必须同时含兜底的 rule_id、它的序号、被遮蔽的规则条数。
+        """
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][3], doc["rules"][0], doc["rules"][1], doc["rules"][2]]
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("closing", msg)       # 兜底规则的 rule_id
+        self.assertIn("rules[1]", msg)      # 兜底规则自己的序号
+        self.assertIn("rules[2]", msg)      # 被遮蔽区间的起点
+        self.assertIn("rules[4]", msg)      # 被遮蔽区间的终点
+        self.assertIn("greeting", msg)      # 被遮蔽规则的 rule_id
+        self.assertIn("ask_assignee", msg)
+        self.assertIn("3", msg)             # 被遮蔽条数
+
+    def test_fallback_in_middle_shadows_two_raises(self):
+        """兜底在 rules[2]、后面还有 2 条条件规则 → 报错，被遮蔽条数为 2。"""
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][0], doc["rules"][3], doc["rules"][1], doc["rules"][2]]
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("closing", msg)
+        self.assertIn("rules[2]", msg)
+        self.assertIn("rules[3]", msg)
+        self.assertIn("rules[4]", msg)
+        self.assertIn("ask_assignee", msg)
+        self.assertIn("2", msg)
+
+    def test_fallback_at_end_of_three_raises(self):
+        """兜底在 rules[3]、后面还有 1 条条件规则 → 报错，被遮蔽条数为 1。"""
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][1], doc["rules"][2], doc["rules"][3], doc["rules"][0]]
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("closing", msg)
+        self.assertIn("rules[3]", msg)
+        self.assertIn("rules[4]", msg)
+        self.assertIn("greeting", msg)
+        self.assertIn("1", msg)
+
+    def test_fallback_last_is_valid(self):
+        """T16b 验收 3-①：兜底是最后一条（前面有条件规则）→ 装载成功。
+
+        fixture 默认顺序就是 closing 在最后，即真实包（demo-brief）的形状。
+        """
+        doc = _make_trigger_fixture()
+        trigger = self._load(doc)
+        self.assertEqual(len(trigger.rules), 4)
+        self.assertIsNone(trigger.rules[-1].when, "兜底规则应落在 rules 的最后一条")
+        self.assertIsNotNone(trigger.rules[-2].when)
+        self.assertEqual(trigger.rules[-1].rule_id, "closing")
+
+    def test_only_rule_is_fallback_valid(self):
+        """T16b 验收 3-②：全部规则只有一条且它是兜底 → 装载成功（它既是首条也是末条）。"""
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][3]]
+        trigger = self._load(doc)
+        self.assertEqual(len(trigger.rules), 1)
+        self.assertIsNone(trigger.rules[0].when)
+        self.assertEqual(trigger.rules[0].rule_id, "closing")
+
+    def test_fallback_not_last_but_no_fallback_valid(self):
+        """无兜底规则的包不受位置检查影响 → 装载成功（位置检查只针对 when: null）。"""
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][1], doc["rules"][0], doc["rules"][2]]
+        trigger = self._load(doc)
+        self.assertEqual(len(trigger.rules), 3)
+        for rule in trigger.rules:
+            self.assertIsNotNone(rule.when)
+
+    def test_two_unconditional_middle_last_still_caught_by_uniqueness(self):
+        """T16b 验收 5：两条 when: null（一前一后）仍由「至多一条」检查定口径。
+
+        兜底在 rules[2]、第二条 when: null 在 rules[3]：解析到第二条时才第一次发现
+        重复，旧检查先按原口径抛错（消息与改动前同口径）——位置检查没替换它。
+        """
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][0], doc["rules"][3], doc["rules"][1]]
+        doc["rules"][2]["when"] = None
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("兜底规则最多一条", msg)
+        self.assertIn("触发顺序不确定", msg)
+        self.assertIn("due_days_left", msg)   # 第一条兜底（fixture[1]）
+        self.assertIn("closing", msg)         # 第二条兜底（fixture[3]）
+        self.assertNotIn("被遮蔽", msg, "该负例应由旧检查命中，不得被位置检查抢先替代")
+
+    def test_two_unconditional_first_middle_still_caught_by_uniqueness(self):
+        """T16b 验收 5（另一处）：两条 when: null 在 rules[1] 与 rules[3]。
+
+        第二条落在 rules[3]（末条）——它本身位置合法，仍必须被「至多一条」拦下，
+        不能因为第二条排在最后就让两条兜底同时通过。
+        """
+        doc = _make_trigger_fixture()
+        doc["rules"] = [doc["rules"][1], doc["rules"][0], doc["rules"][2], doc["rules"][3]]
+        doc["rules"][2]["when"] = None
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("兜底规则最多一条", msg)
+        self.assertIn("closing", msg)
+        self.assertIn("ask_assignee", msg)
+        self.assertNotIn("被遮蔽", msg, "该负例应由旧检查命中，不得被位置检查抢先替代")
+
+
+# ============================================================
 # 5. 负例：引用未审核 key
 # ============================================================
 class TestUnreviewedKey(unittest.TestCase):
