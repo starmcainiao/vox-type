@@ -242,14 +242,23 @@ def _adapter_env(asr: Any) -> Dict[str, Any]:
 def _is_synthetic(asr: Any) -> bool:
     """判定适配器是否为替身（不依赖单一属性，T08b 审计 #2 的教训）。
 
+    fail-safe 纪律（T14c 修 1）：synthetic 属性**存在**即按 bool() 归真，
+      只有**显式声明为 False**（或等价的 falsy 值）才可能按真机处理。
+      修前用 `is True` 比较——适配器把 `synthetic` 写成 truthy 非 True（`1` / `"yes"`
+      这类类型笔误）会穿透成 `synthetic: false` + `[COMPLETE]` + rc 0，替身数据被
+      当真机背书。判定不依赖「恰好写了对的 True」（T08b 在 bench 上修掉的同类缺陷）。
+
     四重检查：
-      ① asr.synthetic is True（显式标记）；
+      ① asr.synthetic 显式为假值 → 候选真机，再看 ②③④ 是否把它拉回替身；
       ② 模块名以 eval. 开头（unittest discover 前缀场景）；
       ③ 源文件位于 eval 包目录下（discover -s eval 无前缀场景）；
-      ④ 不在 adapters/ 下且未显式声明 synthetic=False（第三方替身场景）。
-    真机适配器（adapters/ 下且声明 synthetic=False）→ False。
+      ④ 不在 adapters/ 下且未显式声明 synthetic（第三方替身场景）。
+    真机适配器（adapters/ 下且显式 synthetic=False）→ False。
+    属性缺失或任何 truthy 值（含 1 / "yes" / [] 的反例除 falsy 外）→ True。
     """
-    if getattr(asr, "synthetic", False) is True:
+    declared = hasattr(asr, "synthetic")
+    synthetic_value = getattr(asr, "synthetic", True)
+    if bool(synthetic_value):
         return True
     mod_name = type(asr).__module__
     mod_obj = sys.modules.get(mod_name)
@@ -260,7 +269,6 @@ def _is_synthetic(asr: Any) -> bool:
         directory == eval_dir or directory.startswith(eval_dir + os.sep)
     )
     in_adapters = mod_name.startswith("adapters.")
-    declared = hasattr(asr, "synthetic")
     return (
         mod_name.startswith("eval.")
         or in_eval_pkg
@@ -500,7 +508,10 @@ def run_readback_cli(argv: Optional[Sequence[str]] = None) -> int:
     """
     args = _parse_args(argv)
 
-    # 配置期错误在建目录之前拦下：失败时不产生任何文件
+    # 配置期错误在建目录之前拦下：失败时不产生任何文件。
+    # T14c 修 2：manifest 读取纳入同一 try——manifest 非 UTF-8 时 read_text
+    # 抛的是 UnicodeDecodeError（ValueError 子类），属「输入错误」应归 rc 2；
+    # 修前它逃出 try 变成裸 traceback + rc 1（冻结退出码集合 {0,2,3,4,5} 之外的出口）。
     try:
         asr = resolve_asr(
             args.asr,
@@ -508,20 +519,19 @@ def run_readback_cli(argv: Optional[Sequence[str]] = None) -> int:
             model=args.model,
             timeout_seconds=args.timeout,
         )
-    except ReadbackError as exc:
+        report = run_readback(
+            args.manifest,
+            asr,
+            command=args.command,
+            seed=_stats.DEFAULT_SEED,
+        )
+    except _CLI_ERRORS as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 
     out_dir = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="vox-readback-"))
 
     try:
-        report = run_readback(
-            args.manifest,
-            asr,
-            out_dir=out_dir,
-            command=args.command,
-            seed=_stats.DEFAULT_SEED,
-        )
         samples = _report_samples(report)
         # 原始样本 = 逐条明细（成功与失败都在，不缩分母视图）
         raw_dir = out_dir / Path(RAW_SAMPLES_REL).parent
@@ -532,11 +542,12 @@ def run_readback_cli(argv: Optional[Sequence[str]] = None) -> int:
     except ReadbackError as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
-    except OSError as exc:
+    except _CLI_ERRORS as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 3
 
-    # 落盘前复核磁盘状态（复用 eval.report.check_raw_on_disk 的指纹/行数核对）
+    # 落盘前复核磁盘状态（复用 eval.report.check_raw_on_disk 的指纹/行数核对）；
+    # write_readback 会再核一次并去重追加（T14c 修 3），这里保留早核对以便定 rc 4。
     disk_issues = check_raw_on_disk(report, out_dir)
     if disk_issues:
         report["incomplete"] = True
@@ -544,7 +555,7 @@ def run_readback_cli(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         write_readback(report, out_dir)
-    except OSError as exc:
+    except _CLI_ERRORS as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 3
 
@@ -583,8 +594,15 @@ def write_readback(report: Dict[str, Any], out_dir: Any) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     issues = check_raw_on_disk(report, out)
     if issues:
+        # T14c 修 3：调用方（run_readback_cli）在建指针时已核过一次并追加过同样的
+        # 问题——重复追加会让 1 条问题在报告里出现 2 条、摘要显示「2 项原因」。
+        # 这里按问题原文去重，保证同一条问题在 report.json 里只出现一次。
         report["incomplete"] = True
-        report["incomplete_reasons"] = list(report.get("incomplete_reasons", [])) + issues
+        existing = list(report.get("incomplete_reasons", []))
+        for issue in issues:
+            if issue not in existing:
+                existing.append(issue)
+        report["incomplete_reasons"] = existing
     path = out / "report.json"
     path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",

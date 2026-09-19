@@ -578,6 +578,357 @@ class ManifestTest(unittest.TestCase):
             self.assertIn("。。！", report["incomplete_reasons"][0])
 
 
+# ---------------------------------------------------------------------------
+# 8. T14c 审计修复：替身判定 fail-safe（修 1）
+# ---------------------------------------------------------------------------
+class SyntheticFailsafeTest(unittest.TestCase):
+    """T14c 修 1：synthetic 属性存在即按 bool() 归真，属性缺失按替身。
+
+    修前用 `is True` 比较——`synthetic = 1` 这类类型笔误会穿透成
+    `synthetic: false` + `[COMPLETE]` + rc 0，替身数据被当真机背书。
+    """
+
+    def _stub(self, synthetic_value, name="stub-typo-asr"):
+        """造一个 transcribe 可用的替身类；synthetic_value 为 _NO_ATTR 时不声明该属性。"""
+        attrs = {
+            "name": name,
+            "model_version": "typo/1.0",
+            "voice": None,
+        }
+        if synthetic_value is not _NO_ATTR:
+            attrs["synthetic"] = synthetic_value
+        cls = type(name, (), attrs)
+        cls.transcribe = lambda self, wav_path: Path(wav_path).name
+        return cls()
+
+    def _stub_in_adapters(self, synthetic_value):
+        """模块归属改到 adapters. 下（模拟真机适配器目录），返回 (实例, 原模块名)。"""
+        asr = self._stub(synthetic_value, name="adapters-stub-asr")
+        old = type(asr).__module__
+        sys.modules["adapters.asr_omlx"].__dict__  # 确保已导入
+        type(asr).__module__ = "adapters.asr_omlx"
+        return asr, old
+
+    def test_synthetic_int_one_is_synthetic(self):
+        """`synthetic = 1`（类型笔误）必须按替身处理。"""
+        self.assertTrue(rb._is_synthetic(self._stub(1)), "synthetic=1 必须判为替身")
+
+    def test_synthetic_truthy_string_is_synthetic(self):
+        """`synthetic = "yes"` 同罪：任何 truthy 值都按替身。"""
+        self.assertTrue(rb._is_synthetic(self._stub("yes")))
+        self.assertTrue(rb._is_synthetic(self._stub("False")))
+
+    def test_synthetic_attr_absent_is_synthetic(self):
+        """未声明 synthetic 的适配器必须按替身（保守判定）。"""
+        self.assertTrue(rb._is_synthetic(self._stub(_NO_ATTR)))
+
+    def test_explicit_false_outside_adapters_is_real(self):
+        """显式 `synthetic = False` 且不在 adapters/ 下、也不在 eval 包内 → 按真机。
+
+        注：测试模块自身在 eval 包目录下，所以「eval 内 + 显式 False」仍按替身
+        （保守判定）——这个用例把模块归属挪到中性位置，只留「显式 False + 非
+        adapters/」这一个变量，对应验收 2 的同款场景。
+        """
+        asr = self._stub(False, name="neutral-real-asr")
+        old = type(asr).__module__
+        try:
+            type(asr).__module__ = "neutral_real_asr"
+            self.assertFalse(rb._is_synthetic(asr))
+        finally:
+            type(asr).__module__ = old
+
+    def test_explicit_false_inside_eval_pkg_still_synthetic(self):
+        """eval 包内的替身即使显式 False 也仍按替身（保守判定不放松）。"""
+        asr = self._stub(False, name="eval-inner-asr")
+        old = type(asr).__module__
+        try:
+            type(asr).__module__ = "eval.readback"
+            self.assertTrue(rb._is_synthetic(asr))
+        finally:
+            type(asr).__module__ = old
+
+    def test_explicit_false_in_adapters_is_real(self):
+        """adapters/ 下的显式 False 适配器按真机（OmlxAsr 的既有判定不变）。"""
+        asr, old = self._stub_in_adapters(False)
+        try:
+            self.assertFalse(rb._is_synthetic(asr))
+        finally:
+            type(asr).__module__ = old
+
+    def test_omlx_asr_still_not_synthetic(self):
+        """OmlxAsr 真机适配器行为不变。"""
+        from adapters.asr_omlx import OmlxAsr
+
+        self.assertIs(OmlxAsr().synthetic, False)
+        self.assertFalse(rb._is_synthetic(OmlxAsr()))
+
+    def test_cli_synthetic_one_fails_closed_with_rc_5(self):
+        """端到端：`synthetic = 1` 的注入适配器 → synthetic:true + [警告] + rc 5。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            wavs = make_wavs(tmp)
+            manifest = write_manifest(tmp, entries_for(wavs))
+            out_dir = tmp / "out"
+
+            code = rb.run_readback_cli([
+                "--manifest", str(manifest),
+                "--asr", "eval.tests.test_readback:SyntheticOneAsr",
+                "--out", str(out_dir),
+            ])
+            on_disk = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+            # 期望值来自卡的验收判据（fail-closed），不从被测逻辑取
+            self.assertEqual(code, 5)
+            self.assertTrue(on_disk["synthetic"])
+            self.assertEqual(on_disk["env"]["asr"]["synthetic"], True)
+            self.assertFalse(on_disk["incomplete"])
+            summary = rb._render_readback_summary(on_disk)
+            self.assertIn("[警告]", summary)
+            self.assertIn(rb.SYNTHETIC_WARNING, summary)
+            self.assertNotIn("[INCOMPLETE]", summary)
+
+    def test_cli_synthetic_truthy_string_fails_closed(self):
+        """`synthetic = "yes"` 同罪：rc 5。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            wavs = make_wavs(tmp)
+            manifest = write_manifest(tmp, entries_for(wavs))
+            out_dir = tmp / "out"
+
+            code = rb.run_readback_cli([
+                "--manifest", str(manifest),
+                "--asr", "eval.tests.test_readback:SyntheticYesAsr",
+                "--out", str(out_dir),
+            ])
+            self.assertEqual(code, 5)
+            on_disk = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertTrue(on_disk["synthetic"])
+
+
+_NO_ATTR = object()
+
+
+class SyntheticOneAsr:
+    """CLI 注入用替身：synthetic 写成整数 1（类型笔误）。"""
+
+    name = "stub-one-asr"
+    model_version = "stub/1.0"
+    synthetic = 1
+    voice = None
+
+    def transcribe(self, wav_path):
+        from eval.cer import normalize_for_cer
+
+        return normalize_for_cer(Path(wav_path).stem)
+
+
+class SyntheticYesAsr:
+    """CLI 注入用替身：synthetic 写成 truthy 字符串 "yes"。"""
+
+    name = "stub-yes-asr"
+    model_version = "stub/1.0"
+    synthetic = "yes"
+    voice = None
+
+    def transcribe(self, wav_path):
+        from eval.cer import normalize_for_cer
+
+        return normalize_for_cer(Path(wav_path).stem)
+
+
+# ---------------------------------------------------------------------------
+# 9. T14c 审计修复：退出码归位（修 2）
+# ---------------------------------------------------------------------------
+class ExitCodeTest(unittest.TestCase):
+    """T14c 修 2：可归类的用法/输入错误 → rc 2；冻结集合 {0,2,3,4,5} 之外无出口。"""
+
+    def _cli(self, argv):
+        import io
+        import contextlib
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = rb.run_readback_cli(argv)
+        return code, err.getvalue()
+
+    def test_non_utf8_manifest_returns_2(self):
+        """manifest 非 UTF-8 → rc 2，stderr 含异常类型名，非裸 traceback。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            wavs = make_wavs(tmp)
+            path = tmp / "bad.jsonl"
+            path.write_bytes(b"\xff\xfe\xfa\x00{\"wav\": \"x\", \"reference\": \"y\"}")
+            code, err = self._cli([
+                "--manifest", str(path),
+                "--asr", "eval.tests.test_readback:StubAsr",
+                "--out", str(tmp / "out"),
+            ])
+            self.assertEqual(code, 2, f"非 UTF-8 manifest 应归 rc 2，实际 {code}\n{err}")
+            self.assertIn("UnicodeDecodeError", err, "stderr 必须含异常类型名")
+            self.assertNotIn("Traceback (most recent call last)", err)
+
+    def test_asr_import_error_returns_2(self):
+        """--asr 指向导入即抛错的模块 → rc 2。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            wavs = make_wavs(tmp)
+            manifest = write_manifest(tmp, entries_for(wavs))
+            code, err = self._cli([
+                "--manifest", str(manifest),
+                "--asr", "eval.tests.test_readback:NonexistentAsr",
+                "--out", str(tmp / "out"),
+            ])
+            self.assertEqual(code, 2, f"--asr 类不存在应归 rc 2，实际 {code}\n{err}")
+            self.assertIn("ReadbackError", err)
+            self.assertNotIn("Traceback (most recent call last)", err)
+
+    def test_missing_manifest_returns_2(self):
+        with self.assertRaises(rb.ReadbackError):
+            rb.load_manifest("/definitely/not/here.jsonl")
+        code, err = self._cli([
+            "--manifest", "/definitely/not/here.jsonl",
+            "--asr", "eval.tests.test_readback:StubAsr",
+        ])
+        self.assertEqual(code, 2)
+        self.assertIn("ReadbackError", err)
+
+    def test_cli_errors_tuple_is_consumed(self):
+        """_CLI_ERRORS 必须被顶层真正引用（修前「定义未用」）。"""
+        import re
+
+        source = Path(rb.__file__).read_text(encoding="utf-8")
+        # 定义行之外必须还有至少一处 except 消费
+        refs = [
+            line for line in source.splitlines()
+            if "_CLI_ERRORS" in line and not line.strip().startswith("_CLI_ERRORS =")
+        ]
+        self.assertTrue(
+            any("except _CLI_ERRORS" in line for line in refs),
+            f"_CLI_ERRORS 未被任何 except 消费：{refs}",
+        )
+
+    def test_only_frozen_exit_codes_appear(self):
+        """源码里除冻结集合 {0,2,3,4,5} 之外没有别的 return 码（无 rc 1 出口）。"""
+        import re
+
+        source = Path(rb.__file__).read_text(encoding="utf-8")
+        cli_body = source[source.index("def run_readback_cli"):]
+        cli_body = cli_body[: cli_body.index("\ndef _report_samples")]
+        codes = {int(m) for m in re.findall(r"^\s*return (\d+)$", cli_body, re.M)}
+        self.assertTrue(codes <= {0, 2, 3, 4, 5}, f"冻结集合之外的退出码: {sorted(codes)}")
+        self.assertNotIn(1, codes, "不得存在 rc 1 出口")
+
+
+# ---------------------------------------------------------------------------
+# 10. T14c 审计修复：指纹问题不重复追加（修 3）
+# ---------------------------------------------------------------------------
+class FingerprintDedupTest(unittest.TestCase):
+    """T14c 修 3：同一条指纹问题在 report.json 里只出现一次。
+
+    制造窗口的方式：先在 CLI 内部建指针（第一次核对），随后改 raw 文件，
+    再调 write_readback（第二次核对）。两次核对得到同一条问题——
+    修前会被追加两次（报告 2 条、摘要「2 项原因」）。
+    """
+
+    def _base_report(self, tmp: Path):
+        wavs = make_wavs(tmp)
+        manifest = write_manifest(tmp, entries_for(wavs))
+        report = rb.run_readback(manifest, StubAsr({
+            "s1.wav": REF1 + "。", "s2.wav": REF2, "s3.wav": REF3[:7] + REF3[8:],
+        }))
+        samples = rb._report_samples(report)
+        raw_path = tmp / rb.RAW_SAMPLES_REL
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        rb._write_jsonl(raw_path, samples)
+        report["raw"] = rb._raw_pointers(raw_path, tmp, samples)
+        return report, raw_path
+
+    def _tamper(self, raw_path: Path) -> None:
+        """删掉第 2 行：既破坏行数也破坏指纹，核对给出同一条问题原文。"""
+        lines = raw_path.read_text(encoding="utf-8").splitlines(True)
+        self.assertEqual(len(lines), 3)
+        raw_path.write_text("".join(lines[2:]), encoding="utf-8")
+
+    def test_write_readback_does_not_duplicate_existing_issues(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            report, raw_path = self._base_report(tmp)
+            self._tamper(raw_path)
+            # 第一次核对（模拟 CLI 建指针后的核对），并把结果先记进报告
+            first = check_raw_on_disk(report, tmp)
+            self.assertTrue(first, "篡改后必须至少有一条指纹问题")
+            report["incomplete"] = True
+            report["incomplete_reasons"] = list(report["incomplete_reasons"]) + first
+
+            written = rb.write_readback(report, tmp)
+
+            on_disk = json.loads(written.read_text(encoding="utf-8"))
+            counts = [on_disk["incomplete_reasons"].count(r) for r in first]
+            self.assertEqual(
+                counts, [1] * len(first),
+                f"每条指纹问题在报告里应只出现一次，实际 {counts} 次：{first}",
+            )
+            self.assertTrue(on_disk["incomplete"])
+            self.assertEqual(len(on_disk["incomplete_reasons"]), len(first))
+
+    def test_cli_fingerprint_issues_are_not_duplicated(self):
+        """端到端：建指针后、写盘前改 raw → 指纹问题原文不重复出现。
+
+        注入方式：把模块级的 write_readback 换成一个「先篡改磁盘 raw、再走原实现」
+        的包装——原实现内部会再核一次磁盘，两次核对必须产出同一条问题原文。
+        注：CLI 退出码此处断言不重复计数，不断言 rc 4——注入的 StubAsr 是替身，
+        fail-closed 会把 rc 抬到 5（rc 4 是质检路径的码，二者互不冲突）。
+        """
+        import contextlib
+        import io
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            wavs = make_wavs(tmp)
+            manifest = write_manifest(tmp, entries_for(wavs))
+            out_dir = tmp / "out"
+            real_write = rb.write_readback
+            state = {"tampered": False}
+
+            def patched_write(report, out_dir):
+                raw_path = Path(out_dir) / rb.RAW_SAMPLES_REL
+                if not state["tampered"]:
+                    state["tampered"] = True
+                    lines = raw_path.read_text(encoding="utf-8").splitlines(True)
+                    raw_path.write_text("".join(lines[2:]), encoding="utf-8")
+                return real_write(report, out_dir)
+
+            rb.write_readback = patched_write
+            try:
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    code = rb.run_readback_cli([
+                        "--manifest", str(manifest),
+                        "--asr", "eval.tests.test_readback:StubAsr",
+                        "--out", str(out_dir),
+                    ])
+            finally:
+                rb.write_readback = real_write
+
+            on_disk = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+            issues = on_disk["incomplete_reasons"]
+            fp_issues = [r for r in issues if "readback_samples.jsonl" in r]
+            self.assertTrue(fp_issues, "篡改后必须至少有一条指纹问题")
+            # 核对会分别报「缺 index / sha256 不符 / 行数不符」三条**不同**问题——
+            # 合法的多条；本卡的缺陷是同一条问题原文被追加两次。
+            self.assertEqual(
+                len(fp_issues), len(set(fp_issues)),
+                f"同一问题原文不得重复出现，实际 {len(fp_issues)} 条 / "
+                f"{len(set(fp_issues))} 条不同：{fp_issues}",
+            )
+            self.assertEqual(len(issues), len(set(issues)),
+                             f"报告中出现重复的问题原文：{issues}")
+            self.assertIn(code, (4, 5), f"指纹报红应归 rc 4 或被替身抬到 rc 5，实际 {code}")
+            summary = rb._render_readback_summary(on_disk)
+            self.assertIn(f"{len(issues)} 项原因", summary)
+            self.assertNotIn(f"{len(issues) * 2} 项原因", summary,
+                             "修前重复追加会让摘要原因计数翻倍")
+
+
 class CliEntryPointTest(unittest.TestCase):
     """回归锚点：`python3 -m eval.readback` 必须有真入口（T14b）。
 

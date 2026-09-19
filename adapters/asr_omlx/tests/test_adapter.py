@@ -59,6 +59,13 @@ def refused_error() -> "urllib.error.URLError":
     )
 
 
+def http_incomplete_read(partial: bytes) -> "http.client.IncompleteRead":
+    """传输中断：http.client 在 read() 读到一半连接断了就抛 IncompleteRead。"""
+    import http.client
+
+    return http.client.IncompleteRead(partial, expected=4096)
+
+
 def http_error(code: int, msg: str) -> "urllib.error.HTTPError":
     """HTTP 非 2xx：urlopen 抛 HTTPError（reason = HTTP 状态文本）。"""
     import urllib.error
@@ -75,6 +82,40 @@ class Timeout:
 
 class Http500:
     """HTTP 500 故障的替身记号：弹出时由 StubOpener 抛 urllib.error.HTTPError。"""
+
+
+class TruncatedResponse:
+    """响应传一半就断的替身记号：弹出时返回一个 read() 抛 IncompleteRead 的响应对象。
+
+    WHY 用替身记号而不是直接把 IncompleteRead 塞进 outcomes：传输中断发生在
+    `response.read()`，即 `_open` 返回**之后**——直接塞进 outcomes 会测的是
+    urlopen 阶段的中断，绕过了 transcribe 里的读阶段分类逻辑（与 Timeout 记号的
+    处理方式一致）。
+    """
+
+
+class ReadResetResponse:
+    """读取期连接被重置的替身记号：read() 抛 ConnectionResetError。"""
+
+
+class ReadTimeoutResponse:
+    """读取期超时的替身记号：read() 抛裸 TimeoutError（read 阶段，非 socket.timeout）。"""
+
+
+class ReadProtoResponse:
+    """读取期协议层故障的替身记号：read() 抛裸 http.client.HTTPException。"""
+
+
+def _response_that_raises(exc) -> "FakeResponse":
+    """构造一个 read() 时抛 exc 的响应替身。"""
+
+    class Broken:
+        status = 200
+
+        def read(self) -> bytes:
+            raise exc
+
+    return Broken()
 
 
 class StubOpener:
@@ -102,6 +143,20 @@ class StubOpener:
             raise socket.timeout("timed out")
         if isinstance(outcome, Http500):
             raise http_error(500, "Internal Server Error")
+        if isinstance(outcome, TruncatedResponse):
+            return _response_that_raises(
+                http_incomplete_read(b'{"text": "hello,')
+            )
+        if isinstance(outcome, ReadResetResponse):
+            return _response_that_raises(
+                ConnectionResetError(104, "Connection reset by peer")
+            )
+        if isinstance(outcome, ReadTimeoutResponse):
+            return _response_that_raises(TimeoutError("timed out reading response"))
+        if isinstance(outcome, ReadProtoResponse):
+            import http.client
+
+            return _response_that_raises(http.client.HTTPException("bad response header"))
         if isinstance(outcome, type) and issubclass(outcome, BaseException):
             raise outcome()
         return outcome
@@ -295,5 +350,92 @@ class FailurePathTest(unittest.TestCase):
         msg = self._assert_asr_error([FakeResponse(json_bytes(["今天下午"]))], ["不是对象", "list"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class ReadStageFailureTest(unittest.TestCase):
+    """T14c 修 4：读阶段异常必须归 AsrError，不逃出分类契约。
+
+    读阶段 = `response.read()`，发生在 `_open` 返回之后——所以替身必须返回
+    「read() 时抛错的响应对象」，而不是把异常塞给 opener（后者测的是 urlopen 阶段，
+    会绕过 transcribe 里的读阶段分类逻辑）。
+    """
+
+    def _assert_asr_error(self, outcomes, keyword_checks):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = wav_file(Path(tmp))
+            adapter, opener, _ = make_adapter(outcomes, Path(tmp))
+            with self.assertRaises(AsrError) as cm:
+                adapter.transcribe(wav)
+            msg = str(cm.exception)
+            for keyword in keyword_checks:
+                self.assertIn(
+                    keyword, msg,
+                    f"AsrError 消息缺少关键上下文 {keyword!r}（实际消息: {msg}）",
+                )
+            return msg
+
+    def test_incomplete_read_becomes_asr_error(self):
+        """响应传一半就断（http.client.IncompleteRead）→ AsrError，不裸抛。"""
+        msg = self._assert_asr_error(
+            [TruncatedResponse()], ["IncompleteRead", "读取中断"]
+        )
+        self.assertNotIn("None", msg)
+
+    def test_connection_reset_becomes_asr_error(self):
+        """读取期连接被重置（ConnectionResetError）→ AsrError，消息含阶段。"""
+        msg = self._assert_asr_error(
+            [ReadResetResponse()], ["ConnectionResetError", "读取失败"]
+        )
+
+    def test_bare_timeout_error_in_read_becomes_asr_error(self):
+        """读取期裸 TimeoutError（非 socket.timeout）→ AsrError。"""
+        msg = self._assert_asr_error(
+            [ReadTimeoutResponse()], ["TimeoutError", "读取超时"]
+        )
+
+    def test_bare_http_exception_in_read_becomes_asr_error(self):
+        """读取期裸 http.client.HTTPException（非 IncompleteRead）→ AsrError。"""
+        msg = self._assert_asr_error(
+            [ReadProtoResponse()], ["HTTPException", "协议错误"]
+        )
+
+    def test_incomplete_read_message_mentions_stage(self):
+        """消息必须点明是读阶段——连接阶段的 IncompleteRead 与读阶段是两种原因。"""
+        msg = self._assert_asr_error([TruncatedResponse()], ["IncompleteRead"])
+        self.assertIn("响应读取中断", msg)
+        self.assertNotIn("响应协议错误", msg)
+
+
+class TimeoutValidationTest(unittest.TestCase):
+    """T14c 修 4：timeout 校验必须拒绝 NaN / inf——非有限正数不得漏进 urlopen。
+
+    修前 nan <= 0 为 False，校验放过 nan，随后 urlopen(timeout=nan) 内部才炸裸
+    ValueError（逃出 AsrError 契约）。这里断言构造期即被拦下，且请求永远发不出去。
+    """
+
+    def test_rejects_nan_timeout_at_construction(self):
+        with self.assertRaises(ValueError) as cm:
+            OmlxAsr(timeout_seconds=float("nan"))
+        self.assertIn("timeout_seconds", str(cm.exception))
+        self.assertIn("nan", str(cm.exception).lower())
+
+    def test_rejects_infinite_timeout_at_construction(self):
+        with self.assertRaises(ValueError) as cm:
+            OmlxAsr(timeout_seconds=float("inf"))
+        self.assertIn("timeout_seconds", str(cm.exception))
+
+    def test_rejects_negative_infinite_timeout_at_construction(self):
+        with self.assertRaises(ValueError) as cm:
+            OmlxAsr(timeout_seconds=float("-inf"))
+        self.assertIn("timeout_seconds", str(cm.exception))
+
+    def test_nan_never_reaches_opener(self):
+        """构造期就报错，所以根本不会有请求发出去。"""
+        opener = StubOpener([])
+        with self.assertRaises(ValueError):
+            OmlxAsr(opener=opener, timeout_seconds=float("nan"))
+        self.assertEqual(opener.requests, [], "构造期报错时不得发任何请求")
+
+    def test_finite_timeout_still_accepted(self):
+        """校验只许更严不许误伤：有限正数照常可用。"""
+        for value in (120, 7.5, 0.001, 1e9):
+            adapter = OmlxAsr(timeout_seconds=value)
+            self.assertEqual(adapter.timeout, value)

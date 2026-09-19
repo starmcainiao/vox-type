@@ -8,18 +8,25 @@ adapters.asr_omlx.adapter — oMLX 本地 ASR 薄适配器
 层边界（adapters/AGENTS.md §⑤）：只依赖 core/ 公开接口与标准库；
       HTTP 一律标准库 urllib（本卡明令不得新增第三方依赖）。
 
-失败纪律：fail-closed——连接失败 / 超时 / 非 2xx / 响应非 JSON / 缺 text 字段
-      一律抛 AsrError，消息含异常类型名与具体原因；绝不返回空串或 None 冒充成功
-      （空串是 ASR 链路里最危险的假成功——调用方会当成"用户一句话没说"）。
+失败纪律：fail-closed——连接失败 / 超时 / 传输中断 / 非 2xx / 响应非 JSON /
+      缺 text 字段一律抛 AsrError，消息含阶段（连接/响应/读取）与具体原因；
+      绝不返回空串或 None 冒充成功（空串是 ASR 链路里最危险的假成功——
+      调用方会当成"用户一句话没说"）。
+
+读阶段同样收口（T14c 修 4）：response.read() 在 _open 返回之后才执行，
+      传输中断（IncompleteRead）/ 连接重置（ConnectionResetError）/ 读取超时
+      （裸 TimeoutError）都发生在这里，同样必须归 AsrError，不逃出分类。
 """
 
 import json
+import math
 import os
 import socket
 import ssl
 import urllib.error
 import urllib.request
 from http.client import HTTPException as HttpLibError
+from http.client import IncompleteRead as HttpIncompleteRead
 from pathlib import Path
 from typing import Any, Optional
 
@@ -75,7 +82,7 @@ class OmlxAsr:
                              测试替身在此注入——不联网、不起服务也能跑负例
 
         异常：
-            ValueError: base_url 非 http(s) / model 为空 / timeout 非正数
+            ValueError: base_url 非 http(s) / model 为空 / timeout 非有限正数
         """
         base = (base_url or "").strip().rstrip("/")
         if not base.startswith(("http://", "https://")):
@@ -88,10 +95,13 @@ class OmlxAsr:
         if (
             not isinstance(timeout_seconds, (int, float))
             or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
             or timeout_seconds <= 0
         ):
+            # T14c 修 4：NaN 必须被拒——nan <= 0 是 False，校验会放过它，
+            # 随后 urlopen(timeout=nan) 内部才炸裸 ValueError，逃出 AsrError 契约。
             raise ValueError(
-                f"timeout_seconds 必须是正数，实际为 {timeout_seconds!r}"
+                f"timeout_seconds 必须是有限正数，实际为 {timeout_seconds!r}"
             )
         self.base_url = base
         self.model = model
@@ -164,11 +174,25 @@ class OmlxAsr:
                 f"ASR 无法连接（urllib.error.URLError）→ {self.endpoint()}: "
                 f"{exc.reason!r}"
             ) from exc
+        except HttpIncompleteRead as exc:
+            # http.client.IncompleteRead：响应传了一半连接就断（服务端崩溃/网关掐线）。
+            # 必须排在 HttpLibError 前面——它是 HTTPException 的子类，写反了就归不到这里。
+            raise AsrError(
+                f"ASR 响应传输中断（http.client.IncompleteRead）"
+                f"→ {self.endpoint()}: {exc}"
+            ) from exc
         except HttpLibError as exc:
             # http.client.HTTPException：响应头非法 / 连接中途断开等协议层故障
             raise AsrError(
                 f"ASR 响应协议错误（http.client.HTTPException）"
                 f"→ {self.endpoint()}: {exc}"
+            ) from exc
+        except OSError as exc:
+            # 连接层其余故障（URLError 已单独归口，不会走到这里）：
+            # 连接被重置（ConnectionResetError）、网络不可达、EINTR…
+            # 一律按"无法连接"处理，不逃出 AsrError 契约。
+            raise AsrError(
+                f"ASR 无法连接（{type(exc).__name__}）→ {self.endpoint()}: {exc}"
             ) from exc
 
     def transcribe(self, wav_path: Any) -> str:
@@ -200,7 +224,33 @@ class OmlxAsr:
         )
 
         response = self._open(req)
-        raw = response.read()
+        try:
+            raw = response.read()
+        except HttpIncompleteRead as exc:
+            # T14c 修 4：传输中断在 read 阶段最容易发生（连接建立成功、响应传一半断）。
+            # 必须在 transcribe 里再归口一次——_open 只收口 urlopen 自身的异常，
+            # response.read() 是在 _open 返回之后才执行的。
+            raise AsrError(
+                f"ASR 响应读取中断（http.client.IncompleteRead）"
+                f"→ {self.endpoint()}: {exc}"
+            ) from exc
+        except HttpLibError as exc:
+            # 读阶段其余协议层故障（http.client.HTTPException 非 IncompleteRead 子类）。
+            raise AsrError(
+                f"ASR 响应读取协议错误（http.client.HTTPException）"
+                f"→ {self.endpoint()}: {exc}"
+            ) from exc
+        except TimeoutError as exc:
+            # socket.timeout 已随 _open 归口为「请求超时」；这里的裸 TimeoutError
+            # 是 read 阶段的超时，同样必须收口成 AsrError。
+            raise AsrError(
+                f"ASR 响应读取超时（TimeoutError）→ {self.endpoint()}: {exc}"
+            ) from exc
+        except OSError as exc:
+            # 连接被重置（ConnectionResetError）/ 网络中断等读取期故障。
+            raise AsrError(
+                f"ASR 响应读取失败（{type(exc).__name__}）→ {self.endpoint()}: {exc}"
+            ) from exc
 
         try:
             payload = json.loads(raw.decode("utf-8"))
