@@ -79,4 +79,7 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T12c-tools
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T12c 节）
+  - 验收方独立复跑：tools 75 全绿（62→+13 净增）；`grep release_lock tools/` = 0；回归（我跑）baseline 0/2433=0.00%、recheck 0 异常；T12b 五处语义零 diff。
+  - **裁定（接受）**：`tools/corpus_fetch/__init__.py` 不在白名单逐文件列表——但它是删 `release_lock` 的必然伴随（导出面清理），不清则验收 6（0 命中）不可达，判授权伴随改动；仅删 import 与 `__all__` 两行。
+  - **裁定（接受）**：验收 2 注错走 `dg.json.dumps`（写循环的真实依赖路径），非替身替换被测函数——覆盖真实路径，正当。`measure` 内部 index 结构变更为碰撞检测必然，输出 JSON 结构未变。

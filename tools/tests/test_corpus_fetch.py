@@ -15,6 +15,8 @@ import os
 import shutil
 import sys
 import unittest
+import urllib.error
+import urllib.request
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
@@ -22,16 +24,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import tools.corpus_fetch.fetch as fetch_mod  # noqa: E402
 from tools.corpus_fetch.fetch import (  # noqa: E402
+    DEFAULT_REVISION,
     FetchError,
     LicenseRejected,
     ModelScope,
     PLATFORMS,
     audit_license,
+    http_get,
     filter_sources,
     manifest_digest,
     merge_lock,
     process,
-    release_lock,
     recheck,
     resolve_out_root,
     select_files,
@@ -165,6 +168,58 @@ class OfflineHttpGet:
         return json.dumps({"Code": 200, "Data": {"License": platform_license}})
 
 
+class FakeHttpResponse:
+    """够假的 urllib 响应：`read()` 返回原始 bytes，可 `with` 使用。"""
+
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def read(self, size=-1):
+        return self._data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class FakeUrnOpen:
+    """替换 `urllib.request.urlopen`：**不联网**，返回固定响应（可携 HTTPError）。
+
+    `calls` 记录实际发起的请求次数——用来断言「4xx 不重试」；
+    `sleeps` 记录实际等待次数——用来断言「没有白等重试」，两个断言一起才排除
+    「改了分支但还在等」这类半个修复。
+    """
+
+    def __init__(self, *, http_error: "urllib.error.HTTPError | None" = None, data=b""):
+        self.http_error = http_error
+        self.data = data
+        self.calls = 0
+        self.sleeps = 0
+
+    def __call__(self, req, timeout=None):
+        self.calls += 1
+        if self.http_error is not None:
+            raise self.http_error
+        return FakeHttpResponse(self.data)
+
+    def install(self):
+        """挂 FakeUrnOpen + 屏蔽 sleep（测试里不许真的等 2s/4s），返回可还原的快照。"""
+        old_open = urllib.request.urlopen
+        old_sleep = fetch_mod.time.sleep
+
+        def noop_sleep(secs):
+            self.sleeps += 1
+
+        urllib.request.urlopen = self
+        fetch_mod.time.sleep = noop_sleep
+        return old_open, old_sleep
+
+    def restore(self, snapshot):
+        urllib.request.urlopen, fetch_mod.time.sleep = snapshot
+
+
 class FakeHttpDownload:
     """替换 `http_download_to_file`：不联网，按给定内容**分块**写盘并返回实测值。"""
 
@@ -290,6 +345,165 @@ class LicenseAuditTests(unittest.TestCase):
         with self.assertRaises(FetchError) as cm:
             fetch_mod.load_sources(Path("/tmp/vox-no-such-sources.json"))
         self.assertIn("/tmp/vox-no-such-sources.json", str(cm.exception))
+
+
+# ---------------------------------------------------------------------------
+# HTTP 取数：4xx 不重试 / 严格 UTF-8 / revision 缺省（T12c 修 3、4、7）
+# ---------------------------------------------------------------------------
+class HttpGetTests(unittest.TestCase):
+    """http_get 的失败形态。全部**离线**：urlopen 由测试替身返回固定响应，不联网。
+
+    负例断言的都是**具体非法值**（状态码 / URL / 字节），不是「抛了个错」——
+    否则「改回了默认行为但报错」也会假通过。
+    """
+
+    TARGET = "https://modelscope.cn/api/v1/datasets/ns%2Fdataset/repo?FilePath=README.md"
+
+    def test_http_404_fails_fast_without_any_retry_wait(self):
+        """T12c 修 3：4xx 是服务端明确拒绝，不是网络抖动——重试只会白等 2s+4s。"""
+        fake = FakeUrnOpen(http_error=urllib.error.HTTPError(
+            self.TARGET, 404, "Not Found", {}, io.BytesIO(b"")))
+        snapshot = fake.install()
+        try:
+            with self.assertRaises(FetchError) as cm:
+                http_get(self.TARGET)
+        finally:
+            fake.restore(snapshot)
+
+        msg = str(cm.exception)
+        self.assertIn("404", msg)                      # 消息保留状态码
+        self.assertIn(self.TARGET, msg)                # 以及出错的 URL
+        self.assertIn("不重试", msg)
+        self.assertEqual(fake.calls, 1)                # 关键：只发了一次请求
+        self.assertEqual(fake.sleeps, 0)               # 以及一次等待都没有发生
+
+    def test_network_error_still_retries(self):
+        """对照：修 3 只该影响 4xx 这一支——真正的 URLError 仍按原次数重试（未放宽重试纪律）。"""
+        fake = FakeUrnOpen(http_error=urllib.error.URLError("DNS failure"))
+        snapshot = fake.install()
+        try:
+            with self.assertRaises(FetchError) as cm:
+                http_get("https://modelscope.cn/api/v1/x")
+        finally:
+            fake.restore(snapshot)
+
+        self.assertEqual(fake.calls, 3)                # 三次全试，没提前放弃
+        self.assertEqual(fake.sleeps, 2)               # 2s + 4s 两次等待
+        self.assertIn("重试 3 次", str(cm.exception))
+
+    def test_non_utf8_readme_fails_closed_with_url(self):
+        """T12c 修 4：README 必须严格 UTF-8——乱码正文会让许可关键词扫描空转「通过」。"""
+        url = "https://hf-mirror.com/datasets/ns/raw/main/README.md"
+        broken = b"---\nlicense: apache-2.0\n---\n# \xff\xfe\x2e"
+        # 前置不变式：这段字节确实不是合法 UTF-8（否则下面的 FetchError 断言就没有意义）
+        with self.assertRaises(UnicodeDecodeError):
+            broken.decode("utf-8")
+        fake = FakeUrnOpen(data=broken)
+        snapshot = fake.install()
+        try:
+            with self.assertRaises(FetchError) as cm:
+                http_get(url)
+        finally:
+            fake.restore(snapshot)
+
+        msg = str(cm.exception)
+        self.assertIn("README", msg)
+        self.assertIn(url, msg)                       # 必须点名出错的 URL
+        self.assertIn("UTF-8", msg)
+        self.assertNotIn("\ufffd", msg)                # 不是替换符糊过去了
+
+    def test_binary_mode_is_unaffected_by_strict_decoding(self):
+        """binary=True 走 bytes 路径：同一段非 UTF-8 字节在二进制模式下一切正常（不动它）。"""
+        broken = b"---\nlicense: apache-2.0\n---\n# \xff\xfe\x2e"
+        fake = FakeUrnOpen(data=broken)
+        snapshot = fake.install()
+        try:
+            out = http_get("https://example.invalid/x", binary=True)
+        finally:
+            fake.restore(snapshot)
+        self.assertIsInstance(out, bytes)
+        self.assertEqual(out, broken)
+        self.assertEqual(fake.calls, 1)
+
+
+class AuditSkipAndRevisionTests(unittest.TestCase):
+    """T12c 修 6（缺 expect_license 留痕）/ 修 7（审计侧 revision 缺省钉在 DEFAULT_REVISION）。"""
+
+    def setUp(self):
+        self._old_plat, self._old_get = install_platform(FakePlatform())
+
+    def tearDown(self):
+        if self._old_plat is None:
+            PLATFORMS.pop("fake-modelscope", None)
+        else:
+            PLATFORMS["fake-modelscope"] = self._old_plat
+        fetch_mod.http_get = self._old_get
+
+    def test_missing_expect_license_is_recorded_in_audit_checks(self):
+        """缺声明仍跳过核对，但审计记录里必须**留痕**——否则「通过」与「没核对」无法区分。"""
+        out = audit_license(src(expect_license=[]))
+        self.assertEqual(out["license_spdx"], "apache-2.0")
+        self.assertTrue(any("④" in c and "expect_license 未声明" in c and "跳过核对" in c
+                            for c in out["audit_checks"]))
+        self.assertIn("审计通过：许可 = apache-2.0", out["audit_checks"])
+        # 行为仍是跳过：不声明也不算不过
+        self.assertEqual(out["license_spdx"], "apache-2.0")
+
+    def test_audit_skips_check_only_when_expect_license_is_missing(self):
+        """对照：声明了 expect_license 时**不**留「跳过」痕迹（不是无脑追加一条）。"""
+        out = audit_license(src(expect_license=["apache-2.0"]))
+        self.assertFalse(any("跳过核对" in c for c in out["audit_checks"]))
+
+    def test_declared_license_mismatch_still_rejects(self):
+        """留痕不等于放行：声明与实测冲突仍按原有 fail-closed 处理。"""
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["mit"]))
+        self.assertIn("mit", str(cm.exception))
+        self.assertIn("apache-2.0", str(cm.exception))
+
+    def test_audit_without_revision_declaration_reads_default_revision(self):
+        """T12c 修 7 / 钉住 T12b 修 5：缺省 revision 只认 DEFAULT_REVISION（"main"）。
+
+        master 与 main 的 README 是**两份不同内容**：main 侧合规、master 侧只写 CC BY-NC-ND。
+        若审计侧缺省仍取 master，这份禁商用语料会被拒；取 main 才过。所以「审计通过」本身就是
+        它读对了侧的证据——这个断言会真失败，不会因为两侧都合规而假通过。
+        """
+        self.assertEqual(DEFAULT_REVISION, "main")
+        readme_main = (
+            "---\nlicense: Apache License 2.0\n---\n\n# Fixture dataset (main)\n\n"
+            "Released under Apache License 2.0. No commercial restrictions.\n"
+        )
+        readme_master = (
+            "---\nlicense: Apache License 2.0\n---\n\n# Fixture dataset (master)\n\n"
+            "This dataset is released for non-commercial use only. SPDX: CC BY-NC-ND 4.0.\n"
+        )
+
+        def offline_get(url, *, timeout=180, binary=False):
+            assert "Revision=main" in url, f"审计侧请求的不是 DEFAULT_REVISION: {url}"
+            if "Revision=main" in url:
+                return readme_main
+            if "Revision=master" in url:
+                return readme_master
+            raise FetchError(f"离线测试收到未预期的请求: {url}")
+
+        # FakePlatform 的 URL 是 `fake://readme/{sid}?Revision={rev}`，替身按 Revision 参数分派；
+        # evidence_url 同样带上 revision，让「审计取的是哪一侧」能从产物本身直接看出
+        fake = FakePlatform()
+        fake.readme_raw_url = lambda sid, rev: f"fake://readme/{sid}?Revision={rev}"
+        fake.evidence_url = lambda sid, rev: f"fake://blob/{sid}?Revision={rev}"
+        PLATFORMS["fake-modelscope"] = fake
+        old_get = fetch_mod.http_get
+        fetch_mod.http_get = offline_get
+        try:
+            out = audit_license({k: v for k, v in src(files=[], expect_license=["apache-2.0"]).items()
+                                if k != "revision"})
+        finally:
+            fetch_mod.http_get = old_get
+            install_platform(FakePlatform())
+
+        self.assertEqual(out["license_spdx"], "apache-2.0")      # 取的是 main 侧，不是 master 侧
+        self.assertIn("main", out["license_evidence_url"])
+        self.assertEqual(out["noncommercial_hits"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -902,13 +1116,6 @@ class LockAtomicityTests(unittest.TestCase):
         self.assertFalse(self.lock_path.exists())
         write_lock(self.lock_path, [{"id": "a/b", "files": []}])
         self.assertTrue(self.lock_path.exists())
-
-    def test_release_lock_allows_write_after_release(self):
-        write_lock(self.lock_path, [{"id": "x/y", "files": []}])
-        release_lock(self.lock_path)
-        write_lock(self.lock_path, [{"id": "x/y", "files": []}, {"id": "z/w", "files": []}])
-        doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
-        self.assertEqual([e["id"] for e in doc["entries"]], ["x/y", "z/w"])
 
     def test_merge_lock_keeps_unprocessed_old_entries(self):
         old = [{"id": "old/untouched", "files": []}]

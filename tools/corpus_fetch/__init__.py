@@ -21,7 +21,6 @@ from tools.corpus_fetch.fetch import (
     load_sources,
     merge_lock,
     process,
-    release_lock,
     select_files,
     write_lock,
 )
@@ -40,7 +39,6 @@ __all__ = [
     "load_strategy_map",
     "merge_lock",
     "process",
-    "release_lock",
     "select_files",
     "write_lock",
 ]

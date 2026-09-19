@@ -33,6 +33,7 @@ from tools.corpus_fetch.derive_golden import (  # noqa: E402
     is_usable_utterance,
     load_strategy_map,
     main,
+    write_jsonl,
 )
 
 
@@ -318,6 +319,93 @@ class CapAndCapPerStrategyTests(unittest.TestCase):
         unspecified = [c for c in cases if c["expect_kind"] == "unspecified"]
         self.assertEqual(len(keyed), 2)          # 被 cap 截断
         self.assertEqual(len(unspecified), 4)    # 不受 cap 限制
+
+
+class JsonlAtomicityTests(unittest.TestCase):
+    """T12c 修 1：golden JSONL 必须原子落盘——中断不留下半截文件。
+
+    JSONL 是下游按**存活行计数**的产物，半截写会让 golden set 静默变小（命中率分母失真），
+    而且每行都长得像合法 JSON，事后无法从产物本身看出「这里少了几条」。
+    """
+
+    def setUp(self):
+        self.tmpdir = Path("/tmp/vox-derive-atomic")
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+        self.tmpdir.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_target(self, n_lines: int) -> Path:
+        """先造一份完整的旧产物，用来证明「失败不覆盖已有产物」。"""
+        out = self.tmpdir / "golden" / "corpus_derived.jsonl"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        old = [json.dumps({"case_id": f"old-{i:05d}"}, ensure_ascii=False) + "\n" for i in range(n_lines)]
+        out.write_text("".join(old), encoding="utf-8")
+        return out
+
+    def test_mid_write_failure_leaves_no_partial_jsonl(self):
+        """注入「写第 3 行时抛错」→ 目标文件仍是**完整**的旧产物（2 行），不是半截 5 行。"""
+        out = self._write_target(2)
+        before = out.read_bytes()
+        cases = [
+            {"case_id": "fin-cs-00001", "user_utterance": "一"},
+            {"case_id": "fin-cs-00002", "user_utterance": "二"},
+            {"case_id": "fin-cs-00003", "user_utterance": "三"},
+            {"case_id": "fin-cs-00004", "user_utterance": "四"},
+            {"case_id": "fin-cs-00005", "user_utterance": "五"},
+        ]
+
+        counters = {"n": 0}
+
+        def boom_dump(obj, *args, **kwargs):
+            counters["n"] += 1
+            if counters["n"] == 3:                # 写到第 3 行时中断（模拟盘满/进程被杀）
+                raise OSError("No space left on device")
+            return json.dumps(obj, *args, **kwargs)
+
+        old_dump = dg.json.dumps
+        dg.json.dumps = boom_dump
+        try:
+            with self.assertRaises(OSError) as cm:
+                write_jsonl(cases, out)
+        finally:
+            dg.json.dumps = old_dump
+
+        self.assertIn("No space left on device", str(cm.exception))
+        # 关键断言：目标文件要么是完整旧产物，要么不存在——绝没有「前 2 行成功 + 后 3 行缺失」
+        self.assertEqual(out.read_bytes(), before)
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(lines), 2)                       # 完整，不是 5 也不是 3
+        for line in lines:                                    # 每一行都是合法 JSON
+            self.assertIsInstance(json.loads(line), dict)
+        # 失败不留临时文件（残留 .tmp 不属于任何层契约）
+        self.assertEqual(list(out.parent.glob("*.tmp")), [])
+
+    def test_full_write_is_atomic_rename(self):
+        """正例：写成功 → 目标文件是完整产物，无 .tmp 残留，返回写出的条数。"""
+        out = self.tmpdir / "golden" / "corpus_derived.jsonl"
+        cases = [{"case_id": f"c-{i}"} for i in range(3)]
+        n = write_jsonl(cases, out)
+        self.assertEqual(n, 3)
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual([json.loads(l)["case_id"] for l in lines], ["c-0", "c-1", "c-2"])
+        self.assertEqual(list(out.parent.glob("*.tmp")), [])
+
+    def test_main_writes_golden_through_the_atomic_path(self):
+        """main 的落盘必须走原子路径（不是绕过 write_jsonl 直接 open）。"""
+        corpus = _write_corpus(self.tmpdir, [_dialogue(["请问客服电话是多少"], strategy="策略7 信息传达")])
+        out = self.tmpdir / "nested" / "dir" / "out.jsonl"   # 嵌套目录：rename 前必须 mkdir
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--corpus", str(corpus), "--out", str(out)])
+        self.assertEqual(rc, 0)
+        self.assertTrue(out.exists())
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIsInstance(json.loads(lines[0]), dict)
+        self.assertEqual(list(out.parent.glob("*.tmp")), [])
 
 
 class StrategyMapTests(unittest.TestCase):

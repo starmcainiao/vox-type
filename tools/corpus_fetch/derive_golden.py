@@ -185,6 +185,34 @@ def derive(
     return cases, unknown_strategies
 
 
+def write_jsonl(cases: List[Dict[str, Any]], out: Path) -> int:
+    """把用例逐行写入 JSONL：**临时文件 + rename 原子落盘**，返回写出的条数。
+
+    为什么不能直接 `out.open("w")`（T12c 修 1）：JSONL 是**追加语义**的产物，下游按
+    存活行计数。中断 / 盘满 / 进程被杀会在原位置留下**半截 JSONL**——最后一行截断、
+    中间某行缺失，而每行本身都长得像合法 JSON，于是下游的 `splitlines` + 逐行解析
+    **静默少算几条**，golden set 变小、命中率分母悄悄失真，事后无从定位。
+    原子写把失败面收窄成「目标文件要么不存在、要么是完整产物」。
+    与 `fetch.write_lock` 同款模式（临时文件 + `rename`）。
+
+    目录缺失在 rename **之前**建好——不能让 mkdir 失败留下一个写了一半的临时文件
+    被误认为目标产物。
+    """
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            for c in cases:
+                f.write(json.dumps(c, ensure_ascii=False) + "\n")
+        tmp.replace(out)
+    except BaseException:
+        # 失败必须删掉临时文件：残留的 .tmp 不属任何层契约，留盘会污染目录巡检
+        tmp.unlink(missing_ok=True)
+        raise
+    return len(cases)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="从公开语料派生 golden set 对照集")
     ap.add_argument("--corpus", required=True, help="CSConv.json 路径")
@@ -215,10 +243,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("派生结果为空——语料格式与预期不符，未写盘", file=sys.stderr)
         return 3
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as f:
-        for c in cases:
-            f.write(json.dumps(c, ensure_ascii=False) + "\n")
+    write_jsonl(cases, out)
 
     # 分布摘要（人读）
     print(f"写出 {len(cases)} 条 → {out}")

@@ -86,10 +86,23 @@ def measure(pack_dir: Path, golden_path: Path, repo_root: Path) -> Dict[str, Any
     if not phrases_path.exists():
         raise BaselineError(f"业务包缺少 phrases.json: {phrases_path}")
     phrases = json.loads(phrases_path.read_text(encoding="utf-8"))["phrases"]
-    index: Dict[str, str] = {}
+    index: Dict[str, Tuple[str, str]] = {}   # 归一化 key → (所属 key, 归一化前的原文)
     for p in phrases:
         for v in p["variants"]:
-            index.setdefault(normalize_text(v), p["key"])
+            norm = normalize_text(v)
+            if norm in index:
+                # 碰撞即抛错（T12c 修 2）：归一化后相同的两条 variant 落到同一个 index key 上，
+                # 旧实现用 `setdefault` 让后写的那条**静默丢失**、命中归到先写 variant 的 key。
+                # 那等于把「两条不同的预铸话术」当成一条来算命中归属，基线数字口径失真，
+                # 而且事后无法定位是哪两条撞的。宁可硬失败让人去改 phrases.json。
+                prev_key, prev_raw = index[norm]
+                raise BaselineError(
+                    f"variant 归一化后碰撞，无法确定命中归属: {norm!r}"
+                    f"（先出现 {prev_key!r} → {prev_raw!r}；本次 {p['key']!r} → {v!r}）"
+                    f"——归一化是唯一的松弛步骤，两条不同 variant 归一后相同说明包内有重复话术，"
+                    f"请去重后重跑（不允许静默取其一）"
+                )
+            index[norm] = (p["key"], v)
 
     cases: List[Dict[str, Any]] = [
         json.loads(line) for line in golden_path.read_text(encoding="utf-8").splitlines() if line.strip()
@@ -107,8 +120,8 @@ def measure(pack_dir: Path, golden_path: Path, repo_root: Path) -> Dict[str, Any
     for c in cases:
         a = normalize_text(c["assistant_reply_free"])
         u = normalize_text(c["user_utterance"])
-        ha = index.get(a)
-        hu = index.get(u)
+        ha = index.get(a, (None, None))[0]
+        hu = index.get(u, (None, None))[0]
         hit_assistant += ha is not None
         hit_user += hu is not None
         rows.append(

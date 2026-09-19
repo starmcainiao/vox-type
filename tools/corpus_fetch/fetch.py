@@ -137,7 +137,22 @@ def http_get(url: str, *, timeout: int = HTTP_TIMEOUT, binary: bool = False) -> 
             req = urllib.request.Request(url, headers={"User-Agent": "vox-corpus-fetch/1"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
-            return raw if binary else raw.decode("utf-8", errors="replace")
+            if binary:
+                return raw
+            # 文本分支必须**严格解码**（T12c 修 4）：`errors="replace"` 会把非 UTF-8 README
+            # 变成带 U+FFFD 的乱码正文，许可关键词扫描在乱码上空转成「通过」——等于给一份
+            # 没读过的 README 发了一张许可通行证。宁可硬失败让人去看原文。
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise FetchError(
+                    f"README 不是合法 UTF-8，无法作为许可证据: {url} :: {e}"
+                    f"（严格解码；不做替换符降级——乱码正文会让许可关键词扫描空转「通过」）"
+                ) from e
+        except urllib.error.HTTPError as e:
+            # HTTPError 是 URLError 的子类（T12c 修 3）：404/403 这类服务端明确拒绝不是
+            # 网络抖动，重试只会白等 2s+4s。单列出来直接抛，不走下面的重试等待。
+            raise FetchError(f"GET 失败（HTTP {e.code}，不重试）: {url} :: {e!r}")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             last_err = e
             if attempt < HTTP_RETRIES:
@@ -456,6 +471,10 @@ def audit_license(src: Dict[str, Any]) -> Dict[str, Any]:
     expect = [e.lower() for e in src.get("expect_license", [])]
     if expect and lic not in expect:
         raise LicenseRejected(f"{sid}: 实测许可 {lic} 与 sources.json 声明的 {expect} 不符")
+    if not expect:
+        # T12c 修 6：缺 expect_license 时行为仍是跳过，但必须**留痕**——否则事后无法区分
+        # 「④ 核对通过」与「④ 根本没核对」，而后者意味着这份语料的许可只过了前三条。
+        out["audit_checks"].append("④ expect_license 未声明，跳过核对")
 
     out["license_spdx"] = lic
     out["audit_checks"].append(f"审计通过：许可 = {lic}")
@@ -776,17 +795,6 @@ def recheck(lock_path: Path) -> int:
     total = sum(len(ent.get("files", [])) for ent in doc.get("entries", []))
     print(f"巡检 {total} 个文件，异常 {bad} 个")
     return 1 if bad else 0
-
-
-def release_lock(lock_path: Path) -> None:
-    """释放台账写锁（供测试/故障处置用）。"""
-    lf = _lock_file_path(lock_path)
-    lf.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lf), os.O_CREAT | os.O_RDWR, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
