@@ -11,7 +11,8 @@ LLM 自由文本档 0% 命中——命中率上限由上游表示形态决定，
 业务包 3 个（`packs/repair/`、`packs/fin-cs/`、`packs/demo-brief/`），新增业务 = 新增目录、零内核改动。
 回读 CER 基准已可复现（本地 ASR 回读，真机闭环 CER 0.0，见 `eval/readback.py` 与 `docs/13`）；
 方言域 ASR 边界已实测（Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect-2026-09-19/`）。
-License: **TBD**（候选 Apache-2.0；选型需与仓内 MIT/Apache 派生语料兼容，见 `docs/13 §二`）。
+License: **Apache-2.0**（2026-09-19 拍板；与仓内 MIT/Apache-2.0 派生语料兼容——语料台账见
+`labs/corpus-harvest-2026-09-18/`；`packs/*/golden/` 按 `packs/AGENTS.md` 不进公开分发）。
 
 ---
 
