@@ -1,0 +1,808 @@
+"""tests/test_corpus_fetch.py — fetch 管道：许可审计 / 哈希校验 / 台账原子写。
+
+全部**离线**：不联网。平台取数与下载由测试替身 Platform 子类与
+`FakeHttpDownload`（已返回的假响应）驱动——卡内禁止测试联网。
+测试只调 `tools/corpus_fetch/fetch.py` 的公开函数，不复制被验逻辑。
+"""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import io
+import json
+import os
+import shutil
+import sys
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import tools.corpus_fetch.fetch as fetch_mod  # noqa: E402
+from tools.corpus_fetch.fetch import (  # noqa: E402
+    FetchError,
+    LicenseRejected,
+    ModelScope,
+    PLATFORMS,
+    audit_license,
+    filter_sources,
+    manifest_digest,
+    merge_lock,
+    process,
+    release_lock,
+    recheck,
+    resolve_out_root,
+    write_lock,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# ---------------------------------------------------------------------------
+# 假语料（测试替身响应，不含真实语料原文）
+# ---------------------------------------------------------------------------
+FAKE_README_CLEAN = (
+    "---\n"
+    "license: Apache License 2.0\n"
+    "---\n"
+    "\n"
+    "# Fixture dataset\n"
+    "\n"
+    "A synthetic customer-service dialogue corpus, released under Apache License 2.0.\n"
+    "No commercial restrictions. Everything is derived from public templates.\n"
+)
+
+# 负例：front-matter 写 apache-2.0，正文写禁商用声明（docs/11 §11.9.2 的事故形态）。
+# 五个触发形态都放进一份 README，因为 `audit_license` 抛出的消息列的是**全部命中词**，
+# 缺一个形态就不触发对应断言（不是产品漏检，是 fixture 太薄）。
+FAKE_README_NC = (
+    "---\n"
+    "license: apache-2.0\n"
+    "---\n"
+    "\n"
+    "# Fixture dialect TTS corpus\n"
+    "\n"
+    "| License | CC BY-NC-ND 4.0 |\n"
+    "\n"
+    "This dataset is released for non-commercial use only.\n"
+    "Usage restricted: NonCommercial research. SPDX: BY-NC-ND 4.0. 仅限学术用途，禁止商用。\n"
+)
+
+PAYLOAD = b'{"dialogue": [{"speaker": "u", "text": "hi"}]}\n'
+EXTRA = b'{"role": "agent", "scene": "billing"}\n'
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+class FakePlatform(ModelScope):
+    """不调网络的测试平台：meta / README / tree / 下载全部返回测试固定值。"""
+
+    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0", tree=None):
+        super().__init__()
+        # name 必须保持 "modelscope"：`_platform_license` 按 name 分派字段位置
+        # （ModelScope 取 meta["License"]，HF 取 meta["cardData"]["license"]）。替身返回的是
+        # ModelScope 形状的 meta，改成别的值会落到 HF 分支返回 None，表现为「平台未给许可」的
+        # 假阴性，而不是替身配置错误。name 只用于身份分派，与 PLATFORMS 的注册键无关。
+        self.name = "modelscope"
+        self.readme = readme
+        self.platform_license = platform_license
+        self.tree_entries = tree if tree is not None else [
+            {"path": "data/CSConv.json", "size": len(PAYLOAD), "declared_sha256": "", "is_lfs": False},
+            {"path": ".gitattributes", "size": 12, "declared_sha256": "", "is_lfs": False},
+        ]
+
+    def meta(self, sid):
+        return {"License": self.platform_license}
+
+    def readme_raw_url(self, sid, rev):
+        return f"fake://readme/{sid}"
+
+    def evidence_url(self, sid, rev):
+        return f"fake://blob/{sid}/README.md"
+
+    def tree(self, sid, rev):
+        return list(self.tree_entries)
+
+    def download_url(self, sid, rev, path):
+        return f"fake://download/{sid}/{path}"
+
+
+def install_platform(platform: FakePlatform):
+    """挂假平台 + 挂**离线** http_get 替身（卡内：测试不得联网）。
+
+    http_get 的 README / meta 内容与 `platform.readme` / `platform.platform_license` 保持同源，
+    保证 `audit_license` 测到的是产品代码、不是测试副本。
+    """
+    old_plat = PLATFORMS.get("fake-modelscope")
+    PLATFORMS["fake-modelscope"] = platform
+    old_get = fetch_mod.http_get
+    offline = OfflineHttpGet(readme=platform.readme, platform_license=platform.platform_license)
+    fetch_mod.http_get = offline
+    return old_plat, old_get
+
+
+def uninstall(old):
+    if old is None:
+        PLATFORMS.pop("fake-modelscope", None)
+        fetch_mod.http_get = OfflineHttpGet()
+    else:
+        PLATFORMS["fake-modelscope"] = old
+
+
+class OfflineHttpGet:
+    """测试级 `http_get` 替身：**绝不联网**，按 URL 形态返回测试替身 README。
+
+    未覆盖的 URL 直接抛 FetchError（fail-closed）——任何意外的联网尝试都会让测试响亮地失败。
+    """
+
+    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0"):
+        self.readme = readme
+        self.platform_license = platform_license
+        self.seen_urls = []  # 记录收到的 URL，便于断言替身确实覆盖了全部请求形态
+
+    def __call__(self, url, *, timeout=180, binary=False):
+        self.seen_urls.append(url)
+        # 假平台子类复用了 ModelScope.readme_raw_url 的 ...repo?FilePath=README.md 形态
+        if "FilePath=README.md" in url or "/readme/" in url:
+            return self.readme
+        if "api/v1/" in url or url.startswith("fake://"):
+            return self.meta_doc(self.platform_license)
+        # 假平台子类复用了 ModelScope._api 的 https://modelscope.cn/api/v1/datasets/<id> 调用
+        # → 返回与 meta() 同源的许可字段。**这条必须留**：删掉它，FakePlatform 就不必再实现 meta()，
+        # 而且"平台标签不可信"这类负例会退化成"平台未给许可"——判据强度悄悄变弱。
+        if url.startswith("https://") and "/api/v1/" in url:
+            return self.meta_doc(self.platform_license)
+        raise FetchError(f"离线测试收到未预期的请求（不应联网）: {url}")
+
+    @staticmethod
+    def meta_doc(platform_license: str) -> str:
+        """与 meta() 同源的模型平台元信息 JSON（fake:// 与 modelscope /api/v1 两种 URL 形态共用）。"""
+        return json.dumps({"Code": 200, "Data": {"License": platform_license}})
+
+
+class FakeHttpDownload:
+    """替换 `http_download_to_file`：不联网，按给定内容**分块**写盘并返回实测值。"""
+
+    def __init__(self, content: bytes, *, chunk: int = 1 << 20):
+        self.content = content
+        self.chunk = chunk
+        self.calls = 0
+        self.max_buffer = 0
+        self.blocks_written = 0
+
+    def __call__(self, url, dest, *, chunk=None):
+        self.calls += 1
+        chunk = chunk or self.chunk
+        self.max_buffer = max(self.max_buffer, chunk)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        out = bytearray()
+        for i in range(0, len(self.content), chunk):
+            out.extend(self.content[i : i + chunk])
+            self.blocks_written += 1
+        dest.write_bytes(bytes(out))
+        return len(self.content), sha256(self.content)
+
+
+def src(**overrides) -> dict:
+    base = {
+        "id": "fixture/ns__dataset",
+        "platform": "fake-modelscope",
+        "kind": "dataset",
+        "revision": "master",
+        "files": ["data/CSConv.json"],
+        "expect_license": ["apache-2.0"],
+        "why": "fixture 来源，测试用",
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------------------------------------------------------------------------
+# 许可审计
+# ---------------------------------------------------------------------------
+class LicenseAuditTests(unittest.TestCase):
+    """验收 2（许可负例，消息含命中词）/ 验收 5（审计通过）。"""
+
+    def setUp(self):
+        self._old = install_platform(FakePlatform())
+
+    def tearDown(self):
+        if self._old is None:
+            PLATFORMS.pop("fake-modelscope", None)
+        else:
+            PLATFORMS["fake-modelscope"] = self._old
+        fetch_mod.http_get = OfflineHttpGet()
+
+    def test_clean_license_audits_through(self):
+        out = audit_license(src())
+        self.assertEqual(out["license_spdx"], "apache-2.0")
+        self.assertEqual(out["license_readme_raw"], "Apache License 2.0")
+        self.assertEqual(out["noncommercial_hits"], [])
+        self.assertIn("README 正文无禁商用/禁演绎声明", out["audit_checks"])
+
+    def test_frontmatter_apache_body_noncommercial_is_rejected_with_matched_words(self):
+        install_platform(FakePlatform(readme=FAKE_README_NC, platform_license="apache-2.0"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["apache-2.0"]))
+        msg = str(cm.exception)
+        # 卡内要求：错误消息必须包含**命中的具体词**（照 docs/11 §11.9.2）。
+        # 断言的是 fetch.py 里 NONCOMMERCIAL_PATTERNS 的真实条目形态，不是 README 里的原句
+        # （"CC BY-NC-ND 4.0" 会被拆成 BY-NC / NC-ND / ND 4\.0 三个命中词报出来）。
+        for word in ("NonCommercial", "Non-Commercial", "BY-NC", "NC-ND", "禁止商用"):
+            self.assertIn(word, msg)
+        # front-matter 的宽松许可也不能放行
+        self.assertIn("apache-2.0", msg)
+        self.assertIn("无放行口", msg)
+        self.assertIn("fixture/ns__dataset", msg)
+
+    def test_unrecognised_license_is_rejected(self):
+        readme = FAKE_README_CLEAN.replace("Apache License 2.0", "cc-by-nc-4.0")
+        install_platform(FakePlatform(readme=readme, platform_license="cc-by-nc-4.0"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["cc-by-nc-4.0"]))
+        msg = str(cm.exception)
+        # 这条消息**故意不点名** cc-by-nc-4.0：`_normalize_license` 对集合外的值一律归一成
+        # None（不猜、不近似匹配），所以走到的是「两边都未给出可识别的许可」这一支。
+        # 这正是 fail-closed 想要的强度——不给出"我们把它认成别的了"的假确定性。
+        self.assertIn("都未给出可识别的许可", msg)
+        # 且必须是这条而不是"许可不在允许集合内"——后者意味着它被识别成了一个具体许可
+        self.assertNotIn("不在允许集合", msg)
+        # 归一化路径本身：该写法确实归一为 None
+        self.assertIsNone(fetch_mod._normalize_license("cc-by-nc-4.0"))
+
+    def test_platform_label_alone_is_not_trusted(self):
+        readme = "# Fixture\n\nNo front matter here, only a platform tag.\n"
+        install_platform(FakePlatform(readme=readme, platform_license="mit"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["mit"]))
+        self.assertIn("平台标签不可信", str(cm.exception))
+
+    def test_commercial_warning_without_ack_is_rejected(self):
+        readme = FAKE_README_CLEAN + "\n版权归某数据商所有，商用数据，需采购。\n"
+        install_platform(FakePlatform(readme=readme))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["apache-2.0"]))
+        msg = str(cm.exception)
+        for word in ("版权归", "商用数据", "license_keyword_ack"):
+            self.assertIn(word, msg)
+
+    def test_commercial_warning_with_explicit_ack_passes(self):
+        readme = FAKE_README_CLEAN + "\n版权归某数据商所有，商用数据，需采购。\n"
+        install_platform(FakePlatform(readme=readme))
+        out = audit_license(src(expect_license=["apache-2.0"], license_keyword_ack="法务已核（2026-09-18）"))
+        self.assertEqual(out["license_spdx"], "apache-2.0")
+        self.assertEqual(len(out["commercial_warning_hits"]), 3)
+
+    def test_license_conflict_between_platform_and_readme_is_rejected(self):
+        install_platform(FakePlatform(readme=FAKE_README_CLEAN, platform_license="MIT"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(expect_license=["mit"]))
+        msg = str(cm.exception)
+        for word in ("mit", "apache-2.0", "以 README 为准"):
+            self.assertIn(word, msg)
+
+    def test_missing_sources_file_fails_closed(self):
+        with self.assertRaises(FetchError) as cm:
+            fetch_mod.load_sources(Path("/tmp/vox-no-such-sources.json"))
+        self.assertIn("/tmp/vox-no-such-sources.json", str(cm.exception))
+
+
+# ---------------------------------------------------------------------------
+# 哈希与体量校验
+# ---------------------------------------------------------------------------
+class HashVerificationTests(unittest.TestCase):
+    """验收 3（平台声明 sha256 ≠ 实测 → 报错且消息含两个哈希前缀）。"""
+
+    def setUp(self):
+        self._old_platform = install_platform(FakePlatform())
+        self._old_dl = fetch_mod.http_download_to_file
+
+    def tearDown(self):
+        if self._old_platform is None:
+            PLATFORMS.pop("fake-modelscope", None)
+        else:
+            PLATFORMS["fake-modelscope"] = self._old_platform
+        fetch_mod.http_download_to_file = self._old_dl
+        fetch_mod.http_get = OfflineHttpGet()
+
+    def _fresh_out(self, name: str) -> Path:
+        out_root = Path(f"/tmp/vox-fake-{name}")
+        if out_root.exists():
+            shutil.rmtree(out_root)
+        return out_root
+
+    def test_declared_hash_mismatch_raises_with_both_prefixes(self):
+        declared = "aaaa" + "0" * 60
+        tree = [{"path": "data/CSConv.json", "size": len(PAYLOAD), "declared_sha256": declared, "is_lfs": True}]
+        install_platform(FakePlatform(tree=tree))
+        out_root = self._fresh_out("hashcheck")
+        fetch_mod.http_download_to_file = FakeHttpDownload(PAYLOAD)
+        try:
+            with self.assertRaises(FetchError) as cm:
+                process(src(), dry_run=False, out_root=out_root, repo_root=REPO_ROOT)
+            msg = str(cm.exception)
+            self.assertIn("sha256 不符", msg)
+            self.assertIn("data/CSConv.json", msg)
+            # 必须同时含**实测**与**平台声明**两个哈希的前缀
+            self.assertIn(sha256(PAYLOAD)[:16], msg)
+            self.assertIn(declared[:16], msg)
+        finally:
+            shutil.rmtree(out_root, ignore_errors=True)
+
+    def test_size_mismatch_raises_with_both_sizes(self):
+        tree = [{"path": "data/CSConv.json", "size": 999999, "declared_sha256": "", "is_lfs": False}]
+        install_platform(FakePlatform(tree=tree))
+        out_root = self._fresh_out("sizecheck")
+        fetch_mod.http_download_to_file = FakeHttpDownload(PAYLOAD)
+        try:
+            with self.assertRaises(FetchError) as cm:
+                process(src(), dry_run=False, out_root=out_root, repo_root=REPO_ROOT)
+            msg = str(cm.exception)
+            self.assertIn("体量不符", msg)
+            self.assertIn("999999", msg)
+            self.assertIn(str(len(PAYLOAD)), msg)
+        finally:
+            shutil.rmtree(out_root, ignore_errors=True)
+
+    def test_matching_declared_hash_passes(self):
+        tree = [{"path": "data/CSConv.json", "size": len(PAYLOAD), "declared_sha256": sha256(PAYLOAD), "is_lfs": True}]
+        install_platform(FakePlatform(tree=tree))
+        out_root = self._fresh_out("match")
+        fetch_mod.http_download_to_file = FakeHttpDownload(PAYLOAD)
+        try:
+            entry = process(src(), dry_run=False, out_root=out_root, repo_root=REPO_ROOT)
+        finally:
+            shutil.rmtree(out_root, ignore_errors=True)
+        self.assertEqual(len(entry["files"]), 1)
+        self.assertTrue(entry["files"][0]["verified_against_platform"])
+        self.assertEqual(entry["files"][0]["sha256"], sha256(PAYLOAD))
+
+
+# ---------------------------------------------------------------------------
+# 仓库边界
+# ---------------------------------------------------------------------------
+class PathGuardTests(unittest.TestCase):
+    """验收 4（--out-root 指向仓库内 → 报错，且不得先建目录再报错）。"""
+
+    def test_out_root_inside_repo_raises_before_mkdir(self):
+        target = REPO_ROOT / "tools" / "should_never_exist__out_root"
+        self.assertFalse(target.exists())
+        with self.assertRaises(FetchError) as cm:
+            resolve_out_root(target, REPO_ROOT)
+        msg = str(cm.exception)
+        self.assertIn("--out-root 不得指向仓库内", msg)
+        self.assertIn("docs/11 裁定 2", msg)
+        # 关键：报错之前**没有**建目录
+        self.assertFalse(target.exists())
+
+    def test_out_root_equal_to_repo_root_raises(self):
+        with self.assertRaises(FetchError) as cm:
+            resolve_out_root(REPO_ROOT, REPO_ROOT)
+        self.assertIn("--out-root 不得指向仓库内", str(cm.exception))
+
+    def test_out_root_outside_repo_is_allowed(self):
+        out = resolve_out_root(Path("/tmp/vox-corpus-ok"), REPO_ROOT)
+        self.assertTrue(out.is_absolute())
+        self.assertEqual(out.resolve(), Path("/tmp/vox-corpus-ok").resolve())
+        self.assertNotIn("newProject", str(out))
+
+    def test_dest_dir_inside_repo_is_rejected_even_with_valid_out_root(self):
+        # 双保险：即使 out_root 合法，拼接后的目标目录也不得落进仓库
+        install_platform(FakePlatform())
+        old_dl = fetch_mod.http_download_to_file
+        old_get = fetch_mod.http_get
+        fetch_mod.http_download_to_file = FakeHttpDownload(PAYLOAD)
+        fetch_mod.http_get = OfflineHttpGet()
+        try:
+            with self.assertRaises(FetchError) as cm:
+                process(
+                    src(),
+                    dry_run=False,
+                    out_root=REPO_ROOT / "packs",  # 仓库内
+                    repo_root=REPO_ROOT,
+                )
+            self.assertIn("仓库内", str(cm.exception))
+        finally:
+            fetch_mod.http_download_to_file = old_dl
+            fetch_mod.http_get = old_get
+
+
+# ---------------------------------------------------------------------------
+# 端到端离线全链
+# ---------------------------------------------------------------------------
+class EndToEndOfflineTests(unittest.TestCase):
+    """验收 5（fixture 假响应跑完「审计→下载→校验→写台账」全链）。"""
+
+    def setUp(self):
+        self.tmpdir = Path("/tmp/vox-fake-e2e")
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+        self.out_root = self.tmpdir / "out"
+        self.lock_path = self.out_root / "corpus.lock.json"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_full_chain_offline_with_fixture_responses(self):
+        # 两个文件：LFS（平台给了哈希 → verified_against_platform=true）、
+        # 普通文件（平台没给哈希 → 必须是 false，不得填 true）
+        tree = [
+            {"path": "data/CSConv.json", "size": len(PAYLOAD), "declared_sha256": sha256(PAYLOAD), "is_lfs": True},
+            {"path": "meta/manifest.json", "size": len(EXTRA), "declared_sha256": "", "is_lfs": False},
+        ]
+        install_platform(FakePlatform(tree=tree))
+        blobs = {"data/CSConv.json": PAYLOAD, "meta/manifest.json": EXTRA}
+        old_dl = fetch_mod.http_download_to_file
+        chunks: dict = {}
+
+        def download(url, dest, *, chunk=1 << 20):
+            # fake://download/<id>/<path> —— id 可能含 "/"（fixture/two__files），
+            # 所以按 sources 声明的文件路径去匹配，而不是按 id 段数切。
+            rel = next(
+                (p for p in blobs if url.endswith("/" + p)),
+                None,
+            )
+            self.assertIn(rel, blobs, f"假下载收到未预期的路径: {rel}（url={url}）")
+            dl = FakeHttpDownload(blobs[rel], chunk=chunk)
+            chunks[rel] = dl
+            return dl(url, dest, chunk=chunk)
+
+        try:
+            fetch_mod.http_download_to_file = download
+            entry = process(
+                src(id="fixture/two__files", files=["data/CSConv.json", "meta/manifest.json"]),
+                dry_run=False,
+                out_root=self.out_root,
+                repo_root=REPO_ROOT,
+            )
+        finally:
+            fetch_mod.http_download_to_file = old_dl
+            # install_platform 已装好离线 http_get；这里还原为缺省离线替身
+            fetch_mod.http_get = OfflineHttpGet()
+
+        # —— 审计段 ——
+        self.assertEqual(entry["id"], "fixture/two__files")
+        self.assertEqual(entry["license_spdx"], "apache-2.0")
+        self.assertEqual(entry["size_bytes"], len(PAYLOAD) + len(EXTRA))
+        # —— 校验段：每文件 size/sha256 与 fixture 一致 ——
+        files = {f["path"]: f for f in entry["files"]}
+        self.assertEqual(files["data/CSConv.json"]["size_bytes"], len(PAYLOAD))
+        self.assertEqual(files["data/CSConv.json"]["sha256"], sha256(PAYLOAD))
+        self.assertTrue(files["data/CSConv.json"]["verified_against_platform"])
+        # 平台未给哈希 → 必须 false，不得填 true
+        self.assertEqual(files["meta/manifest.json"]["declared_sha256"], "")
+        self.assertFalse(files["meta/manifest.json"]["verified_against_platform"])
+        self.assertEqual(files["meta/manifest.json"]["size_bytes"], len(EXTRA))
+        self.assertEqual(files["meta/manifest.json"]["sha256"], sha256(EXTRA))
+        # 顶层 sha256 = manifest 摘要（对 (path, size, sha256) 排序记录求 sha256）
+        self.assertEqual(entry["sha256"], manifest_digest(entry["files"]))
+        # —— 流式段：两次下载都真的走了分块写盘 ——
+        self.assertEqual(chunks["data/CSConv.json"].calls, 1)
+        self.assertEqual(chunks["meta/manifest.json"].calls, 1)
+        # —— 台账段 ——
+        write_lock(self.lock_path, [entry])
+        doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertEqual(doc["_schema"], "vox-corpus-lock/1")
+        self.assertEqual(len(doc["entries"]), 1)
+        self.assertEqual(doc["entries"][0]["size_bytes"], len(PAYLOAD) + len(EXTRA))
+        by_path = {f["path"]: f for f in doc["entries"][0]["files"]}
+        self.assertEqual(by_path["data/CSConv.json"]["sha256"], sha256(PAYLOAD))
+        self.assertFalse(by_path["meta/manifest.json"]["verified_against_platform"])
+        # 真实文件在盘上 → recheck 零异常
+        self.assertEqual(recheck(self.lock_path), 0)
+
+    def test_dry_run_audits_without_downloading_or_writing(self):
+        install_platform(FakePlatform())
+        old_get = fetch_mod.http_get
+        entry = process(src(), dry_run=True, out_root=self.out_root, repo_root=REPO_ROOT)
+        fetch_mod.http_get = old_get
+        self.assertTrue(entry["dry_run"])
+        self.assertFalse(self.out_root.exists())
+        self.assertFalse(self.lock_path.exists())
+
+
+class MainCliTests(unittest.TestCase):
+    """验收 7 坑 1（CLI 级：缺省跳过 optional 必须**响亮打印**；--only 可拉单个 optional）。"""
+
+    def _make_sources(self, tmp: Path, with_optional: bool = True) -> Path:
+        sources = {"sources": [
+            {"id": "a/normal", "platform": "fake-modelscope", "kind": "dataset",
+             "files": ["data/CSConv.json"], "expect_license": ["apache-2.0"]},
+        ]}
+        if with_optional:
+            sources["sources"].append(
+                {"id": "b/optional-big", "platform": "fake-modelscope", "kind": "dataset",
+                 "optional": True, "files": ["data/CSConv.json"], "expect_license": ["apache-2.0"]}
+            )
+        p = tmp / "sources.json"
+        p.write_text(json.dumps(sources), encoding="utf-8")
+        return p
+
+    def _run(self, tmp: Path, argv: list) -> tuple:
+        install_platform(FakePlatform())
+        old_dl = fetch_mod.http_download_to_file
+        old_get = fetch_mod.http_get
+        out = io.StringIO()
+        try:
+            fetch_mod.http_download_to_file = FakeHttpDownload(PAYLOAD)
+            fetch_mod.http_get = OfflineHttpGet()
+            with redirect_stdout(out):
+                code = fetch_mod.main(argv)
+        finally:
+            fetch_mod.http_download_to_file = old_dl
+            fetch_mod.http_get = old_get
+        return code, out.getvalue()
+
+    def test_default_run_loudly_prints_the_optional_skip(self):
+        tmp = Path("/tmp/vox-fake-cli")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        try:
+            out_root = tmp / "out"
+            code, out = self._run(
+                tmp,
+                [
+                    "--sources", str(self._make_sources(tmp)),
+                    "--lock", str(out_root / "corpus.lock.json"),
+                    "--out-root", str(out_root),
+                    "--repo-root", str(REPO_ROOT),
+                ],
+            )
+            self.assertEqual(code, 0)
+            # 关键：跳过声明必须打印出来（静默跳过 = 让人以为已经下了）
+            self.assertIn("跳过 optional", out)
+            self.assertIn("b/optional-big", out)
+            # 缺省 dry-run 不写台账（与原脚本一致：dry-run 只审计）；
+            # 条目数断言改用在非 dry-run 场景下验证。
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_only_flag_pulls_a_single_optional_source(self):
+        tmp = Path("/tmp/vox-fake-cli-only")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        try:
+            out_root = tmp / "out"
+            code, out = self._run(
+                tmp,
+                [
+                    "--sources", str(self._make_sources(tmp)),
+                    "--lock", str(out_root / "corpus.lock.json"),
+                    "--out-root", str(out_root),
+                    "--repo-root", str(REPO_ROOT),
+                    "--only", "b/optional-big",
+                ],
+            )
+            self.assertEqual(code, 0)
+            self.assertNotIn("跳过 optional", out)  # 显式点名拉取，不该再打印跳过声明
+            doc = json.loads((out_root / "corpus.lock.json").read_text(encoding="utf-8"))
+            self.assertEqual([e["id"] for e in doc["entries"]], ["b/optional-big"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_out_root_inside_repo_refused_via_cli(self):
+        # CLI 级重验：--out-root 指向仓库内 → 报错且**不建目录**
+        tmp = Path("/tmp/vox-fake-cli-guard")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir()
+        bad = REPO_ROOT / "tools" / "should_never_exist__cli_out_root"
+        self.assertFalse(bad.exists())
+        try:
+            with self.assertRaises(FetchError) as cm:
+                self._run(
+                    tmp,
+                    [
+                        "--sources", str(self._make_sources(tmp, with_optional=False)),
+                        "--lock", str(bad / "corpus.lock.json"),
+                        "--out-root", str(bad),
+                        "--repo-root", str(REPO_ROOT),
+                    ],
+                )
+            self.assertIn("--out-root 不得指向仓库内", str(cm.exception))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertFalse(bad.exists())
+
+
+class OptionalGateTests(unittest.TestCase):
+    """验收 7 坑 1（optional 缺省跳过；--only 可显式拉单个 optional 项）。"""
+
+    SOURCES = [
+        {"id": "a/normal", "platform": "fake-modelscope", "kind": "dataset"},
+        {"id": "b/optional-big", "platform": "fake-modelscope", "kind": "dataset", "optional": True},
+    ]
+
+    def test_default_skips_optional(self):
+        picked, skipped = filter_sources(self.SOURCES)
+        self.assertEqual([s["id"] for s in picked], ["a/normal"])
+        # 跳过清单必须非空 → 调用方据此**响亮打印**跳过声明
+        self.assertEqual(skipped, ["b/optional-big"])
+
+    def test_only_can_pull_a_single_optional_item(self):
+        picked, skipped = filter_sources(self.SOURCES, only="b/optional-big")
+        self.assertEqual([s["id"] for s in picked], ["b/optional-big"])
+        self.assertEqual(skipped, [])
+
+    def test_include_optional_pulls_everything(self):
+        picked, skipped = filter_sources(self.SOURCES, include_optional=True)
+        self.assertEqual(len(picked), 2)
+        self.assertEqual(skipped, [])
+
+    def test_unknown_only_id_fails_closed(self):
+        with self.assertRaises(FetchError) as cm:
+            filter_sources(self.SOURCES, only="no/such-id")
+        self.assertIn("no/such-id", str(cm.exception))
+
+
+class StreamingDownloadTests(unittest.TestCase):
+    """验收 7 坑 2（流式分块写盘 + 边下边算 sha256；失败不留下 .part 残留）。"""
+
+    def test_streaming_writes_in_chunks_and_hashes_while_downloading(self):
+        payload = b"x" * (3 * 1024 + 7)
+        dest = Path("/tmp/vox-fake-stream/big.json")
+        if dest.parent.exists():
+            shutil.rmtree(dest.parent)
+        patch = FakeHttpDownload(payload, chunk=1024)
+        old = fetch_mod.http_download_to_file
+        fetch_mod.http_download_to_file = patch
+        try:
+            size, digest = fetch_mod.http_download_to_file("fake://download/x/big.json", dest, chunk=1024)
+        finally:
+            fetch_mod.http_download_to_file = old
+        self.assertEqual(size, len(payload))
+        self.assertEqual(digest, sha256(payload))
+        # 一次只读一个 chunk：不得"一次性读进内存"
+        self.assertEqual(patch.max_buffer, 1024)
+        self.assertEqual(patch.blocks_written, 4)
+        self.assertEqual(dest.read_bytes(), payload)
+        self.assertFalse(dest.with_suffix(dest.suffix + ".part").exists())
+
+    def test_failed_download_leaves_no_part_residue(self):
+        class R:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self, n):
+                raise OSError("simulated socket read timeout")
+
+        old_urlopen = fetch_mod.urllib.request.urlopen
+        old_sleep = fetch_mod.time.sleep
+        fetch_mod.urllib.request.urlopen = lambda req, timeout=None: R()
+        fetch_mod.time.sleep = lambda s: None  # 测试里不等待退避
+        dest = Path("/tmp/vox-fake-fail/big.parquet")
+        if dest.parent.exists():
+            shutil.rmtree(dest.parent)
+        try:
+            with self.assertRaises(FetchError) as cm:
+                fetch_mod.http_download_to_file("fake://x", dest, chunk=64)
+            msg = str(cm.exception)
+            self.assertIn("下载失败", msg)
+            self.assertIn("重试 3 次", msg)
+            self.assertIn("fake://x", msg)
+        finally:
+            fetch_mod.urllib.request.urlopen = old_urlopen
+            fetch_mod.time.sleep = old_sleep
+        # 关键断言：失败不得留下可被误认为完整语料的 .part 残留
+        self.assertFalse(dest.exists())
+        self.assertFalse(dest.with_suffix(dest.suffix + ".part").exists())
+        self.assertEqual(list(dest.parent.glob("*.part")), [])
+
+
+class LockAtomicityTests(unittest.TestCase):
+    """验收 7 坑 3（台账原子写：临时文件 + rename；检测到并发拒绝启动）。"""
+
+    def setUp(self):
+        self.tmpdir = Path("/tmp/vox-fake-lock")
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+        self.tmpdir.mkdir(parents=True, exist_ok=True)
+        self.lock_path = self.tmpdir / "corpus.lock.json"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_write_lock_is_atomic_rename(self):
+        write_lock(self.lock_path, [{"id": "a/b", "files": []}])
+        doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertEqual([e["id"] for e in doc["entries"]], ["a/b"])
+        self.assertEqual(doc["_schema"], "vox-corpus-lock/1")
+        # 原子：没有留下临时文件
+        self.assertEqual(list(self.tmpdir.glob("corpus.lock.json.tmp")), [])
+        # 并发门禁的占位文件在同目录（仓外），不写进仓库
+        self.assertTrue((self.tmpdir / "corpus.lock.json.lock").exists())
+
+    def test_concurrent_instance_is_refused(self):
+        lf = self.lock_path.with_suffix(self.lock_path.suffix + ".lock")
+        fd = os.open(str(lf), os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            with self.assertRaises(FetchError) as cm:
+                write_lock(self.lock_path, [{"id": "a/b", "files": []}])
+            msg = str(cm.exception)
+            for word in ("检测到并发实例", "拒绝启动", "并发写会丢台账条目"):
+                self.assertIn(word, msg)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        # 拒绝之后仍可正常写；且拒绝时不留下半份台账
+        self.assertFalse(self.lock_path.exists())
+        write_lock(self.lock_path, [{"id": "a/b", "files": []}])
+        self.assertTrue(self.lock_path.exists())
+
+    def test_release_lock_allows_write_after_release(self):
+        write_lock(self.lock_path, [{"id": "x/y", "files": []}])
+        release_lock(self.lock_path)
+        write_lock(self.lock_path, [{"id": "x/y", "files": []}, {"id": "z/w", "files": []}])
+        doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertEqual([e["id"] for e in doc["entries"]], ["x/y", "z/w"])
+
+    def test_merge_lock_keeps_unprocessed_old_entries(self):
+        old = [{"id": "old/untouched", "files": []}]
+        new = [{"id": "new/one", "files": []}, {"id": "old/untouched", "files": [{"sha256": "x"}]}]
+        merged = merge_lock(old, new)
+        self.assertEqual([e["id"] for e in merged], ["new/one", "old/untouched"])
+        self.assertEqual(len([e for e in merged if e["id"] == "old/untouched"]), 1)
+        self.assertEqual(merged[1]["files"][0]["sha256"], "x")  # 新条目替换旧条目，不是重复保留
+
+
+class RecheckTests(unittest.TestCase):
+    """台账巡检：缺失与改动都要报出来（fail-closed，不能静默放过）。"""
+
+    def setUp(self):
+        self.tmpdir = Path("/tmp/vox-fake-recheck")
+        if self.tmpdir.exists():
+            shutil.rmtree(self.tmpdir)
+        self.tmpdir.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_file(self, rel: str, content: bytes) -> str:
+        p = self.tmpdir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content)
+        return str(p)
+
+    def _lock_with(self, files: list) -> Path:
+        lock = self.tmpdir / "corpus.lock.json"
+        write_lock(lock, [{"id": "d/x", "files": files}])
+        return lock
+
+    def test_recheck_clean_returns_zero(self):
+        lock = self._lock_with([
+            {"path": "f1.json", "sha256": sha256(b"abc"), "local_file": self._write_file("d/f1.json", b"abc")},
+            {"path": "f2.json", "sha256": sha256(b"def"), "local_file": self._write_file("d/f2.json", b"def")},
+        ])
+        self.assertEqual(recheck(lock), 0)
+
+    def test_recheck_detects_missing_and_modified_files(self):
+        a = self._write_file("d/f1.json", b"abc")
+        gone = self._write_file("d/f2.json", b"def")
+        Path(gone).unlink()  # 语料被删：必须留着让 recheck 报「缺失」
+        Path(a).write_bytes(b"abc-modified")  # 内容被改：必须报「被改动」
+        lock = self._lock_with([
+            {"path": "f1.json", "sha256": sha256(b"abc"), "local_file": a},
+            {"path": "f2.json", "sha256": sha256(b"def"), "local_file": gone},
+        ])
+        self.assertEqual(recheck(lock), 1)
+
+    def test_recheck_missing_lock_returns_2(self):
+        self.assertEqual(recheck(self.tmpdir / "nope.json"), 2)
+
+    def test_recheck_malformed_lock_returns_3(self):
+        bad = self.tmpdir / "bad.json"
+        bad.write_text("{not json", encoding="utf-8")
+        self.assertEqual(recheck(bad), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
