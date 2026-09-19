@@ -12,11 +12,11 @@ labs/ticket-source-2026-09-19/run_e2e.py — 源 → state → plan → 留痕�
 退出码：0 = 全部断言通过；3 = 任一断言失败（含负例未如预期抛错）。
 
 复用的产品 API（T21 反空转条款：不得在 labs 里复制 state/trigger 校验逻辑）：
-    adapters.state_trigger.load_trigger    读 packs/demo-brief（含 phrases.json 校验）
-    adapters.state_trigger.validate_state  state 快照的格式闸门（to_state.py 里调用）
-    adapters.state_trigger.build_plan      state → plan
-    adapters.state_trigger.record_turn     轮级留痕（敏感层绝不落盘）
-    adapters.state_trigger.read_turns      读回留痕做复核
+    trigger.load_trigger    读 packs/demo-brief（含 phrases.json 校验）
+    trigger.validate_state  state 快照的格式闸门（to_state.py 里调用）
+    trigger.build_plan      state → plan
+    trigger.record_turn     轮级留痕（敏感层绝不落盘）
+    trigger.read_turns      读回留痕做复核
 
 本文件不联网、不启停服务、不 import 系统时钟；不写 labs/ticket-source-2026-09-19/ 之外的任何路径。
 """
@@ -246,7 +246,7 @@ def main() -> int:
     sys.path.insert(0, str(REPO_ROOT))
     sys.path.insert(0, str(HERE))
 
-    from adapters.state_trigger import (
+    from trigger import (
         LedgerError,
         Trigger,
         build_plan,
@@ -257,7 +257,7 @@ def main() -> int:
     )
     # 逐条规则的匹配判定直接复用引擎的公开判定函数——本实验不复制 when 的匹配逻辑
     # （反空转：覆盖表必须由实际运行结果生成，所以这里真的去判定每一条规则）
-    from adapters.state_trigger.trigger import rule_matches
+    from trigger.plan import rule_matches
     import to_state
     from to_state import SourceMapError, to_state as to_state_one
 
@@ -1589,12 +1589,12 @@ def main() -> int:
             "unreachable_reasons": unreachable_reasons,
             "reason_generation": "逐条列出该规则 when 的每个合取条件，以及本实验源里对应字段的实际取值集合；"
                                  "理由来自实际判定结果，不是手写的一句话。",
-            "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改）。"
+            "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（plan.py 的既有口径，本实验不改）。"
                     "T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，"
                     "packs/demo-brief/ 一行未改。",
         },
         "rule_matching_matrix": {
-            "generated_from": "adapters.state_trigger.trigger.rule_matches 对每条源行 state 的真实判定结果（非手写）",
+            "generated_from": "trigger.plan.rule_matches 对每条源行 state 的真实判定结果（非手写）",
             "rule_order_in_pack": rule_ids_in_pack,
             "fallback_rule": trigger.rules[-1].rule_id,
             "per_ticket": [

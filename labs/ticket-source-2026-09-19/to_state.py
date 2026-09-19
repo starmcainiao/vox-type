@@ -3,9 +3,9 @@ labs/ticket-source-2026-09-19/to_state.py — 工单系统导出 → state 快�
 
 职责：读「工单系统导出」形态的源 JSON，按 source_map.json 里声明的映射与
       派生规则，产出一份 state 快照；产出的 state 必须通过 T16 的
-      adapters.state_trigger.validate_state（复用，不复制校验逻辑）。
-不负责：不做 state → plan（adapters.state_trigger.build_plan）、不写留痕
-      （adapters.state_trigger.record_turn）、不写任何文件（落盘归 run_e2e.py）、
+      trigger.validate_state（复用，不复制校验逻辑）。
+不负责：不做 state → plan（trigger.build_plan）、不写留痕
+      （trigger.record_turn）、不写任何文件（落盘归 run_e2e.py）、
       不联网、不启停服务、不改内核。
 
 T21 的硬要求怎么落在这里：
@@ -31,7 +31,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from adapters.state_trigger import StateError, Trigger, validate_state
+from trigger import StateError, Trigger, validate_state
 
 HERE: Path = Path(__file__).resolve().parent
 DEFAULT_SOURCE_MAP: str = "source_map.json"
@@ -362,7 +362,7 @@ def to_state(
     参数：
         source_doc:      单条工单（字典）
         mapping_doc:     source_map.json 的内容
-        trigger:         adapters.state_trigger.load_trigger 的产物（提供 layer 声明）
+        trigger:         trigger.load_trigger 的产物（提供 layer 声明）
         tz:              时区（缺省取映射表的 timezone；**不从系统推断**）
         day_unit:        自然日单位（缺省取映射表的 day_unit）
         as_of_override:  「今天」的注入覆盖：None = 用映射表的 as_of；

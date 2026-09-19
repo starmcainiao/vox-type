@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.ledger — 轮级留痕（state 结构化层 + plan 的配对，JSONL 追加写）
+trigger.ledger — 轮级留痕（state 结构化层 + plan 的配对，JSONL 追加写）
 
 职责：把「这一轮的状态 + 打算说什么」按 docs/12 §12.5 定的两条通道之一（正样本）
       写进 JSONL 追加写文件，供之后做监督微调的数据快照（docs/12 §12.10）。
@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.metrics_spec import PLAN_ID, TURN_ID, TS, KEY
-from adapters.state_trigger.format import LAYER_STRUCTURED, LAYER_SENSITIVE, Trigger
-from adapters.state_trigger.trigger import TriggerPlan
+from trigger.format import LAYER_STRUCTURED, LAYER_SENSITIVE, Trigger
+from trigger.plan import TriggerPlan
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +172,8 @@ def default_ledger_path() -> Path:
 
 
 def _repo_root() -> Path:
-    """仓库根（本文件 → state_trigger → adapters → 仓库根）。"""
-    return Path(__file__).resolve().parent.parent.parent
+    """仓库根（本文件 → trigger → 仓库根）。"""
+    return Path(__file__).resolve().parent.parent
 
 
 def _resolve_path(path: Any) -> Path:

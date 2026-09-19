@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.tests.test_trigger — T17 触发器（state → plan）测试
+trigger.tests.test_trigger — T17 触发器（state → plan）测试
 
 覆盖 T17 卡的验收标准（T17b 修订：`when: null` = 显式兜底，必须命中）：
   2  正例：demo 包合法 state → build_plan 产出 plan，每个 key ∈ phrases.json
@@ -14,7 +14,7 @@ adapters.state_trigger.tests.test_trigger — T17 触发器（state → plan）�
              变体若受 turn_id 影响，同一 turn_id 重跑必须同结果
   9  字段名合规：plan_id 派生用的字段名与 core.metrics_spec 一致
 
-反空转约束：本文件**只调用产品 API**（adapters.state_trigger 的公开函数：
+反空转约束：本文件**只调用产品 API**（trigger 的公开函数：
   build_plan / load_trigger / validate_state / check_budget / count_plan_chars /
   record_turn），不在测试里复制/重写被验逻辑。为构造负例，这里只有一份
   trigger.json 的**原始夹具**（JSON 形状的数据，不是校验实现），
@@ -30,7 +30,7 @@ import unittest
 from pathlib import Path
 
 from core.metrics_spec import PLAN_ID, TURN_ID
-from adapters.state_trigger import (
+from trigger import (
     BudgetError,
     TriggerError,
     build_plan,
@@ -43,8 +43,8 @@ from adapters.state_trigger import (
 )
 
 
-# 仓库根（tests/ → state_trigger/ → adapters/ → 仓库根）
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# 仓库根（tests/ → trigger/ → 仓库根）
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEMO_PACK = _REPO_ROOT / "packs" / "demo-brief"
 
 
@@ -522,8 +522,8 @@ class TestDeterminism(unittest.TestCase):
         build_plan 对编程式输入（绕过 T16 的 JSON 闸门）的散列路径：
         同一 turn_id → 同一变体；不同 turn_id → 可能不同（可重放，不固定死）。
         """
-        from adapters.state_trigger import PlanUnit, TriggerRule, Trigger
-        from adapters.state_trigger import load_trigger as _load
+        from trigger import PlanUnit, TriggerRule, Trigger
+        from trigger import load_trigger as _load
 
         trigger = _load(_DEMO_PACK)
         variants = _demo_variants()
@@ -563,8 +563,8 @@ class TestDeterminism(unittest.TestCase):
 
     def test_variant_auto_differs_across_turn_ids_somewhere(self):
         """在足够多的 turn_id 上，散列选择必须真的变化（否则「由 turn_id 派生」是空话）。"""
-        from adapters.state_trigger import PlanUnit, TriggerRule, Trigger
-        from adapters.state_trigger import load_trigger as _load
+        from trigger import PlanUnit, TriggerRule, Trigger
+        from trigger import load_trigger as _load
 
         trigger = _load(_DEMO_PACK)
         variants = _demo_variants()
@@ -627,7 +627,7 @@ class TestFieldNames(unittest.TestCase):
 
     def test_ledger_field_names_match_core_metrics_spec(self):
         """留痕的 turn_id / plan_id 字面量必须与 core.metrics_spec 的常量一致。"""
-        from adapters.state_trigger import ledger, trigger as trigger_module
+        from trigger import ledger, plan as trigger_module
 
         self.assertEqual(trigger_module.TURN_ID_FIELD, TURN_ID)
         self.assertEqual(trigger_module.PLAN_ID_FIELD, PLAN_ID)
@@ -776,7 +776,7 @@ def _materialize(doc: dict):
     测试里不复制 T16 的校验器。夹具包复用 demo 包的 pack.json / phrases.json，
     因此所有 key 都在 phrases.json 里（已审核集合不变）。
     """
-    from adapters.state_trigger import load_trigger as _load
+    from trigger import load_trigger as _load
 
     with tempfile.TemporaryDirectory() as tmp:
         pack_dir = Path(tmp) / "pack"

@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.tests.test_ledger — T17 轮级留痕测试
+trigger.tests.test_ledger — T17 轮级留痕测试
 
 覆盖 T17 卡的验收标准：
   2   正例：record_turn 写出一条留痕，文件行数 +1
@@ -9,7 +9,7 @@ adapters.state_trigger.tests.test_ledger — T17 轮级留痕测试
       且敏感层不在其中
   9   字段名合规：turn_id / plan_id 字面量与 core.metrics_spec 的常量一致
 
-反空转约束：本文件**只调用产品 API**（adapters.state_trigger 的公开函数：
+反空转约束：本文件**只调用产品 API**（trigger 的公开函数：
   record_turn / structured_record / read_turns / supervision_pairs / default_ledger_path /
   build_plan / load_trigger / validate_state），不在测试里复制/重写被验逻辑。
   测试**不依赖真实时钟**：时间戳全部由参数注入（见 ts 常量）。
@@ -22,7 +22,7 @@ import unittest
 from pathlib import Path
 
 from core.metrics_spec import PLAN_ID, TURN_ID
-from adapters.state_trigger import (
+from trigger import (
     LedgerError,
     build_plan,
     default_ledger_path,
@@ -35,8 +35,8 @@ from adapters.state_trigger import (
 )
 
 
-# 仓库根（tests/ → state_trigger/ → adapters/ → 仓库根）
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# 仓库根（tests/ → trigger/ → 仓库根）
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEMO_PACK = _REPO_ROOT / "packs" / "demo-brief"
 
 # 时间戳固定注入：测试不得依赖真实时钟（否则测不了确定性）
@@ -278,7 +278,7 @@ class TestSensitiveLayerNeverLanded(unittest.TestCase):
         完全取决于声明的 layer——这正是 T16 设计里「白名单只此一处」的边界。
         本测试选 `customer_account`（含标记 'account'）来验证嗅探路径真的生效。
         """
-        from adapters.state_trigger import StateError
+        from trigger import StateError
 
         decl = {
             "customer_account": {"layer": "structured", "type": "str"},  # 错配
@@ -309,7 +309,7 @@ class TestSensitiveLayerNeverLanded(unittest.TestCase):
 
     def test_sensitive_value_never_reaches_ledger_after_reject(self):
         """validate_state 拦下之后：不落盘文件（红线端到端验证）。"""
-        from adapters.state_trigger import StateError
+        from trigger import StateError
 
         decl = {
             "customer_account": {"layer": "structured", "type": "str"},
@@ -341,7 +341,7 @@ class TestSensitiveLayerNeverLanded(unittest.TestCase):
 
     def test_sensitive_field_declared_structured_but_value_type_invalid(self):
         """即使字段名不含敏感标记，敏感层的 type 声明在结构化层也不合法。"""
-        from adapters.state_trigger import StateError
+        from trigger import StateError
 
         decl = {
             "ticket_status": {
@@ -559,7 +559,7 @@ class TestLedgerFieldNames(unittest.TestCase):
         self.assertEqual(PLAN_ID, "plan_id")
 
     def test_module_aliases_equal_core_constants(self):
-        from adapters.state_trigger import ledger, trigger as trigger_module
+        from trigger import ledger, plan as trigger_module
         self.assertEqual(ledger.TURN_ID_FIELD, TURN_ID)
         self.assertEqual(ledger.PLAN_ID_FIELD, PLAN_ID)
         self.assertEqual(ledger.TS_FIELD, "ts")

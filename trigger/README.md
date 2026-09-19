@@ -1,15 +1,15 @@
-# adapters/state_trigger — 前置包触发器 + 轮级留痕
+# trigger — 前置包触发器 + 轮级留痕
 
-**落点**：`adapters/`（扩展区）。`state → plan` 是「决定说什么」，属接缝之上，
+**落点**：`trigger/`（独立扩展区，自带七项 AGENTS.md）。`state → plan` 是「决定说什么」，属接缝之上，
 因此不进 `runtime/`（冻结区）——见 `docs/12` 的「分层纪律」与 `docs/10 §10.1`。
-本模块的登记与边界见 `adapters/AGENTS.md §⑧`。
+本层的登记与边界见 `trigger/AGENTS.md`（边界条款 §⑤）；迁出 `adapters/` 的记录见 `adapters/AGENTS.md §⑧`。
 
 ## 它是什么
 
 | 部件 | 文件 | 干什么 |
 |---|---|---|
 | 格式闸门（T16） | `format.py` | `state` 快照格式 + `trigger.json` 映射格式的定义与校验 |
-| 行为侧（T17） | `trigger.py` | `build_plan(trigger, state) → plan`：纯函数、确定性 |
+| 行为侧（T17） | `plan.py` | `build_plan(trigger, state) → plan`：纯函数、确定性 |
 | 轮级留痕（T17） | `ledger.py` | `record_turn(...)`：JSONL 追加写，留「该说什么」的正样本 |
 
 **只提案不出声（边界声明）**：本模块产出的是**建议 plan**，交给 `runtime/` 执行。
@@ -18,7 +18,7 @@
 
 ## 与 T16 格式的关系
 
-`format.py` 定**长什么样算合法**，`trigger.py` 定**合法之后选哪条规则**。
+`format.py` 定**长什么样算合法**，`plan.py` 定**合法之后选哪条规则**。
 本模块**复用** T16 的三个库 API，不复制校验逻辑：
 
 | T16 的 API | 本模块怎么用 |
@@ -107,13 +107,13 @@ sha256(`turn_id`\0`part`) 稳定散列（与 `runtime/executor.py` 的 `_resolve
 ```sh
 cd /Volumes/macos/newProject/vox-type
 
-# 全部测试（注意是 -s adapters，不是 -s adapters/tests：后者会漏掉嵌套目录）
-python3 -m unittest discover -s adapters
+python3 -m unittest discover -s trigger
 
-# 只跑本模块
-python3 -m unittest adapters.state_trigger.tests.test_format \
-                   adapters.state_trigger.tests.test_trigger \
-                   adapters.state_trigger.tests.test_ledger
+# 只跑某几个测试文件
+python3 -m unittest trigger.tests.test_format \
+                   trigger.tests.test_trigger \
+                   trigger.tests.test_ledger \
+                   trigger.tests.test_reachability
 
 # demo 包校验（应 rc 0）
 ./bin/vox pack check packs/demo-brief
@@ -125,4 +125,4 @@ python3 -m unittest adapters.state_trigger.tests.test_format \
 - 仓库自身：`core.protocol`（`PlanUnit`）、`core.metrics_spec`（字段名常量）、
   `compiler` 公开面（`load_source` / `SourceError`，话术表解析）、本包 `format.py`
 - **不依赖** `runtime/`、`assets/`、`eval/`、`cli/`；内核也不得反向 import 本模块
-  （`adapters/AGENTS.md §⑧` 第 4 条）。
+  （`trigger/AGENTS.md §⑤` 第 4 条）。

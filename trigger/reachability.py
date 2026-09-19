@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.reachability — 前置包 key / state 字段可达性检查（报告类 API）
+trigger.reachability — 前置包 key / state 字段可达性检查（报告类 API）
 
 职责：对一份**已装载**的 Trigger 做静态盘点，找出两类「声明了但触发器用不到」的
       死重量：
@@ -28,7 +28,7 @@ adapters.state_trigger.reachability — 前置包 key / state 字段可达性检
   `overdue_days` 无任何 `when` 依赖，但被 `overdue` 规则的 slots 引用），
   只出现在 `when` 也算被引用——两种都参与触发或拼接，不是死重量。
 
-与同层其他模块的关系：本模块是**独立的报告 API**，不被 format.py / trigger.py
+与同层其他模块的关系：本模块是**独立的报告 API**，不被 format.py / plan.py
       调用，也不调用它们的私有符号；两者保持零改动（本卡 T16d 的白名单要求）。
 
 边界声明：本模块**只盘点不判定业务合法性**——它不知道 script.json 存不存在，
@@ -38,7 +38,7 @@ adapters.state_trigger.reachability — 前置包 key / state 字段可达性检
 from dataclasses import dataclass
 from typing import FrozenSet, Tuple
 
-from adapters.state_trigger.format import Trigger
+from trigger.format import Trigger
 
 
 # ---------------------------------------------------------------------------

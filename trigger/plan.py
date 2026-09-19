@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.trigger — state 快照 → plan（触发器，行为侧）
+trigger.plan — state 快照 → plan（触发器，行为侧）
 
 职责：给定一份 state 快照 + 一份已校验的 Trigger，按 trigger.json 的规则
       选出命中的那条规则，产出 core 协议的 plan（core.protocol.Plan），
@@ -46,7 +46,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.metrics_spec import PLAN_ID, TURN_ID
 from core.protocol import PlanUnit as CorePlanUnit
-from adapters.state_trigger.format import (
+from trigger.format import (
     BudgetError,
     StateError,
     Trigger,
@@ -61,7 +61,7 @@ from adapters.state_trigger.format import (
 # 1. 常量（字段名一律引 core.metrics_spec，不自造字面量）
 # ---------------------------------------------------------------------------
 # TURN_ID / PLAN_ID 在 core.metrics_spec 里是冻结常量；本模块在此建别名，
-# 让 ledger.py 与 trigger.py 共用同一份别名（字段名只在 core 里定义一次）。
+# 让 ledger.py 与 plan.py 共用同一份别名（字段名只在 core 里定义一次）。
 TURN_ID_FIELD: str = TURN_ID
 PLAN_ID_FIELD: str = PLAN_ID
 
@@ -190,11 +190,11 @@ def rule_matches(rule: Any, state: Dict[str, Any]) -> bool:
 
     调用方：
         - build_plan（本模块）：按 trigger.rules 顺序逐条判定，取第一条命中。
-        - adapters.state_trigger.reachability.check_reachability：
+        - trigger.reachability.check_reachability：
           规则/字段可达性盘点，用它判断某规则能否被某 state 命中。
         - labs/ticket-source-2026-09-19/run_e2e.py：端到端实验的规则覆盖表，
           用它对每条源行的 state 逐条判定，生成 summary.json#rule_matching_matrix。
-        - adapters.state_trigger.tests（test_trigger.py 的公开 API 直测）。
+        - trigger.tests（test_trigger.py 的公开 API 直测）。
     """
     when = rule.when
     if when is None:

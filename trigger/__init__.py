@@ -1,9 +1,9 @@
-# adapters/state_trigger/__init__.py
+# trigger/__init__.py
 # 前置包触发配置（state 快照格式 + trigger.json 映射格式）的公开 API 导出。
-# 落点说明：本包在 adapters/（扩展区）。state → plan 是「决定说什么」，属接缝之上，
+# 落点说明：本包是顶层扩展区 trigger/（2026-09-19 自 adapters/state_trigger/ 迁入）。state → plan 是「决定说什么」，属接缝之上，
 # 因此不进 runtime/（冻结区）——见 docs/12 的「分层纪律」与 docs/10 §10.1。
 
-from adapters.state_trigger.format import (
+from trigger.format import (
     DEFAULT_BUDGET_CHARS,
     LAYER_SENSITIVE,
     LAYER_STRUCTURED,
@@ -20,12 +20,12 @@ from adapters.state_trigger.format import (
     validate_state,
 )
 # T17 追加：触发器行为侧（state → plan）与轮级留痕
-from adapters.state_trigger.trigger import (
+from trigger.plan import (
     TriggerPlan,
     build_plan,
     rule_matches,
 )
-from adapters.state_trigger.ledger import (
+from trigger.ledger import (
     LedgerError,
     default_ledger_path,
     read_turns,
@@ -34,7 +34,7 @@ from adapters.state_trigger.ledger import (
     supervision_pairs,
 )
 # T16d 追加：前置包 key / state 字段可达性盘点（报告类 API，只报告不报错）
-from adapters.state_trigger.reachability import (
+from trigger.reachability import (
     ReachabilityReport,
     check_reachability,
 )

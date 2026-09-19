@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.tests.test_format — T16 格式校验器测试
+trigger.tests.test_format — T16 格式校验器测试
 
 覆盖 T16 卡的验收标准 1–10：
   正例：load_trigger('packs/demo-brief') / validate_state 合法快照 / check_budget 未超预算
@@ -7,7 +7,7 @@ adapters.state_trigger.tests.test_format — T16 格式校验器测试
         自由文本（SAY_LIVE 与 text）/ 超预算（消息含实际字数与预算值）
   确定性：同一 state + 同一 trigger.json → 逐字段相同的 plan 序列
 
-反空转约束：本文件**只调用产品 API**（adapters.state_trigger 的公开函数），
+反空转约束：本文件**只调用产品 API**（trigger 的公开函数），
 不在测试里复制/重写被验逻辑。为了构造负例，这里只有一份 trigger.json 的
 **原始夹具**（JSON 形状的数据，不是校验实现），负例 = 改夹具 → 调产品 API → 断言异常。
 """
@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from adapters.state_trigger import (
+from trigger import (
     BudgetError,
     StateError,
     TriggerError,
@@ -29,8 +29,8 @@ from adapters.state_trigger import (
 )
 
 
-# 仓库根（tests/ → state_trigger/ → adapters/ → 仓库根）
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# 仓库根（tests/ → trigger/ → 仓库根）
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEMO_PACK = _REPO_ROOT / "packs" / "demo-brief"
 
 

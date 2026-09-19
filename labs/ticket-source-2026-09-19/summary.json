@@ -100,10 +100,10 @@
     "unreachable_from_source": [],
     "unreachable_reasons": {},
     "reason_generation": "逐条列出该规则 when 的每个合取条件，以及本实验源里对应字段的实际取值集合；理由来自实际判定结果，不是手写的一句话。",
-    "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改）。T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，packs/demo-brief/ 一行未改。"
+    "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（plan.py 的既有口径，本实验不改）。T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，packs/demo-brief/ 一行未改。"
   },
   "rule_matching_matrix": {
-    "generated_from": "adapters.state_trigger.trigger.rule_matches 对每条源行 state 的真实判定结果（非手写）",
+    "generated_from": "trigger.plan.rule_matches 对每条源行 state 的真实判定结果（非手写）",
     "rule_order_in_pack": [
       "greeting",
       "overdue",
@@ -1071,11 +1071,11 @@
     "scanned_target_count": 4,
     "chars_per_file": {
       "source_map.json（全文）": 8491,
-      "README.md（全文）": 8886,
+      "README.md（全文）": 8868,
       "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）": 795,
-      "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）": 71577
+      "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）": 71448
     },
-    "total_chars": 89749,
+    "total_chars": 89602,
     "method": "把每个目标整段读入后做短语子串匹配（禁止只扫自己刚写的那一段）；只查事实性短语子集 _FACTUAL_BANNED——模糊化规避类短语写进禁语表自身会被自扫命中，由下面的负例注入测试单独覆盖",
     "factual_banned_phrases": [
       "is_overdue 恒为 false",
@@ -1117,13 +1117,13 @@
       "trimmed_docstrings": false,
       "excluded_spans": [
         {
-          "char_start": 3039,
-          "char_end": 4642,
+          "char_start": 2964,
+          "char_end": 4567,
           "note": "BANNED_TEXTUAL_CLAIMS 按定义必须自带被禁原话——它是被扫描的对象本身，不是本文件的说明文字"
         }
       ],
       "excluded_char_count": 1603,
-      "source_chars": 71577,
+      "source_chars": 71448,
       "mask_is_length_preserving": true
     }
   },
@@ -1249,7 +1249,7 @@
             "source_map.json（全文）",
             "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）"
           ],
-          "total_chars": 89749
+          "total_chars": 89602
         },
         "verdict": "由本脚本实测"
       },
@@ -1309,8 +1309,8 @@
           "hits": [],
           "excluded_spans": [
             [
-              3039,
-              4642
+              2964,
+              4567
             ]
           ]
         },

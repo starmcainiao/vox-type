@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.tests.test_reachability — T16d 可达性检查（报告类 API）测试
+trigger.tests.test_reachability — T16d 可达性检查（报告类 API）测试
 
 覆盖 T16d 卡的验收标准：
   2  活体基准（demo 包）：check_reachability(load_trigger('packs/demo-brief')) →
@@ -24,7 +24,7 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from adapters.state_trigger import (
+from trigger import (
     PlanUnit,
     ReachabilityReport,
     StateField,
@@ -35,8 +35,8 @@ from adapters.state_trigger import (
 )
 
 
-# 仓库根（tests/ → state_trigger/ → adapters/ → 仓库根）
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# 仓库根（tests/ → trigger/ → 仓库根）
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEMO_PACK = _REPO_ROOT / "packs" / "demo-brief"
 
 

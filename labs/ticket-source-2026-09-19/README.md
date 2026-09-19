@@ -5,8 +5,8 @@
 ## 它补上了什么
 
 前置包这条线之前只有两半：
-- **格式**（T16）：`adapters/state_trigger/format.py` —— `state` 快照格式 + `trigger.json` 映射格式 + 校验器
-- **行为**（T17/T17b）：`trigger.py`（`state → plan`，含显式兜底）+ `ledger.py`（轮级留痕）
+- **格式**（T16）：`trigger/format.py` —— `state` 快照格式 + `trigger.json` 映射格式 + 校验器
+- **行为**（T17/T17b）：`plan.py`（`state → plan`，含显式兜底）+ `ledger.py`（轮级留痕）
 
 缺的那一件是**状态的来源**：`state` 只能手工构造，所以整条线从没被真正跑过一遍。
 本实验补上第一个状态来源（工单系统导出的 demo 形态），并把

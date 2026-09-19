@@ -1,5 +1,5 @@
 """
-adapters.state_trigger.format — state 快照格式 + trigger.json 映射格式（定义与校验）
+trigger.format — state 快照格式 + trigger.json 映射格式（定义与校验）
 
 职责：把 packs/<前置包>/trigger.json 读成不可变的 Trigger，并提供三个库 API：
       load_trigger(pack_dir) / validate_state(state, declared) / check_budget(plan, budget_chars)
@@ -674,7 +674,7 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
     #      **每一个** state 都命中。它若不是最后一条，后面的条件规则一条都轮不到被看到——
     #      配置看起来有条件分支、实际全被兜底吃掉，零报错零留痕（与 T17b 的
     #      「when: null 写成永不命中」是同一类静默降级）。这里只校验位置，
-    #      不改匹配口径（trigger.py 一行不动）。
+    #      不改匹配口径（plan.py 一行不动）。
     # 放在整条 rules 解析完成**之后**：循环内若已有第二条 when: null，上面的
     # 「至多一条」检查会先按旧口径抛错（消息与改动前同口径）；能走到这里的配置
     # 恰好只有 0 或 1 条兜底规则，位置检查是**新增**的一条，不替换、不弱化旧检查。
