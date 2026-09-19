@@ -32,6 +32,11 @@ from adapters.state_trigger.ledger import (
     structured_record,
     supervision_pairs,
 )
+# T16d 追加：前置包 key / state 字段可达性盘点（报告类 API，只报告不报错）
+from adapters.state_trigger.reachability import (
+    ReachabilityReport,
+    check_reachability,
+)
 
 __all__ = [
     # 公开 API（T16 卡要求的三个）
@@ -62,4 +67,7 @@ __all__ = [
     "supervision_pairs",
     "default_ledger_path",
     "LedgerError",
+    # T16d 追加：可达性盘点（报告不是报错）
+    "check_reachability",
+    "ReachabilityReport",
 ]

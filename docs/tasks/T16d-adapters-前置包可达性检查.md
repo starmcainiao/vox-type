@@ -106,4 +106,6 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16d-adapt
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T16d 节）
+  - 验收方独立复跑：adapters 277 全绿（262→+15）；活体基准两元组逐个相等（`('offer_help','ticket_status')` / `('ticket_id',)`）；确定性两次相等、frozen 拦截改写 ✓；`__init__.py` +8/-0 纯追加；format.py/trigger.py/packs 零 diff。
+  - **边界留档**：空规则集（`rules=()`）组合只经公开 dataclass 构造测试，未经 `load_trigger` 活体（装载器本就禁止空 rules，二者不冲突）；报告区分「key 只被 script.json 用」的合法形态需交叉读 script.json，属后续口子，当前实现刻意只盘点 trigger 侧。
