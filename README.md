@@ -1,11 +1,16 @@
 # vox-type
 
 > **Pre-cast voice assets + duplex behaviour controller for voice agents.**
-> 给语音 Agent 的固定部分：零延迟、零成本、可审核；不确定的部分才动用模型。
+> 让语音链路里**流程决定的那部分话术**零延迟、零成本、可审核；不确定的部分才动用模型。
+> （公开语料实测：事实密集型客服里流程决定性话轮约占 23%——适用边界见 `docs/11`。）
 
-**Status**：**八层可跑**（落盘基线见 `git log`）——协议与资产包格式已冻结；`compiler` → `assets` → `runtime` → `eval` 端到端打通；`bin/vox` 五个命令可用；`packs/repair/` 是示例业务包；首组真实数字与外部链路对照见 `docs/09`。
-**尚未接入任何生产链路**（接入规格见 `docs/10`）。
-License: **TBD**（候选 Apache-2.0）。
+**Status**：**九个测试根全绿（1,063 条测试）**，端到端闭环已通——
+`compiler` 出包 → `assets` 校验 → `runtime` 播包 → `eval` 对拍；`bin/vox` 五命令可用；
+已通过适配器接入一个开源客服框架**真链路实测**（不改对方仓库：key 驱动档首帧 P50 0.14 ms、零 TTS 调用；
+LLM 自由文本档 0% 命中——命中率上限由上游表示形态决定，见 `docs/09` / `docs/10`）。
+业务包 3 个（`packs/repair/`、`packs/fin-cs/`、`packs/demo-brief/`），新增业务 = 新增目录、零内核改动。
+回读 CER 基准已可复现（本地 ASR 回读，真机闭环 CER 0.0，见 `eval/readback.py` 与 `docs/13`）。
+License: **TBD**（候选 Apache-2.0；选型需与仓内 MIT/Apache 派生语料兼容，见 `docs/13 §二`）。
 
 ---
 
@@ -62,6 +67,12 @@ License: **TBD**（候选 Apache-2.0）。
 - [docs/03-design-notes.md](docs/03-design-notes.md) — 设计结论（为什么这么设计）
 - [docs/04-prior-art.md](docs/04-prior-art.md) — 同类项目检索与缺口论证
 - [docs/05-evidence-plan.md](docs/05-evidence-plan.md) — 数据集与验证方案
+- `docs/06`~`docs/08` — 预铸/执行补定口径、链路级对拍、CLI 行为口径
+- `docs/09`~`docs/11` — 真链路对拍、命中口径、语料自给与语义提案（含实测边界）
+- `docs/12` — 前置包定位与任务清单（个人助手形态）
+- [`docs/13-未完成清单.md`](docs/13-未完成清单.md) — **「还没做完什么」的唯一权威来源**（待拍板 / 冻结区批次 / 已关闭裁定）
+- `docs/tasks/` — 全部任务卡与逐卡验收记录（`00-索引.md` / `01-接手指南-新会话入口.md`）
+- `labs/` — 一次性实验与外部对拍（不进任何层契约，产物自带口径与原始数据）
 
 ## 贡献与边界
 
