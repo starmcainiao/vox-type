@@ -61,4 +61,6 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17d-adapt
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T17d 节）
+  - 验收方独立复跑：adapters 284 全绿不变；`._rule_matches` 属性引用全仓 0、labs 两文件 0；labs 重跑（我量 rc）rc 0、148 条不变；diff 逐行核对全在注释/docstring/JSON 字符串。
+  - **裁定（判据措辞，我的卡文问题第二次同类）**：验收 2 的子串 grep 字面不可达（`test_rule_matches_*` 方法名含该子串）——按本意「指向已删私名的**属性/引用**残留 = 0」解释，已实测达成；连续两张卡的 grep 判据栽在子串上，记入收尾教训。

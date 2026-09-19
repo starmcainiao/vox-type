@@ -615,7 +615,7 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
         when = _validate_when(raw_rule.get("when"), f"{r_where} 的 rule_id='{rule_id}'")
 
         # when 的字段名必须是已声明的 state 字段（未声明 → 报错，不静默降级）。
-        # WHY：trigger._rule_matches 对 state 里缺值的字段返回「不命中」，一条引用未声明
+        # WHY：trigger.rule_matches 对 state 里缺值的字段返回「不命中」，一条引用未声明
         #      字段的规则会**永远静默地不触发**，零报错零留痕——正是本模块红线 1 的原文
         #      场景（写错一个字母 = 该规则永不触发）。slots 已有对称的装载期校验，
         #      when 是三处引用里唯一漏掉的那处。这里只校验字段名是否已声明，

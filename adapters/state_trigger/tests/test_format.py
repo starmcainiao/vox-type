@@ -579,7 +579,7 @@ class TestFallbackNotLast(unittest.TestCase):
 class TestWhenUndeclaredField(unittest.TestCase):
     """T16c 验收 2/3：when 里引用未声明的 state 字段 → TriggerError。
 
-    trigger._rule_matches 对 state 里缺值的字段返回「不命中」，所以一条引用未声明字段
+    trigger.rule_matches 对 state 里缺值的字段返回「不命中」，所以一条引用未声明字段
     （typo）的规则会**永远静默地不触发**——零报错零留痕，正是本仓红线禁止的静默降级原型。
     与 slots 的既有装载期校验（test_slot_referring_undeclared_field_raises）对称补齐。
     """
@@ -706,7 +706,7 @@ class TestWhenDeclaredField(unittest.TestCase):
     def test_when_type_mismatch_not_checked(self):
         """T16c 明确不做类型相容性校验：对 bool 字段写 {"gt": 5} 属合法引用，装载成功。
 
-        期望值与声明 type 的匹配是另一个议题（涉及 _rule_matches 的语义），不在本卡范围。
+        期望值与声明 type 的匹配是另一个议题（涉及 rule_matches 的语义），不在本卡范围。
         """
         doc = _make_trigger_fixture()
         doc["rules"][0]["when"] = {"is_overdue": {"gt": 5}}

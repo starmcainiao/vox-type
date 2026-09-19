@@ -63,7 +63,7 @@
       "closing": {"when": null, "hits": 1, "covered_rows": 12, "source_fields": [], "mechanism": "when=null 兜底：12 行全部匹配，只有前 5 条条件规则全不匹配时才被命中（仅 WB-DEMO-0018）"}
     },
     "reason": "overdue 的 when 是 {is_overdue: true}，只声明 is_overdue，不声明 days_left——is_overdue 是本表 state_fields 里直接透传的布尔列（源导出自带），因此 days_left 的 min=0 与 is_overdue 互不约束：本 fixture 里 WB-DEMO-0009（days_left=5）、WB-DEMO-0012（days_left=0）就是 is_overdue=true。T21 曾推断 is_overdue 取值恒定，该推断与 trigger.json 的 when 声明不符，已废弃（run_e2e.py 断言本段不得再出现 T21 的这句原话）。greeting 排在 rules 第一位（when={ticket_status: '处理中'}），仍会吃掉同时满足它的行（WB-DEMO-0009 与 WB-DEMO-0012 都匹配 overdue，但按 build_plan 的 rules 顺序口径取第一条，命中 greeting），所以让一条规则被**命中**而不仅是**匹配**，靠的是加一行 status 非「处理中」的源行（WB-DEMO-0015/0016/0017/0018），不是改包。",
-    "verification": "run_e2e.py 用引擎的 _rule_matches 对每条源行的 state 真实判定（不复制匹配逻辑），生成 summary.json#rule_matching_matrix 与 #rule_reachability_from_source，并逐条断言本表的 reachable / unreachable_from_source / hit_counts / covered_by_ticket_id / per_rule 与该实测结果一致；任一字段不一致即 rc 3 并在失败消息里点名具体规则。",
+    "verification": "run_e2e.py 用引擎的 rule_matches 对每条源行的 state 真实判定（不复制匹配逻辑），生成 summary.json#rule_matching_matrix 与 #rule_reachability_from_source，并逐条断言本表的 reachable / unreachable_from_source / hit_counts / covered_by_ticket_id / per_rule 与该实测结果一致；任一字段不一致即 rc 3 并在失败消息里点名具体规则。",
     "follow_up": "T21b 已用 fixture 行覆盖全部 6 条规则，packs/demo-brief/ 未改动。仍需业务侧复核（属 packs/，不在本卡范围）：greeting 排在所有日期/负责人规则之前，一条已逾期且仍标「处理中」的工单只会听到问候语。"
   },
   "state_fields": {

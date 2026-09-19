@@ -1070,12 +1070,12 @@
     ],
     "scanned_target_count": 4,
     "chars_per_file": {
-      "source_map.json（全文）": 8492,
-      "README.md（全文）": 8888,
+      "source_map.json（全文）": 8491,
+      "README.md（全文）": 8886,
       "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）": 795,
       "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）": 71577
     },
-    "total_chars": 89752,
+    "total_chars": 89749,
     "method": "把每个目标整段读入后做短语子串匹配（禁止只扫自己刚写的那一段）；只查事实性短语子集 _FACTUAL_BANNED——模糊化规避类短语写进禁语表自身会被自扫命中，由下面的负例注入测试单独覆盖",
     "factual_banned_phrases": [
       "is_overdue 恒为 false",
@@ -1249,7 +1249,7 @@
             "source_map.json（全文）",
             "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）"
           ],
-          "total_chars": 89752
+          "total_chars": 89749
         },
         "verdict": "由本脚本实测"
       },

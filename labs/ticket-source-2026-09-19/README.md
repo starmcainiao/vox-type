@@ -98,7 +98,7 @@ T21 当时只把两条条件规则驱动起来，执行方已如实报告根因�
 四条条件算子都被真实驱动：`==`（`ticket_status`）、`bool` 判定（`is_overdue` / `assignee_confirmed`）、
 `lte`（`due_tonight`）、`gt` + `lte` 合取（`due_days_left`）。
 
-**覆盖表是跑出来的，不是写出来的**：脚本用引擎的 `_rule_matches` 对每条源行的 state 逐条判定，
+**覆盖表是跑出来的，不是写出来的**：脚本用引擎的 `rule_matches` 对每条源行的 state 逐条判定，
 生成 `summary.json#rule_matching_matrix`（含逐行匹配布尔矩阵）与 `#fallback_semantics`。
 断言里有一条方向性检查：`命中结果 == 该行匹配集合里包内顺序最靠前的那条`。
 
@@ -146,7 +146,7 @@ T21c 做了两件事：
 | `reachable` | 实际被命中过的规则（`rule_hit_count` 非零者，按包内顺序） |
 | `unreachable_from_source` | 实际未被命中的规则（当前 fixture 必须为 `[]`） |
 | `hit_counts[rid]` | `rule_hit_count[rid]` |
-| `covered_by_ticket_id[rid]` | `rows_covering[rid]`（`_rule_matches` 判定匹配的行，兜底规则 12 行全中） |
+| `covered_by_ticket_id[rid]` | `rows_covering[rid]`（`rule_matches` 判定匹配的行，兜底规则 12 行全中） |
 | `per_rule[rid].when` | `trigger.json` 里该规则的 `when` 原文 |
 
 另有一条防回潮断言：该段不得再出现 T21 那句错误因果的原话（含缩写变体），
