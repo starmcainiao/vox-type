@@ -23,6 +23,7 @@ from adapters.state_trigger.format import (
 from adapters.state_trigger.trigger import (
     TriggerPlan,
     build_plan,
+    rule_matches,
 )
 from adapters.state_trigger.ledger import (
     LedgerError,
@@ -60,6 +61,8 @@ __all__ = [
     # T17 追加：触发器行为侧
     "build_plan",
     "TriggerPlan",
+    # T17c 追加：规则匹配公开 API（规则匹配的唯一实现，覆盖表等工具依赖它）
+    "rule_matches",
     # T17 追加：轮级留痕
     "record_turn",
     "structured_record",

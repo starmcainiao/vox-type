@@ -83,4 +83,8 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17c-adapt
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T17c 节）
+  - 验收方独立复跑：adapters 284 全绿（277→+7）；`from adapters.state_trigger import rule_matches` 可导入、`_rule_matches` 私有名已消失；demo 包语义对照——全不匹配 state → 兜底 `closing` ✓、`ticket_status=处理中` → `greeting` ✓（第一次探针误判是我自己的 state 构造落进了 `due_days_left` 区间，非产品问题）；labs 重跑（不接管道）rc 0、148 条断言不变。
+  - **裁定 1（卡判据错，实现对）**：验收 3 的子串 grep 数学上不可达——会命中历史卡/文档、本卡自身、以及 `test_rule_matches_*` 新测试方法名（非影子名）。判据按本意解释为「**活代码零引用**」：产品代码 import/调用/定义处 `_rule_matches` = 0（已实测）。
+  - **裁定 2（转 T17d）**：真实残留 5 处说明文字（format.py:618、test_format.py:582/709——本批 T16c 新写的注释、labs README:101/149、source_map.json:66 的 verification 串）指向已不存在的名字，按「不留假陈述」开 T17d 微型卡清理，不在本卡扩权。
+  - **裁定 3（接受执行方取舍）**：新注释块不搬旧 docstring 的「或缺省」提法——实测 `when` 属性缺失抛 `AttributeError` 而非命中，旧话与行为不符，按 T21e 教训改写为「when 属性必须存在」。

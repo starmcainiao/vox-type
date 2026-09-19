@@ -38,6 +38,7 @@ from adapters.state_trigger import (
     count_plan_chars,
     load_trigger,
     record_turn,
+    rule_matches,
     validate_state,
 )
 
@@ -652,6 +653,76 @@ class TestFieldNames(unittest.TestCase):
         b = build_plan(trigger, state, turn_id="turn-1")
         self.assertEqual(a.plan_id, b.plan_id)
         self.assertNotIn(PLAN_ID, str(a.plan_id), "plan_id 的值是标识，不是字段名")
+
+
+# ---------------------------------------------------------------------------
+# T17c：规则匹配公开 API（rule_matches）的直接锚点
+# ---------------------------------------------------------------------------
+# 本文件既有的匹配语义断言都是通过 build_plan **间接**触及的（间接覆盖已有）。
+# 匹配逻辑公开成 API 之后还需要**直接**的锚点：任何把匹配语义改坏（兜底漏命中、
+# 缺值静默当成满足、区间比较符失效、TypeError 静默放行）的改动，必须在这几条里
+# 直接失败，而不是等到 build_plan 的集成用例才暴露。
+# 反空转：本段只调用公开的 rule_matches，不绕道 build_plan；
+# 规则参数用只提供 .when 的最小替身对象（rule_matches 只消费 .when），
+# 不在测试里复制匹配逻辑。正例与负例都在：每条语义都有命中与不命中两侧。
+class TestRuleMatchesPublicAPI(unittest.TestCase):
+
+    @staticmethod
+    def _rule(when):
+        """一个只提供 .when 的最小规则替身（rule_matches 不消费 rule_id / units）。"""
+        return type("RuleLike", (), {"when": when})()
+
+    # 兜底语义（when = None）：命中侧
+    def test_rule_matches_fallback_when_none_hits(self):
+        """when = None → True：兜底是作者在 trigger.json 里显式声明的规则。"""
+        self.assertIs(rule_matches(self._rule(None), {}), True,
+                      "when=None 的规则必须命中（显式兜底）")
+
+    # 字段缺值：不命中侧
+    def test_rule_matches_missing_field_does_not_hit(self):
+        """字段在 state 里缺值 → False：条件无法判定，绝不静默当成满足。"""
+        rule = self._rule({"ticket_status": "处理中"})
+        self.assertIs(rule_matches(rule, {}), False,
+                      "缺值字段不得被静默当成满足")
+
+    def test_rule_matches_partial_state_does_not_hit(self):
+        """多条件里只有一个字段在 state 里 → False（缺值优先于已匹配的条件）。"""
+        rule = self._rule({"is_overdue": False, "days_left": {"gt": 0, "lte": 14}})
+        self.assertIs(rule_matches(rule, {"is_overdue": False}), False,
+                      "只要有一个条件无法判定，整条规则就不得命中")
+
+    # 区间比较符 gt：命中与不命中两侧
+    def test_rule_matches_gt_operator_both_sides(self):
+        """区间比较符 gt：严格大于才命中，等于不命中。"""
+        rule = self._rule({"days_left": {"gt": 0}})
+        self.assertIs(rule_matches(rule, {"days_left": 5}), True,
+                      "days_left=5 应满足 days_left > 0")
+        self.assertIs(rule_matches(rule, {"days_left": 0}), False,
+                      "days_left=0 不得满足 days_left > 0（gt 是严格大于）")
+
+    # 区间比较符 lte：命中与不命中两侧
+    def test_rule_matches_lte_operator_both_sides(self):
+        """区间比较符 lte：等于也命中，大于不命中（边界含等号）。"""
+        rule = self._rule({"days_left": {"lte": 14}})
+        self.assertIs(rule_matches(rule, {"days_left": 14}), True,
+                      "days_left=14 应满足 days_left <= 14（边界含等号）")
+        self.assertIs(rule_matches(rule, {"days_left": 13}), True)
+        self.assertIs(rule_matches(rule, {"days_left": 15}), False,
+                      "days_left=15 不得满足 days_left <= 14")
+
+    # 条件规则的值层面：命中与不命中两侧
+    def test_rule_matches_condition_rule_hit_and_miss(self):
+        """同一条真实形状的条件规则在两种取值上分别命中与不命中。"""
+        rule = self._rule({"is_overdue": True})
+        self.assertIs(rule_matches(rule, {"is_overdue": True}), True)
+        self.assertIs(rule_matches(rule, {"is_overdue": False}), False)
+
+    # TypeError → 不命中（不抛给调用方）
+    def test_rule_matches_incomparable_types_do_not_hit_without_raising(self):
+        """类型不可比较 → False，且不抛 TypeError（fail-closed，不静默当成满足）。"""
+        rule = self._rule({"days_left": {"gt": 0}})
+        self.assertIs(rule_matches(rule, {"days_left": "七"}), False,
+                      "不可比较的值必须判为不命中，且不得把 TypeError 抛给调用方")
 
 
 # ---------------------------------------------------------------------------

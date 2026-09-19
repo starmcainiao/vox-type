@@ -103,7 +103,7 @@
     "note": "build_plan 按 trigger.json 的 rules 顺序取第一条命中（trigger.py 的既有口径，本实验不改）。T21 的 fixture 只覆盖 2 条规则，根因是行覆盖不足而非包缺陷：T21b 只加 fixture 行就把 6 条全部驱动起来，packs/demo-brief/ 一行未改。"
   },
   "rule_matching_matrix": {
-    "generated_from": "adapters.state_trigger.trigger._rule_matches 对每条源行 state 的真实判定结果（非手写）",
+    "generated_from": "adapters.state_trigger.trigger.rule_matches 对每条源行 state 的真实判定结果（非手写）",
     "rule_order_in_pack": [
       "greeting",
       "overdue",
@@ -1073,9 +1073,9 @@
       "source_map.json（全文）": 8492,
       "README.md（全文）": 8888,
       "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）": 795,
-      "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）": 71582
+      "run_e2e.py（全文 − 禁语表自身的字面量区间；不剥注释、不剥文档串）": 71577
     },
-    "total_chars": 89757,
+    "total_chars": 89752,
     "method": "把每个目标整段读入后做短语子串匹配（禁止只扫自己刚写的那一段）；只查事实性短语子集 _FACTUAL_BANNED——模糊化规避类短语写进禁语表自身会被自扫命中，由下面的负例注入测试单独覆盖",
     "factual_banned_phrases": [
       "is_overdue 恒为 false",
@@ -1123,7 +1123,7 @@
         }
       ],
       "excluded_char_count": 1603,
-      "source_chars": 71582,
+      "source_chars": 71577,
       "mask_is_length_preserving": true
     }
   },
@@ -1208,7 +1208,7 @@
         "id": 6,
         "claim": "days_left 的 min=0 与 is_overdue 的取值互不约束（overdue 的 when 是 {is_overdue: true}，不含 days_left）",
         "source_file": "source_map.json#_why_is_as_of_still_needed / #rule_reachability.reason",
-        "how_verified": "读 trigger.json#rules[overdue].when 的字段集；并用 _rule_matches 实测命中 overdue 的行的 is_overdue / days_left 取值",
+        "how_verified": "读 trigger.json#rules[overdue].when 的字段集；并用 rule_matches 实测命中 overdue 的行的 is_overdue / days_left 取值",
         "actual": {
           "overdue_when": {
             "is_overdue": true
@@ -1249,7 +1249,7 @@
             "source_map.json（全文）",
             "tickets.source.json（_fixture_meta 注解文字，fixture 数据行不参与）"
           ],
-          "total_chars": 89757
+          "total_chars": 89752
         },
         "verdict": "由本脚本实测"
       },

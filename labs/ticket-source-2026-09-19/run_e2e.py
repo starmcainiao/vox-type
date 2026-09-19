@@ -257,7 +257,7 @@ def main() -> int:
     )
     # 逐条规则的匹配判定直接复用引擎的公开判定函数——本实验不复制 when 的匹配逻辑
     # （反空转：覆盖表必须由实际运行结果生成，所以这里真的去判定每一条规则）
-    from adapters.state_trigger.trigger import _rule_matches
+    from adapters.state_trigger.trigger import rule_matches
     import to_state
     from to_state import SourceMapError, to_state as to_state_one
 
@@ -306,7 +306,7 @@ def main() -> int:
 
         # 4a2. 逐条规则的匹配判定（真实判定，非手写）：覆盖表、兜底语义与优先级断言
         #      全部由这份矩阵驱动，改坏一条映射 / 把某条规则条件改到不可能满足时必现红色
-        matching = {rule.rule_id: _rule_matches(rule, state) for rule in trigger.rules}
+        matching = {rule.rule_id: rule_matches(rule, state) for rule in trigger.rules}
 
         # 4b. build_plan（内部还会再校验一次 state、复核 key、强制预算）
         turn_id = f"{TURN_ID_PREFIX}{item['_item_index']:03d}"
@@ -534,7 +534,7 @@ def main() -> int:
     #   reachable               == 实际被命中过的规则（rule_hit_count 非零者，按包内顺序）
     #   unreachable_from_source == 实际未被覆盖/未被命中的规则（必须为空才表示全覆盖）
     #   hit_counts[rid]         == rule_hit_count[rid]（命中行数）
-    #   covered_by_ticket_id[rid] == rows_covering[rid]（被 _rule_matches 判定匹配的行，含兜底）
+    #   covered_by_ticket_id[rid] == rows_covering[rid]（被 rule_matches 判定匹配的行，含兜底）
     #   per_rule[rid].when      == trigger.json 里该规则的 when 声明
     mapping_doc = json.loads(MAP_PATH.read_text(encoding="utf-8"))
     reachability = mapping_doc.get("rule_reachability")
@@ -1217,7 +1217,7 @@ def main() -> int:
                      "（overdue 的 when 是 {is_overdue: true}，不含 days_left）",
             "source_file": "source_map.json#_why_is_as_of_still_needed / #rule_reachability.reason",
             "how_verified": "读 trigger.json#rules[overdue].when 的字段集；"
-                            "并用 _rule_matches 实测命中 overdue 的行的 is_overdue / days_left 取值",
+                            "并用 rule_matches 实测命中 overdue 的行的 is_overdue / days_left 取值",
             "actual": {"overdue_when": dict(next(r.when for r in trigger.rules
                                                  if r.rule_id == "overdue")),
                        "hit_rows_is_overdue": [
@@ -1594,7 +1594,7 @@ def main() -> int:
                     "packs/demo-brief/ 一行未改。",
         },
         "rule_matching_matrix": {
-            "generated_from": "adapters.state_trigger.trigger._rule_matches 对每条源行 state 的真实判定结果（非手写）",
+            "generated_from": "adapters.state_trigger.trigger.rule_matches 对每条源行 state 的真实判定结果（非手写）",
             "rule_order_in_pack": rule_ids_in_pack,
             "fallback_rule": trigger.rules[-1].rule_id,
             "per_ticket": [

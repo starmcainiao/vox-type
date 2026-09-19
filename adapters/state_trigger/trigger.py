@@ -79,40 +79,6 @@ _HASH_SEP: str = "\x00"
 # ---------------------------------------------------------------------------
 # 2. 内部辅助
 # ---------------------------------------------------------------------------
-def _rule_matches(rule: Any, state: Dict[str, Any]) -> bool:
-    """判断一条规则是否匹配该 state。
-
-    when 为 None（或缺省）→ **命中**（无条件兜底规则，作者显式声明；
-    T16 的 format.py 已校验「至多一条」，优先级靠 rules 声明顺序，见模块红线 1）。
-    字段缺值 → 不命中（条件无法判定，不做静默当成满足）。
-    比较符越界或类型不可比较 → 不命中（越界与类型错误由 validate_state 拦下，
-    这里只做条件判定，两条路径都不静默放行）。
-    """
-    when = rule.when
-    if when is None:
-        return True
-
-    for field_name, expected in when.items():
-        if field_name not in state:
-            return False
-
-        value = state[field_name]
-        if isinstance(expected, dict):
-            for op, op_value in expected.items():
-                try:
-                    if op == "gt" and not (value > op_value):
-                        return False
-                    if op == "gte" and not (value >= op_value):
-                        return False
-                    if op == "lt" and not (value < op_value):
-                        return False
-                    if op == "lte" and not (value <= op_value):
-                        return False
-                except TypeError:
-                    return False
-        elif value != expected:
-            return False
-    return True
 
 
 def _stable_variant(turn_id: Any, part: int, choices: int) -> int:
@@ -181,6 +147,82 @@ def _expand_text(unit: Any, variants: Optional[Tuple[str, ...]], variant: Any,
 # ---------------------------------------------------------------------------
 # 3. 公开 API
 # ---------------------------------------------------------------------------
+def rule_matches(rule: Any, state: Dict[str, Any]) -> bool:
+    """判断一条规则是否匹配该 state（规则匹配的**唯一实现**）。
+
+    职责：给定一条规则（TriggerRule）与一份 state 快照，判定该规则的 when 条件
+          是否在该 state 上成立。这是全仓唯一的匹配实现——兜底语义、字段缺值
+          语义、区间比较都在这里；其他任何层要做「某规则是否匹配某 state」的
+          判断，必须调本函数，不得复制这段逻辑（复制即违反 D7「不写他人的活」，
+          labs 的覆盖表曾为此踩过一次）。
+
+    参数：
+        rule:  一条规则。本函数只消费 rule.when 这一个属性：
+                 - dict = 条件规则，形如 {字段名: 期望值} 或
+                        {字段名: {"gt"/"gte"/"lt"/"lte": 边界值}}（可组合）
+                 - None = 无条件兜底规则
+               不消费 rule.rule_id / rule.units，因此可用只提供 .when 的最小
+               替身当参数。注意：when 属性必须**存在**（值为 None 或 dict）；
+               属性整个不存在会抛 AttributeError——那是调用方传了个不是规则的
+               东西，不是本函数的判定输入。
+        state: state 快照（扁平字典，键为已声明字段名，值为其声明类型）。
+               本函数**不做格式校验**（校验归 T16 的 validate_state），
+               只按「字段在不在」判定。
+
+    返回值：
+        bool —— True = 该规则的 when 在此 state 上成立；False = 不成立。
+        注意 False 有两种语义完全不同的来源，调用方需要靠 state 自行区分：
+          - 条件规则真的不匹配（值不符合期望）
+          - 条件**无法判定**（字段在 state 里缺值）
+        两条路径都不静默当成满足——这就是 fail-closed 在匹配层的落点。
+
+    边界（四条语义，逐条不可改，改动等于改行为）：
+        1. when is None → **命中**。兜底是作者在 trigger.json 里显式声明的
+           规则，不是实现自己挑的（T16 已校验「至多一条」；优先级靠 rules
+           声明顺序，见模块红线 1）。
+        2. 字段在 state 里缺值 → 不命中。缺值意味着条件无法判定，
+           绝不静默当成满足。
+        3. 比较符越界（when 的 dict 里出现 gt/gte/lt/lte 之外的键）→
+           该键被忽略，其余比较符照判。越界比较符本身由 T16 的
+           validate_state 在装载/校验阶段拦下，本函数不重复校验、也不因此报错。
+        4. 类型不可比较（value 与边界值不可比）→ 该字段判为不命中
+           （捕 TypeError 后返回 False），不抛异常、不静默当成满足。
+
+    调用方：
+        - build_plan（本模块）：按 trigger.rules 顺序逐条判定，取第一条命中。
+        - adapters.state_trigger.reachability.check_reachability：
+          规则/字段可达性盘点，用它判断某规则能否被某 state 命中。
+        - labs/ticket-source-2026-09-19/run_e2e.py：端到端实验的规则覆盖表，
+          用它对每条源行的 state 逐条判定，生成 summary.json#rule_matching_matrix。
+        - adapters.state_trigger.tests（test_trigger.py 的公开 API 直测）。
+    """
+    when = rule.when
+    if when is None:
+        return True
+
+    for field_name, expected in when.items():
+        if field_name not in state:
+            return False
+
+        value = state[field_name]
+        if isinstance(expected, dict):
+            for op, op_value in expected.items():
+                try:
+                    if op == "gt" and not (value > op_value):
+                        return False
+                    if op == "gte" and not (value >= op_value):
+                        return False
+                    if op == "lt" and not (value < op_value):
+                        return False
+                    if op == "lte" and not (value <= op_value):
+                        return False
+                except TypeError:
+                    return False
+        elif value != expected:
+            return False
+    return True
+
+
 def build_plan(trigger: Any, state: Any, *, turn_id: Any = None,
                plan_id: Any = None, source_pack_dir: Any = None,
                phrase_variants: Optional[Dict[str, Tuple[str, ...]]] = None) -> Any:
@@ -217,7 +259,7 @@ def build_plan(trigger: Any, state: Any, *, turn_id: Any = None,
     for rule in trigger.rules:
         if rule.when is None:
             has_fallback = True
-        if _rule_matches(rule, state):
+        if rule_matches(rule, state):
             matched = rule
             break
 
