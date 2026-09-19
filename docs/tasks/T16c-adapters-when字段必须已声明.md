@@ -81,4 +81,6 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16c-adapt
 
 ## 卡状态
 
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（2026-09-19；证据见 `00-索引.md` 第九批 T16c 节）
+  - 验收方独立复跑：adapters 262 全绿（249→+13）；自写探针——when typo 等值/区间两种写法均报错且消息含字段名与 rule_id、已声明字段等值/区间装载成功、demo 包活体 rc OK 且兜底末条不受影响；adapters 改动恰为白名单 2 文件。
+  - **登记（本卡明确不做的）**：when 期望值与声明 type 的**类型相容性**校验（如对 bool 字段写 `{"gt": 5}`）仍缺——执行方用 `test_when_type_mismatch_not_checked` 锁定了当前状态；改语义时须同步改该测试。已登记进 `docs/13`。

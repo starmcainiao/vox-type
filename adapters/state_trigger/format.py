@@ -502,7 +502,8 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
     异常：
         TriggerError: 文件缺失 / 非合法 JSON / 缺必填字段 / 未知字段（typo 必须响）/
                       非法 layer 或 type / 引用未审核 key / 出现 SAY_LIVE 或 text /
-                      变体不是整数 / 兜底规则不止一条 / 兜底规则不是最后一条 / 重复 rule_id
+                      变体不是整数 / 兜底规则不止一条 / 兜底规则不是最后一条 / 重复 rule_id /
+                      when 含未声明字段
     """
     root = Path(pack_dir)
     where = f"{TRIGGER_FILE_NAME}（{root}）"
@@ -612,6 +613,23 @@ def load_trigger(pack_dir: Union[str, Path]) -> Trigger:
         seen_rule_ids[rule_id] = i
 
         when = _validate_when(raw_rule.get("when"), f"{r_where} 的 rule_id='{rule_id}'")
+
+        # when 的字段名必须是已声明的 state 字段（未声明 → 报错，不静默降级）。
+        # WHY：trigger._rule_matches 对 state 里缺值的字段返回「不命中」，一条引用未声明
+        #      字段的规则会**永远静默地不触发**，零报错零留痕——正是本模块红线 1 的原文
+        #      场景（写错一个字母 = 该规则永不触发）。slots 已有对称的装载期校验，
+        #      when 是三处引用里唯一漏掉的那处。这里只校验字段名是否已声明，
+        #      **不做类型相容性校验**（when 期望值 vs 声明 type/enum 的匹配不在本卡范围），
+        #      也不改 _validate_when 的签名与既有校验。
+        # when is None（兜底）没有字段名，不涉及本检查，原样放行。
+        for field_name in (when or {}):
+            if field_name not in declared_names:
+                raise TriggerError(
+                    f"{r_where} 的 rule_id='{rule_id}' 的 when 含未声明字段 '{field_name}'"
+                    f"（state_fields 里没有该字段，必须预先声明；"
+                    f"trigger 运行时对缺值字段返回不命中，该规则会永不触发且零留痕）"
+                )
+
         if when is None:
             if unconditional_count > 0:
                 raise TriggerError(

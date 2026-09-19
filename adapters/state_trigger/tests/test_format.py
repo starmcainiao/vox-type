@@ -574,6 +574,154 @@ class TestFallbackNotLast(unittest.TestCase):
 
 
 # ============================================================
+# 4c. 负例：when 含未声明字段（T16c）
+# ============================================================
+class TestWhenUndeclaredField(unittest.TestCase):
+    """T16c 验收 2/3：when 里引用未声明的 state 字段 → TriggerError。
+
+    trigger._rule_matches 对 state 里缺值的字段返回「不命中」，所以一条引用未声明字段
+    （typo）的规则会**永远静默地不触发**——零报错零留痕，正是本仓红线禁止的静默降级原型。
+    与 slots 的既有装载期校验（test_slot_referring_undeclared_field_raises）对称补齐。
+    """
+
+    def _load(self, doc):
+        """把 doc 写成合成包并走产品 API load_trigger（不在测试里自造判定）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            pack_dir = _write_pack(Path(tmp), doc)
+            return load_trigger(pack_dir)
+
+    def test_when_typo_field_raises_with_rule_id(self):
+        """T16c 验收 2：when = {"typo_filed": "x"} → 报错，消息含字段名与该规则 rule_id。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"typo_filed": "x"}
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("typo_filed", msg)
+        self.assertIn("greeting", msg)        # 所在规则的 rule_id
+        self.assertIn("state_fields", msg)    # 点明该字段未在 state_fields 里声明
+
+    def test_when_range_condition_typo_also_raises(self):
+        """T16c 验收 3：区间写法 {"another_typo": {"gt": 0}} 同样被拦，消息含字段名。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"another_typo": {"gt": 0}}
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("another_typo", msg)
+        self.assertIn("greeting", msg)
+
+    def test_when_typo_in_later_rule_reports_that_rule(self):
+        """typo 在后面的条件规则里 → 报错点明**该**规则的 rule_id，不误报前面的规则。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][2]["when"] = {"assignee_confrimed": False}
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("assignee_confrimed", msg)
+        self.assertIn("ask_assignee", msg)
+        self.assertNotIn("greeting", msg)
+
+    def test_when_typo_does_not_shadow_older_checks(self):
+        """同一规则既有 typo 字段名、又有一个合法字段 → 先命中字段名检查（新增检查不替换旧检查）。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"typo_filed": "x", "ticket_status": "处理中"}
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("typo_filed", msg)
+        self.assertNotIn("未知比较符", msg, "字段名检查不得改走 _validate_when 的旧口径")
+
+    def test_when_typo_does_not_shadow_slot_check(self):
+        """既有 slots 引用未声明字段的旧检查保持原口径（本卡只增不改）。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][1]["units"][0]["slots"] = ["no_such_field"]
+        with self.assertRaises(TriggerError) as ctx:
+            self._load(doc)
+        msg = str(ctx.exception)
+        self.assertIn("no_such_field", msg)
+        self.assertIn("槽位", msg)
+        self.assertNotIn("含未声明字段", msg)
+
+
+class TestWhenDeclaredField(unittest.TestCase):
+    """T16c 验收 4/5/6：when 引用已声明字段（含区间写法）与 when: null 兜底 → 装载成功。"""
+
+    def _load(self, doc):
+        """把 doc 写成合成包并走产品 API load_trigger。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            pack_dir = _write_pack(Path(tmp), doc)
+            return load_trigger(pack_dir)
+
+    def test_when_equal_reference_is_valid(self):
+        """等值写法引用已声明字段 → 装载成功（fixture 默认形状）。"""
+        trigger = self._load(_make_trigger_fixture())
+        self.assertEqual(len(trigger.rules), 4)
+        self.assertEqual(trigger.rules[0].when, {"ticket_status": "处理中"})
+
+    def test_when_range_reference_is_valid(self):
+        """区间写法（gt/lte）引用已声明字段 → 装载成功。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"days_left": {"gt": 0, "lte": 14}}
+        trigger = self._load(doc)
+        self.assertEqual(trigger.rules[0].when, {"days_left": {"gt": 0, "lte": 14}})
+
+    def test_when_all_declared_fields_referenceable(self):
+        """fixture 声明的每个字段都可被 when 引用（本检查不误伤任何已声明字段）。"""
+        doc = _make_trigger_fixture()
+        for field_name in doc["state_fields"]:
+            doc = copy.deepcopy(_make_trigger_fixture())
+            doc["rules"][0]["when"] = {field_name: 1}
+            with self.subTest(field=field_name):
+                trigger = self._load(doc)
+                self.assertEqual(trigger.rules[0].when, {field_name: 1})
+
+    def test_demo_brief_loads_unchanged(self):
+        """T16c 验收 5（活体回归）：packs/demo-brief 原样装载成功。
+
+        它的 when 只引用 ticket_status / is_overdue / days_left / assignee_confirmed，
+        全部已声明；其中 due_tonight / due_days_left 是区间写法。
+        """
+        trigger = load_trigger(_DEMO_PACK)
+        self.assertEqual(len(trigger.rules), 6)
+        self.assertEqual(trigger.rules[3].when, {"is_overdue": False, "days_left": {"gt": 0, "lte": 14}})
+
+    def test_when_none_fallback_unchanged(self):
+        """T16c 验收 6：when: null 的兜底规则（位于最后）装载成功——本检查不误伤兜底语义。"""
+        doc = _make_trigger_fixture()
+        trigger = self._load(doc)
+        self.assertIsNone(trigger.rules[-1].when)
+        self.assertEqual(trigger.rules[-1].rule_id, "closing")
+        # 兜底规则在合成包与真实包里都仍按原口径放行
+        demo = load_trigger(_DEMO_PACK)
+        self.assertIsNone(demo.rules[-1].when)
+
+    def test_when_omitted_is_still_fallback(self):
+        """when 字段整体缺省（不是显式 null）同样按兜底放行，不受本检查影响。"""
+        doc = _make_trigger_fixture()
+        del doc["rules"][3]["when"]
+        trigger = self._load(doc)
+        self.assertIsNone(trigger.rules[-1].when)
+
+    def test_when_type_mismatch_not_checked(self):
+        """T16c 明确不做类型相容性校验：对 bool 字段写 {"gt": 5} 属合法引用，装载成功。
+
+        期望值与声明 type 的匹配是另一个议题（涉及 _rule_matches 的语义），不在本卡范围。
+        """
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"is_overdue": {"gt": 5}}
+        trigger = self._load(doc)
+        self.assertEqual(trigger.rules[0].when, {"is_overdue": {"gt": 5}})
+
+    def test_when_value_not_in_enum_still_loads(self):
+        """同理不做枚举相容性校验：enum 字段的 when 期望值越界也照旧装载成功。"""
+        doc = _make_trigger_fixture()
+        doc["rules"][0]["when"] = {"ticket_status": "从未声明过的状态"}
+        trigger = self._load(doc)
+        self.assertEqual(trigger.rules[0].when, {"ticket_status": "从未声明过的状态"})
+
+
+# ============================================================
 # 5. 负例：引用未审核 key
 # ============================================================
 class TestUnreviewedKey(unittest.TestCase):
