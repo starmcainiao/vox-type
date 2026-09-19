@@ -32,6 +32,12 @@ from runtime.executor import Executor
 from assets.pack import AssetEntry
 
 from .normalize import normalize_text
+from . import hit_query
+from .hit_query import (
+    MODE_KEY,
+    MODE_TEXT,
+    REASON_TEXT_NOT_PREBAKED,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -41,14 +47,8 @@ from .normalize import normalize_text
 # 本层不自造；下面这一个是唯一新增字段（docs/10 §10.4 明确点名 match_mode 允许"加"）。
 MATCH_MODE = "match_mode"
 
-# 两种"上游表示形态"（T10.6 报命中率必须带这一列，否则数字会误导）
-MODE_KEY = "key"
-MODE_TEXT = "text"
-
-# 文本档未命中的原因码：docs/10 §10.4 的合法取值之一。
-# WHY 定义在本层：runtime 冻结区里只有 key_not_prebaked / say_live_text / …，
-#      没有 text_not_prebaked；本层不改建内核，只按 docs/10 的表补齐取值。
-REASON_TEXT_NOT_PREBAKED = "text_not_prebaked"
+# 两种"上游表示形态"与文本档原因码的真源在 .hit_query（T29 下沉：那里是
+# 最底层判定模块，被本模块导入；本模块只转发导出，取值与语义不变）。
 
 
 class BridgeError(Exception):
@@ -185,12 +185,12 @@ class KefuBridge:
         )
 
     def _text_index(self) -> dict:
-        """建"归一化文本 → 条目列表"索引（惰性一次；包是只读，缓存安全）。"""
+        """建"归一化文本 → 条目列表"索引（惰性一次；包是只读，缓存安全）。
+
+        缓存逻辑留在本层（缓存字段与惰性判断不迁移），索引构建委托 hit_query。
+        """
         if self._text_index_cache is None:
-            idx = {}
-            for entry in self.pack.assets:
-                idx.setdefault(normalize_text(entry.text), []).append(entry)
-            self._text_index_cache = idx
+            self._text_index_cache = hit_query.build_text_index(self.pack)
         return self._text_index_cache
 
     # ------------------------------------------------------------------
@@ -299,60 +299,20 @@ class KefuBridge:
     # 判定内部件
     # ------------------------------------------------------------------
     def _lookup_key(self, key: str) -> Optional[AssetEntry]:
-        """key 档命中判定：走 pack.lookup（它自带指纹与音频存在性校验）。
-
-        WHY 不自己遍历就返回候选：assets.lookup 一律返回 None 不告诉你原因，
-            但它把指纹不符 / 文件不存在都算作"查不到"——这正是预铸资产层
-            的保险丝。这里只负责喂对 expected_text（候选条目自己的文本）。
-        """
-        for cand in self.pack.assets:
-            if cand.key != key or cand.part_index != 0 or cand.rate_key != self.rate:
-                continue
-            entry = self.pack.lookup(
-                key=key, part_index=0, rate_key=self.rate,
-                variant=cand.variant, expected_text=cand.text,
-            )
-            if entry is not None:
-                return entry
-        return None
+        """key 档命中判定（委托 hit_query.lookup_key；口径见其 docstring）。"""
+        return hit_query.lookup_key(self.pack, key, self.rate)
 
     def _pick_by_text(self, norm: str) -> Optional[AssetEntry]:
-        """文本档命中判定：归一化后逐字相等 → 取该 key 的某个 variant。
-
-        WHY 逐字相等（str ==）：docs/10 §10.2 裁定 1。任何"差一点也算"的比较
-            都会把模型当成命中判据，不可复核，而且会把"接近但不是这句"的音频播出去。
-        WHY 多 variant 时优先取本层 rate 档：同一句在包内可能按 slow/normal/fast 各铸一份，
-            取当前会话语速档那份最接近上游预期；都没有时才退到索引里第一条（顺序稳定）。
-        """
-        cands = self._text_index().get(norm)
-        if not cands:
-            return None
-        for cand in cands:
-            if cand.rate_key == self.rate:
-                return self._confirm(cand)
-        return self._confirm(cands[0])
+        """文本档命中判定（委托 hit_query.pick_by_text；口径见其 docstring）。"""
+        return hit_query.pick_by_text(self.pack, norm, self.rate)
 
     def _confirm(self, cand: AssetEntry) -> Optional[AssetEntry]:
-        """用 pack.lookup 复核一次（索引只按文本建，指纹/文件校验在这里补上）。"""
-        return self.pack.lookup(
-            key=cand.key, part_index=cand.part_index, rate_key=cand.rate_key,
-            variant=cand.variant, expected_text=cand.text,
-        )
+        """用 pack.lookup 复核一次（委托 hit_query.confirm）。"""
+        return hit_query.confirm(self.pack, cand)
 
     def _text_for_key(self, key: str) -> str:
-        """key 档的 live_text：包内该 key 的原文；包里没有该 key 时回退成 key 本身。
-
-        WHY 回退成 key 而不是空串：降级路径要拿它去合成，空串无法合成；
-            同时事件的 reason 已标明 key_not_prebaked，不会误认为"命中了这句话"。
-        """
-        fallback = None
-        for cand in self.pack.assets:
-            if cand.key == key:
-                if cand.part_index == 0 and cand.rate_key == self.rate:
-                    return cand.text
-                if fallback is None:
-                    fallback = cand.text
-        return fallback if fallback is not None else key
+        """key 档的 live_text（委托 hit_query.text_for_key；口径见其 docstring）。"""
+        return hit_query.text_for_key(self.pack, key, self.rate)
 
     # ------------------------------------------------------------------
     # 两条出路

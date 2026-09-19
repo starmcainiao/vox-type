@@ -18,6 +18,8 @@ WHY 这个适配器跨了 runtime/ 与 assets/（adapters/AGENTS.md §⑤ 只允
     必须能同时读资产包、驱动执行器。tts-* / asr-* 适配器仍只依赖 core/。
 """
 
+from runtime import REASON_KEY_NOT_PREBAKED
+
 from .bridge import (
     MATCH_MODE,
     MODE_KEY,
@@ -26,6 +28,15 @@ from .bridge import (
     BridgeError,
     BridgeResult,
     KefuBridge,
+)
+from .hit_query import (
+    HitResult,
+    build_text_index,
+    confirm,
+    find_hit,
+    lookup_key,
+    pick_by_text,
+    text_for_key,
 )
 from .kefu_client import (
     KefuBrainError,
@@ -47,8 +58,17 @@ __all__ = [
     "MODE_KEY",
     "MODE_TEXT",
     "REASON_TEXT_NOT_PREBAKED",
+    "REASON_KEY_NOT_PREBAKED",
     # 归一化
     "normalize_text",
+    # 命中查询公开 API（T29：为内嵌旁路钩子供数）
+    "find_hit",
+    "HitResult",
+    "build_text_index",
+    "lookup_key",
+    "pick_by_text",
+    "confirm",
+    "text_for_key",
     # kefu 侧客户端
     "KefuClient",
     "KefuError",
