@@ -680,3 +680,7 @@ def _utc_now_iso() -> str:
 
 # 需要在 CLI 顶层拦住的异常类型（其余异常属实现缺陷，直接 traceback）
 _CLI_ERRORS = (ReadbackError, OSError, ValueError, TypeError, ImportError)
+
+
+if __name__ == "__main__":
+    sys.exit(run_readback_cli())

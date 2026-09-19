@@ -19,6 +19,7 @@ eval.tests.test_readback — 回读 CER harness（全离线）
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -575,6 +576,49 @@ class ManifestTest(unittest.TestCase):
             self.assertIsNone(report[CER][CER_P50])
             self.assertIn("CER 无定义", report["incomplete_reasons"][0])
             self.assertIn("。。！", report["incomplete_reasons"][0])
+
+
+class CliEntryPointTest(unittest.TestCase):
+    """回归锚点：`python3 -m eval.readback` 必须有真入口（T14b）。
+
+    修前该模块没有 `if __name__ == "__main__":` 块——`python3 -m` 只导入模块就
+    静默退出 rc 0，一行不执行、一个文件不写。本用例在子进程里跑一条**必然失败**
+    的命令（manifest 不存在），断言退出码非 0 且 stderr 非空：
+    入口丢失时进程会 rc 0 空输出，两个断言都会红。
+    """
+
+    def test_module_entrypoint_runs_and_reports_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            out = tmp / "out"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "eval.readback",
+                    "--manifest",
+                    "/tmp/不存在.jsonl",
+                    "--asr",
+                    "x:y",
+                    "--out",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+                cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                timeout=60,
+            )
+        self.assertNotEqual(
+            result.returncode,
+            0,
+            f"python3 -m eval.readback 静默 rc 0（入口丢失，本应失败报错）：\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}",
+        )
+        self.assertTrue(
+            result.stderr.strip(),
+            f"python3 -m eval.readback 失败但 stderr 为空：rc={result.returncode}\n"
+            f"stdout={result.stdout!r}",
+        )
 
 
 if __name__ == "__main__":
