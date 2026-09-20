@@ -65,3 +65,22 @@
 故升为**独立扩展区 `trigger/`**（自带七项 AGENTS.md），由 T28 整体迁入——文件格式与行为零变化，
 仅改 import 路径与落点说明。**本节的暂住条款与「不得再往 `adapters/` 里加第二个同类模块」的禁令
 随之解除**；同类模块从此落 `trigger/`，不再进入本层。
+
+---
+
+## ⑨ 已知形态例外：`framework_kefu/` 宿主桥（2026-09-19 登记losure，结构审计补账）
+
+结构审计（2026-09-19）发现两处**未登记的既成事实**，按 §⑧ 先例（「登记于此是为了不出现静默越界」）补登记：
+
+1. **行数豁免**：`framework_kefu/bridge.py`（可执行 231 行）、`kefu_client.py`（236 行）、
+   `asr_omlx/adapter.py`（176 行）超 §② 的 ≤150 行——它们是与外部宿主（kefu HTTP / oMLX 服务）
+   的**协议桥**，同类是 `compiler/source.py`（312 行）；豁免理由与 `trigger/AGENTS.md §②` 同口径。
+   **拆分留口子**：asr_omlx 拆「HTTP 传输/转写协议」两层即可自然回 150 内，不必长期靠豁免；
+   kefu_client 的 HTTP 传输层同理。**豁免不是永久豁票**：再进新功能前先拆。
+2. **依赖授权**：`framework_kefu` 依赖 `runtime` / `assets` 的**公开 API**（`Executor` / `AssetEntry` /
+   `REASON_KEY_NOT_PREBAKED` 等，均在各自 `__all__`）——§⑤「允许依赖：core/」对本子目录放宽为
+   「core + runtime/assets 公开面」。理由：framework_kefu 是把本仓**接进宿主链路**的桥（docs/10 §10.5、
+   T11 验收登记），它必然要驱动 runtime 播包；这与「业务适配器只吃 core」的普通适配器不同。
+   **边界仍硬**：不得 import 内部私有名（下划线）；只走公开 `__all__`。
+
+本节登记经第十五批后全仓结构审计（三审计员）发现并补账；原 §⑤ 字面对 framework_kefu 不再单独适用。
