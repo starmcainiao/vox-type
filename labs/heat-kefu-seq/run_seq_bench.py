@@ -100,6 +100,27 @@ def _load_yaml():
     return yaml.safe_load(p.read_text(encoding="utf-8")), None
 
 
+def _sha256_file(path):
+    """文件的 sha256 摘要（报告只记摘要，不记路径与全文——沿用既有卫生纪律）。"""
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _git_commit(cwd):
+    """`git rev-parse HEAD`；git 不可用/不在仓内时返回 (None, 原因)——不静默省略。"""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(cwd),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=15, check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, f"{type(e).__name__}"
+    commit = out.stdout.decode("utf-8", "replace").strip()
+    return commit or None, None
+
+
 # ---------------------------------------------------------------------------
 # 主体
 # ---------------------------------------------------------------------------
@@ -151,6 +172,10 @@ def main(argv=None):
     tmp_root = Path(tempfile.mkdtemp(prefix="heat-kefu-seq-"))
     details = []
     problems = []
+
+    # 溯源（P2-c）：让报告能自证语料与代码版本——只记摘要与 commit，
+    # 不记本机绝对路径 / yaml 全文（yaml 路径经 KEFU_HEAT_YAML 门控，不进产物）。
+    git_commit, git_error = _git_commit(REPO_ROOT)
 
     try:
         for n, key in enumerate(MULTI_CLAUSE_KEYS, start=1):
@@ -261,10 +286,16 @@ def main(argv=None):
                  # 且换机器就不可复现——报告里一律用相对路径。
                  "built_dir": str(BUILT_DIR.relative_to(REPO_ROOT))},
         "yaml_env": "KEFU_HEAT_YAML",
+        "provenance": {
+            "yaml_sha256": _sha256_file(os.environ["KEFU_HEAT_YAML"]),
+            "manifest_sha256": _sha256_file(MANIFEST),
+            "git_commit": git_commit,
+        },
         "env": {
             "python": sys.version.split()[0],
             "repeat": args.repeat,
             "slow_arm_skipped": args.skip_say,
+            "git_error": git_error,
         },
         "summary": {
             "n_multi_clause": len(details),

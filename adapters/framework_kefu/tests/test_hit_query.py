@@ -824,15 +824,19 @@ class TestSequenceAssertionBreaksOnTamper(SequenceHitBase):
     机制：正例断言的期望是**结构化的**（段数、段 key 序列、uncovered=""），
     所以把包内某段文本改一个字，覆盖就会断在某段，entries 立刻不再是 3 条。
     这里用内存里的临时篡改复现这件事，不写盘。
+
+    真实成因（T33b 卫生修正）：改一字后 miss **不是**因为「位置 0 覆盖不上」这个
+    直觉，而是因为改后的文本与包内任何 variant 都不逐字相等 → **该段唯一的候选被
+    `confirm` 的指纹/文本复核剔除**（序列档的候选必须先过 confirm，复核不过 = 不可用）
+    → 可用候选在位置 0 空了 → 整体 miss、uncovered 为整段剩余。
     """
 
     def test_one_char_tamper_breaks_the_sequence_hit(self):
         import json
         orig = next(e.text for e in self.pack.assets if e.key == "seg_a_1")
         orig_text = self.text                      # 未篡改的整段原文
-        from adapters.framework_kefu.tests import build_pack as _bp
         # 保留一份未篡改的包做对照臂（篡改只改内存与临时 manifest，不落盘到仓）
-        self.pack_orig = _bp(self.tmp / "pack-orig", [
+        self.pack_orig = build_pack(self.tmp / "pack-orig", [
             ("prefix", PREFIX, 0),
             ("seg_a_1", orig, 0),
             ("ask_fault_type", ASK, 0),
@@ -840,16 +844,6 @@ class TestSequenceAssertionBreaksOnTamper(SequenceHitBase):
             ("seg_c_pair", "稍等一下，我帮您查进度。查好了，马上给您回复。", 0),
         ])
         tampered = orig[:-1] + ("。" if orig.endswith("！") else "！")
-
-        from adapters.framework_kefu.tests import build_pack as _bp
-        # 保留一份未篡改的包做对照臂（篡改只改内存与临时 manifest，不落盘到仓）
-        self.pack_orig = _bp(self.tmp / "pack-orig", [
-            ("prefix", PREFIX, 0),
-            ("seg_a_1", orig, 0),
-            ("ask_fault_type", ASK, 0),
-            ("seg_a_2", ASK, 0),
-            ("seg_c_pair", "稍等一下，我帮您查进度。查好了，马上给您回复。", 0),
-        ])
 
         entry = next(e for e in self.pack.assets if e.key == "seg_a_1")
         manifest = json.loads((self.pack.root / "manifest.json").read_text(encoding="utf-8"))
@@ -870,7 +864,8 @@ class TestSequenceAssertionBreaksOnTamper(SequenceHitBase):
         self.assertEqual(len(res_ok.entries), 3)
         self.assertEqual(res_ok.uncovered, "")
 
-        # 2) 同一个包被改了一个字符（句末 。→ ！）→ 位置 0 就覆盖不上，整体 miss
+        # 2) 同一个包被改了一个字符（句末 。→ ！）→ 该段唯一候选的文本与 manifest 不符，
+        #    被 confirm 的指纹/文本复核剔除 → 位置 0 无可用候选 → 整体 miss
         res_bad = find_hit_sequence(self.pack, orig_text)
         self.assertEqual(
             res_bad.entries, (),
@@ -885,6 +880,223 @@ class TestSequenceAssertionBreaksOnTamper(SequenceHitBase):
         self.assertEqual(res.uncovered, self._norm(self.prefixed))
         self.assertTrue(res.uncovered.startswith(self._norm(OUT_OF_PACK)),
                         "uncovered 必须从包外那段起")
+
+
+class TestSequenceSelfContained(unittest.TestCase):
+    """CI 自洽断言组（T33b P2-a）：不读 yaml、不依赖预铸产物，全部用本目录
+    `build_pack` 夹具造包——公开 CI 没有 kefu 仓与 TTS 语料，这组仍必须跑掉。
+
+    语义照 docs/10 §10.7：整段按包内 variant 的归一化文本逐字覆盖、最长优先、
+    同长度多候选取索引首条、**不做段序约束**、任一段不中即整体未命中。
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="kefu-seqci-"))
+        # 多句包（自造话术，禁止使用 kefu 真实业务文案）
+        S1 = "您好。"
+        S2 = "请问有什么可以帮您？"
+        S3 = "再见。"
+        self.s = (S1, S2, S3)
+        self.pack = build_pack(self.tmp / "pack", [("s1", S1, 0), ("s2", S2, 0), ("s3", S3, 0)])
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_two_segment_concat_hits_two_entries(self):
+        res = find_hit_sequence(self.pack, f"{self.s[0]}{self.s[1]}")
+        self.assertIsNone(res.miss_reason, f"两段拼接应命中: {res.uncovered!r}")
+        self.assertEqual(len(res.entries), 2, "两段拼接必须消费两条资产")
+        self.assertEqual([e.key for e in res.entries], ["s1", "s2"])
+        self.assertEqual(res.uncovered, "")
+
+    def test_three_segment_concat_hits_three_entries(self):
+        res = find_hit_sequence(self.pack, f"{self.s[0]}{self.s[1]}{self.s[2]}")
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(len(res.entries), 3, "三段拼接必须消费三条资产")
+        self.assertEqual([e.key for e in res.entries], ["s1", "s2", "s3"])
+
+    def test_inserted_out_of_pack_sentence_is_full_miss(self):
+        """负例：拼接中插入包外句 → entries 为空元组，uncovered 从断点（包外句）起。"""
+        foreign = "包外的一句闲话。"
+        text = f"{self.s[0]}{foreign}{self.s[1]}"
+        res = find_hit_sequence(self.pack, text)
+
+        self.assertEqual(res.entries, (), "不得跳过包外句只覆盖剩下的段")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(
+            res.uncovered, normalize_text(foreign + self.s[1]),
+            f"uncovered 必须从插入的包外句起: {res.uncovered!r}",
+        )
+
+    def test_swapped_segment_order_still_hits_and_keeps_input_order(self):
+        """段序自由（§10.7：不做段序约束）：颠倒两段仍命中，段序 == 输入顺序。"""
+        text = f"{self.s[1]}{self.s[0]}"
+        res = find_hit_sequence(self.pack, text)
+
+        self.assertIsNone(
+            res.miss_reason,
+            "颠倒段序后仍应逐字覆盖命中（序列档不做段序约束）",
+        )
+        self.assertEqual(
+            [e.key for e in res.entries], ["s2", "s1"],
+            "段序必须等于输入里的字面顺序（不重排、不去重）",
+        )
+        self.assertEqual(res.uncovered, "")
+
+    def test_deterministic_across_five_runs(self):
+        """同输入连跑 5 次：段 key 序列完全一致。"""
+        text = f"{self.s[0]}{self.s[1]}{self.s[2]}"
+        seen = {tuple(e.key for e in find_hit_sequence(self.pack, text).entries)
+                for _ in range(5)}
+        self.assertEqual(len(seen), 1, f"5 次结果不一致: {seen}")
+        self.assertEqual(next(iter(seen)), ("s1", "s2", "s3"))
+
+    def test_blocked_by_empty_on_hit(self):
+        """blocked_by 是诊断留痕：命中路径恒为空元组（永不进命中）。"""
+        for text in (f"{self.s[0]}{self.s[1]}", f"{self.s[0]}{self.s[1]}{self.s[2]}"):
+            with self.subTest(text=text[:6]):
+                res = find_hit_sequence(self.pack, text)
+                self.assertIsNone(res.miss_reason)
+                self.assertEqual(res.blocked_by, (), f"命中时 blocked_by 必须为空元组: {text!r}")
+
+
+class TestSequenceBlockedByDiagnosis(unittest.TestCase):
+    """`blocked_by` 诊断留痕（T33b P1-2，docs/10 §10.7 末节）：
+    文本能匹配、但因 rate_key / part_index 口径被剔除的候选标识；
+    **只进诊断、永不进命中**，不得影响 entries / miss_reason 的判定。
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="kefu-seqbl-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_slow_only_pack_records_blocked_by_and_stays_miss(self):
+        """只有 slow 档的包 → rate_key="normal" 未命中且 blocked_by 标出该候选。"""
+        from assets.pack import AssetPack
+        slow = build_pack(self.tmp / "p-slow", [("greet", "您好。", 0)], rate="slow")
+        pack = AssetPack(
+            pack_id=slow.pack_id, pack_version=slow.pack_version,
+            protocol_version=slow.protocol_version, ruleset_version=slow.ruleset_version,
+            voice=slow.voice, model_version=slow.model_version,
+            created_at=slow.created_at, assets=list(slow.assets), root=slow.root,
+        )
+        res = find_hit_sequence(pack, "您好。", rate_key="normal")
+
+        self.assertEqual(res.entries, (), "口径外档位不得进入命中")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.blocked_by, ("greet@slow#0",),
+                         "blocked_by 必须记录被 rate_key 口径剔除的候选标识")
+        self.assertEqual(res.uncovered, normalize_text("您好。"), "断点起的剩余仍是整段")
+
+    def test_same_pack_with_matching_rate_hits_and_blocked_by_is_empty(self):
+        """同包用 rate_key="slow" 查 → 命中，blocked_by 恒为空元组。"""
+        from assets.pack import AssetPack
+        slow = build_pack(self.tmp / "p-slow2", [("greet", "您好。", 0)], rate="slow")
+        pack = AssetPack(
+            pack_id=slow.pack_id, pack_version=slow.pack_version,
+            protocol_version=slow.protocol_version, ruleset_version=slow.ruleset_version,
+            voice=slow.voice, model_version=slow.model_version,
+            created_at=slow.created_at, assets=list(slow.assets), root=slow.root,
+        )
+        res = find_hit_sequence(pack, "您好。", rate_key="slow")
+
+        self.assertEqual(len(res.entries), 1, "当前语速档的完整首片必须命中")
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(res.uncovered, "")
+        self.assertEqual(res.blocked_by, (), "命中时 blocked_by 必须为空元组")
+
+    def test_part_index_nonzero_also_reported_as_blocked(self):
+        """part_index != 0 的候选同样进 blocked_by（不是候选，但文本能匹配）。"""
+        pack = build_pack(self.tmp / "p-part", [("greet", "您好。", 0)])
+        pack.assets = [
+            AssetEntry(key=e.key, part_index=1, rate_key=e.rate_key, variant=e.variant,
+                       text=e.text, fingerprint=e.fingerprint, path=e.path,
+                       duration_ms=e.duration_ms)
+            for e in pack.assets
+        ]
+        res = find_hit_sequence(pack, "您好。", rate_key="normal")
+
+        self.assertEqual(res.entries, (), "part_index!=0 的条目不得参与序列覆盖")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.blocked_by, ("greet@normal#1",),
+                         "blocked_by 必须记录被 part_index 口径剔除的候选标识")
+
+    def test_blocked_by_ignores_confirm_rejection(self):
+        """指纹不符被 confirm 复核剔除的候选**不**进 blocked_by（语义不同，别混进来）。"""
+        import json
+        pack = build_pack(self.tmp / "p-fp", [("greet", "您好。", 0)])
+        entry = pack.assets[0]
+        manifest = json.loads((pack.root / "manifest.json").read_text(encoding="utf-8"))
+        manifest["assets"][0]["fingerprint"] = "0" * len(entry.fingerprint)
+        (pack.root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        pack.assets = [
+            AssetEntry(key=e.key, part_index=e.part_index, rate_key=e.rate_key,
+                       variant=e.variant, text=e.text,
+                       fingerprint="0" * len(e.fingerprint),
+                       path=e.path, duration_ms=e.duration_ms)
+            for e in pack.assets
+        ]
+        res = find_hit_sequence(pack, "您好。", rate_key="normal")
+
+        self.assertEqual(res.entries, (), "confirm 复核不过 = 该候选不可用")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.blocked_by, (),
+                         "blocked_by 只记 rate/part 口径剔除，不记指纹复核失败")
+
+    def test_blocked_by_does_not_change_the_verdict(self):
+        """诊断留痕不得改变判定：包内加一条口径外同文条目，口径内候选照常命中
+        （blocked_by 只读 pack.assets 取标识，不参与 best 选择、不改 entries/miss_reason）。"""
+        from assets.pack import AssetPack
+        normal = build_pack(self.tmp / "p-n", [("s1", "您好。", 0)])
+        slow = build_pack(self.tmp / "p-s", [("other", "您好。", 0)], rate="slow")
+        pack = AssetPack(
+            pack_id=normal.pack_id, pack_version=normal.pack_version,
+            protocol_version=normal.protocol_version,
+            ruleset_version=normal.ruleset_version, voice=normal.voice,
+            model_version=normal.model_version, created_at=normal.created_at,
+            assets=list(normal.assets) + list(slow.assets), root=normal.root,
+        )
+        res = find_hit_sequence(pack, "您好。", rate_key="normal")
+
+        self.assertEqual(len(res.entries), 1, "口径内候选必须照常命中")
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(res.entries[0].key, "s1")
+        self.assertEqual(res.uncovered, "")
+        self.assertEqual(res.blocked_by, (), "命中路径 blocked_by 恒为空元组")
+
+    def test_blocked_by_deduped_and_in_pack_asset_order(self):
+        """顺序与去重：按 pack.assets 顺序，同一标识只记一次（同 key 两个 part）。"""
+        from assets.pack import AssetPack
+        base = build_pack(self.tmp / "p-a", [("s1", "您好。", 0)])
+        slow0 = build_pack(self.tmp / "p-s0", [("greet", "您好。", 0)], rate="slow")
+        slow1 = build_pack(self.tmp / "p-s1", [("greet", "您好。", 0)], rate="slow")
+        slow1.assets = [
+            AssetEntry(key=e.key, part_index=1, rate_key=e.rate_key, variant=e.variant,
+                       text=e.text, fingerprint=e.fingerprint, path=e.path,
+                       duration_ms=e.duration_ms)
+            for e in slow1.assets
+        ]
+        pack = AssetPack(
+            pack_id=base.pack_id, pack_version=base.pack_version,
+            protocol_version=base.protocol_version,
+            ruleset_version=base.ruleset_version, voice=base.voice,
+            model_version=base.model_version, created_at=base.created_at,
+            assets=list(base.assets) + list(slow1.assets) + list(slow0.assets),
+            root=base.root,
+        )
+        # normal 档候选被删掉 → 未命中，两条 slow 档同文条目都进 blocked_by
+        pack.assets = list(slow1.assets) + list(slow0.assets)
+        res = find_hit_sequence(pack, "您好。", rate_key="normal")
+
+        self.assertEqual(res.entries, ())
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(
+            res.blocked_by, ("greet@slow#1", "greet@slow#0"),
+            "blocked_by 必须按 pack.assets 顺序、同一标识只记一次",
+        )
 
 
 class TestSequenceExportSurface(unittest.TestCase):

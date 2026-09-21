@@ -222,6 +222,11 @@ class SequenceHitResult:
         miss_reason:  命中恒 None；未命中为 REASON_TEXT_NOT_PREBAKED
         uncovered:    未覆盖的剩余——未命中时是**归一化空间**的剩余文本
                       （从第一个覆盖不上的位置起），命中为空串
+        blocked_by:   诊断留痕：文本能匹配、但被 rate_key / part_index 口径剔除的候选
+                      标识，格式 `"<key>@<rate_key>#<part_index>"`（例 `"greet@slow#0"`）。
+                      **命中恒为空元组**；**只进诊断、永不进命中**——对应 docs/10 §10.7
+                      与 docs/17 §三 的「near-miss 只进诊断、永不进命中」红线，
+                      不得影响 entries / miss_reason 的判定
     """
 
     entries: Tuple[AssetEntry, ...]
@@ -229,6 +234,7 @@ class SequenceHitResult:
     text: str
     miss_reason: Optional[str]
     uncovered: str
+    blocked_by: Tuple[str, ...] = ()
 
 
 def _sequence_candidates(pack, rate_key: str) -> Tuple[Tuple[str, AssetEntry], ...]:
@@ -262,8 +268,45 @@ def _sequence_candidates(pack, rate_key: str) -> Tuple[Tuple[str, AssetEntry], .
     return tuple(cands)
 
 
+def _blocked_identifiers(pack, norm: str, rate_key: str, pos: int) -> Tuple[str, ...]:
+    """诊断留痕：收集「文本能匹配、但被口径剔除」的候选标识（docs/10 §10.7 末节）。
+
+    元素格式（冻结）：`"<key>@<rate_key>#<part_index>"`，例 `"greet@slow#0"`。
+
+    筛选条件（遍历 pack.assets，按包内顺序、同一标识只记一次）：该条目
+    `normalize_text(text)` 非空、且是 `norm[pos:]` 的**前缀**（消费长度 > 0），
+    但被 `part_index != 0` 或 `rate_key != 传入的 rate_key` 之一排除。
+
+    语义边界：这是**诊断留痕**，对应 §10.7 与 docs/17 §三 的「near-miss 只进诊断、
+    永不进命中」红线——它**不得**影响 entries / miss_reason 的判定。**不**收录
+    「因 `confirm` 指纹复核不过被剔除」的候选：那是指纹/文件问题，语义不同，
+    混进来会让「本该命中却换了路径」的诊断分不清是口径收窄还是资产损坏。
+
+    只在**未命中路径**被调用；命中路径恒返回 ()（由 find_hit_sequence 保证）。
+    """
+    rest = norm[pos:]
+    out: list = []
+    seen: set = set()
+    for cand in pack.assets:
+        if cand.part_index == 0 and cand.rate_key == rate_key:
+            continue          # 口径内的条目是候选，不算 blocked
+        ident = f"{cand.key}@{cand.rate_key}#{cand.part_index}"
+        if ident in seen:
+            continue
+        text_norm = normalize_text(cand.text)
+        if text_norm and rest.startswith(text_norm):
+            out.append(ident)
+            seen.add(ident)
+    return tuple(out)
+
+
 def find_hit_sequence(pack, text: str, rate_key: str = "normal") -> SequenceHitResult:
     """序列命中查询：整段文本能否被包内 variant 的归一化文本**逐字覆盖**（docs/10 §10.7）。
+
+    `blocked_by`（诊断留痕，§10.7 末节）：未命中时记录「文本能匹配、但因
+    rate_key / part_index 口径被剔除」的候选标识（`"<key>@<rate_key>#<part_index>"`）；
+    命中恒为空元组。它是**只进诊断、永不进命中**的近失留痕（docs/17 §三），
+    不得影响 entries / miss_reason 的判定。
 
     算法（§10.7 冻结判据，逐条对应，不得另立）：
         1. norm = normalize_text(text)；空串 → 未命中（uncovered=""，不抛错）；
@@ -296,10 +339,12 @@ def find_hit_sequence(pack, text: str, rate_key: str = "normal") -> SequenceHitR
     """
     norm = normalize_text(text)      # 类型护栏在这里：非 str → TypeError
     if not norm:
-        # 空回复没有可覆盖的内容，按未命中处理（不猜、不凑；uncovered 保持空串）
+        # 空回复没有可覆盖的内容，按未命中处理（不猜、不凑；uncovered 与
+        # blocked_by 都保持空——没有断点就无从起算）
         return SequenceHitResult(
             entries=(), mode=MODE_TEXT, text=text,
             miss_reason=REASON_TEXT_NOT_PREBAKED, uncovered="",
+            blocked_by=(),
         )
 
     cands = _sequence_candidates(pack, rate_key)
@@ -319,15 +364,20 @@ def find_hit_sequence(pack, text: str, rate_key: str = "normal") -> SequenceHitR
         if best is None or not best[0]:
             # 覆盖不上（或候选退化为空段——_sequence_candidates 已排除，这里是
             # 第二道护栏：消费长度为 0 的匹配必须当场判未命中，不许空转）。
-            # 整体未命中，带断点起的剩余（归一化空间）。
+            # 整体未命中，带断点起的剩余（归一化空间）；blocked_by 记录「文本能
+            # 匹配、但被 rate/part 口径剔除」的候选——只进诊断、永不进命中
+            # （§10.7 末节），且不参与上面的 best 选择，不改判定。
             return SequenceHitResult(
                 entries=(), mode=MODE_TEXT, text=text,
                 miss_reason=REASON_TEXT_NOT_PREBAKED, uncovered=rest,
+                blocked_by=_blocked_identifiers(pack, norm, rate_key, pos),
             )
         entries.append(best[1])
         pos += len(best[0])
 
+    # 命中路径：blocked_by 恒为空元组（诊断留痕只在未命中时产生）
     return SequenceHitResult(
         entries=tuple(entries), mode=MODE_TEXT, text=text,
         miss_reason=None, uncovered="",
+        blocked_by=(),
     )

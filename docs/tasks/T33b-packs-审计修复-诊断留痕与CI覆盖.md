@@ -178,5 +178,31 @@ KEFU_HEAT_YAML="/Volumes/macos/kefu-agent/organs/客服/brain/prompts/供热预�
 **执行方纪律**：非交互环境直接落地，不先出计划等确认；只回事实与自测输出，不做达标判定；
 不提交 git；与卡冲突的事实停下上报，不自行改口径。
 
+## 验收记录（2026-09-21，验收方逐条独立复核）
+
+**结论：验收通过**。证据明细见 `00-索引.md` 第十九批「T33b」小节。
+
+- 白名单核对：`git status --porcelain -uall` 仅 8 个白名单文件；`packs/heat_kefu/{phrases,script,admission}`
+  与 `docs/**` 零改动。
+- **验收 1（blocked_by）**：自写探针——slow-only 包 `normal` 查询 → miss + `blocked_by == ('greet@slow#0',)`；
+  同包 `slow` 查询 → 命中 + `()`；同包 `find_hit(normal)` 对照命中（口径差异真实）。
+  另实测 `load_pack` 在装载期拦下"文件缺失/指纹不符"的包（故该分支真实数据不可达，执行方以构造法覆盖）。
+- **验收 2（判定不变）**：真包 14/14 整段序列命中、40/40 单句双档命中、命中路径 `blocked_by` 并集为空。
+- **验收 3（CI）**：构建步 diff 已在正确位置；落点 == `_load_pack_dir` 候选 ③。
+- **验收 4（自洽断言）**：`env -u KEFU_HEAT_YAML python3 -m unittest discover -s adapters` → **226 / OK / 0 skip**（亲跑）。
+- **验收 5（空转修正）**：**亲自注入**（内存 patch 序列档为全 miss + 后导入测试模块）→ 该测试类
+  **17 处判红 / 9 条测试**；还原后绿。断言非空转。
+- **验收 6（provenance）**：三字段与 `shasum -a 256`（yaml、manifest）/ `git rev-parse HEAD` 逐项一致；
+  产物路径扫描 0 命中。
+- **验收 7（十一根）**：core 44 / rules 21 / assets 59 / adapters **226** / compiler 168 / runtime 118 /
+  eval 208 / cli 85 / tools 84 / trigger 159 / packs 35（0 skip）= **1,207 全绿**（逐根确认 rc=0）。
+- **验收 8（.gitignore）**：`git check-ignore -v packs/heat_kefu_build/heat-kefu-1/manifest.json` → 有输出。
+- 执行方 5 条不确定项的裁定：① 命中路径 `blocked_by` 恒 `()`——**按卡面（即 §10.7）**，正确；
+  ② 元素格式用候选自身 `rate_key`/`part_index`——**正确**（要标出候选被哪个口径挡掉）；
+  ③ `pack_orig` 去重时删掉重复导入——**接受**（白名单内、行为不变）；④ report 的 `git_commit` 记重跑
+  时刻 HEAD——**接受**（报告自证"由该提交的代码产出"）；⑤ packs 35 条 vs 单测内 14+40 循环——
+  **正确理解**（循环内条目不计入 unittest 用例数）。
+- 已知残留（不阻塞）：report 的 `git_commit` 指向产出它时的 HEAD；提交本卡后如需指向新提交，重跑一次 labs 即可。
+
 ## 卡状态
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（证据见上）

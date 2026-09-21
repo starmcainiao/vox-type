@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: 构建 heat-kefu 包（packs 的真包断言依赖它；不构建则诚实 skip）
+        run: sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
       - name: 全量测试（十一个测试根，零第三方依赖）
         run: |
           fail=0

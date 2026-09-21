@@ -64,6 +64,10 @@ KEFU_HEAT_YAML=/path/to/供热预设.yaml \
 - `slow_arm_say_ms_p50`：慢路合成耗时；`hit_vs_slow_delta_ms_p50`：命中臂减慢路的差值（负数 = 命中臂更快）；
 - `problems`：任何打破口径的条目（为空才算 `passed: true`）。
 
+报告自带 `provenance`，可自证版本：`yaml_sha256`（语料 yaml 的 sha256，只记摘要不记
+路径与全文）、`manifest_sha256`（构建产物 manifest.json 的 sha256）、`git_commit`
+（`git rev-parse HEAD`，git 不可用时为 null 并在 `env.git_error` 留痕）。
+
 ## 边界（不做什么）
 
 - 不联网、不起服务、不改任何层的产品代码；

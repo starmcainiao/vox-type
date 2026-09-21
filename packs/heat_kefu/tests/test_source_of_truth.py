@@ -525,15 +525,25 @@ class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
         self.assertEqual(bad, [], f"{len(bad)}/{len(MULTI_CLAUSE_KEYS)} 条整段未按预期序列命中: {bad}")
 
     def test_sequence_hit_entries_all_have_rate_normal(self):
-        """命中序列里的每条 entry 都必须是 normal 档（本包只有 normal 档）。"""
+        """命中序列里的每条 entry 都必须是 normal 档（本包只有 normal 档）。
+
+        空转修正（T33b P2-b）：原写法是 `if res.miss_reason is None:` 包裹断言——
+        序列档一旦整体 miss，断言体被整段跳过、测试仍绿。现在对每条输入**无条件**
+        断言期望的 hit/miss：命中则断言 miss_reason is None + 段数 + 每条 normal 档。
+        """
         from adapters.framework_kefu import find_hit_sequence
         for base in MULTI_CLAUSE_KEYS:
             res = find_hit_sequence(self.pack, str(_yaml_lookup(self.yaml_doc, base)))
-            if res.miss_reason is None:
-                self.assertEqual(
-                    [e.rate_key for e in res.entries], ["normal"] * len(res.entries),
-                    f"{base} 命中了非 normal 档条目",
-                )
+            self.assertIsNone(
+                res.miss_reason,
+                f"{base} 必须整体命中（实际 miss_reason={res.miss_reason!r}, "
+                f"uncovered={res.uncovered!r}）",
+            )
+            self.assertGreater(len(res.entries), 0, f"{base} 命中但 entries 为空元组")
+            self.assertEqual(
+                [e.rate_key for e in res.entries], ["normal"] * len(res.entries),
+                f"{base} 命中了非 normal 档条目",
+            )
 
     def test_multi_clause_14_not_hit_by_text(self):
         from adapters.framework_kefu import find_hit
@@ -819,21 +829,18 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 跑法（packs 层第一根测试；本文件也是 packs 层唯一测试）
 # ---------------------------------------------------------------------------
+#   python3 -m unittest discover -s packs
+#   python3 -m unittest discover -s packs/heat_kefu/tests -t packs
 #   python3 -m unittest packs.heat_kefu.tests.test_source_of_truth -v
-#   python3 -m unittest discover -s packs/heat-kefu/tests -t packs
 #
-# ⚠️ 卡面写的 `python3 -m unittest discover -s packs` **跑不到本文件**，是 CPython
-#    的 discovery 限制，不是本测试的问题（实测两条独立成因，都试过）：
-#    ① `packs/` 没有 `__init__.py` → namespace package。CPython 的 `TestLoader.discover`
-#       对 namespace package 有 `if not is_namespace: tests = list(...)` 守卫，
-#       整个子树**不递归也不报错**（实测 `Ran 0 tests` / `NO TESTS RAN`）。
-#       仓内十层既有测试根（core/rules/assets/compiler/runtime/eval/cli/adapters/tools/trigger）
-#       都带 `__init__.py`，是它们能被 `-s <层>` 跑到的前提。
-#    ② `packs/heat-kefu` 目录名含连字符，CPython 3.14 的 `TestLoader._splitext`
-#       会把 `heat-kefu/tests` 按 `-` 截成 `heat`，`-t packs` 下直接 ImportError。
-#    修这两条都要动 `packs/__init__.py`（或重命名包目录），二者都**不在本卡白名单**，
-#    所以本文件只保证上面两条可导入跑法可用，跑法问题留给验收方裁定。
-#    本文件自带 `sys.path` 兜底（同 labs/ 先例），不依赖调用方环境变量。
+# 实测（2026-09-21，T33b）：`python3 -m unittest discover -s packs` **能跑到本文件**
+#   （packs/__init__.py 已入库，CPython 的 namespace package 守卫不再拦；包目录名是
+#   `heat_kefu` 下划线形式，`-t packs` 下的 `_splitext` 截断问题不存在）。
+#   但真断言（B/C/D 段依赖 yaml 与构建产物）需要两个前置，否则**诚实 skip**：
+#       ① `sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1`
+#       ② `KEFU_HEAT_YAML=<kefu 供热预设 yaml>` 环境变量
+#   两者都在时 packs 段才是完整真包断言（否则 A 段包源结构测试照常跑）。
+#   本文件自带 `sys.path` 兜底（同 labs/ 先例），不依赖调用方环境变量。
 
 
 if __name__ == "__main__":
