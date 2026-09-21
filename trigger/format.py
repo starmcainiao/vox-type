@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from core.protocol import VALID_RATES
-from core.protocol import PRIMITIVES
+from core import PRIMITIVES
+from core import VALID_RATES
 
 
 # ---------------------------------------------------------------------------

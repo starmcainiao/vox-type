@@ -7,7 +7,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org)
-[![Tests](https://img.shields.io/badge/tests-1147%20passing-brightgreen.svg)](#quick-start)
+[![tests](https://github.com/starmcainiao/vox-type/actions/workflows/tests.yml/badge.svg)](https://github.com/starmcainiao/vox-type/actions/workflows/tests.yml)
 [![Dependencies](https://img.shields.io/badge/dependencies-zero-standard%20library-orange.svg)](#quick-start)
 
 </div>
@@ -60,7 +60,7 @@ traced). Zero third-party dependencies.
 
 ## Status（全部实测，口径见 `docs/09` / `docs/13`）
 
-- **十一个测试根 1,147 条测试全绿**；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
+- **十一个测试根 1,156 条测试全绿**（CI：Python 3.12/3.13/3.14 三档矩阵）；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
   命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；

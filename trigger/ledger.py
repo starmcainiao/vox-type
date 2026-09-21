@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.metrics_spec import PLAN_ID, TURN_ID, TS, KEY
+from core import PLAN_ID, TURN_ID, TS, KEY
 from trigger.format import LAYER_STRUCTURED, LAYER_SENSITIVE, Trigger
 from trigger.plan import TriggerPlan
 

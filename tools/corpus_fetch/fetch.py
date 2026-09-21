@@ -31,6 +31,10 @@ fetch.py — 公开语料的可复现获取器（纯标准库，无第三方依�
   python3 -m tools.corpus_fetch.fetch --sources <sources.json> --lock <lock.json>
   python3 -m tools.corpus_fetch.fetch --sources <sources.json> --only <id>
   python3 -m tools.corpus_fetch.fetch --sources <sources.json> --recheck
+
+失败退出码（docs/11 §11.3 红线 4 与 R09 验收 5）：
+  3 = 运行期错误（含「成功数下限断言」触发：全部来源被跳过、成功 0 且未显式 --allow-all-skipped）
+  5 = fail-closed 中止（台账路径落进仓库 / 旧台账坏 JSON 等必须人工裁决的情形）
 """
 
 from __future__ import annotations
@@ -58,6 +62,15 @@ DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]  # tools/corpus_fetch/ �
 
 # 语料落盘根目录：**必须在仓库之外**（docs/11 裁定 2）
 CORPUS_ROOT = Path(os.environ.get("CORPUS_ROOT", "~/corpus")).expanduser()
+DEFAULT_CORPUS_ROOT = CORPUS_ROOT
+
+# 退出码（docs/11 §11.3 红线 4 / docs/08 §8.5 冻结码表）：
+#   3 = 运行期失败；5 = fail-closed 中止。
+EXIT_RUNTIME_FAILURE = 3
+EXIT_FAIL_CLOSED = 5
+
+# 「全部来源被跳过」的显式放行开关（R09 验收 5：跑批脚本必须断言成功数）
+FLAG_ALLOW_ALL_SKIPPED = "--allow-all-skipped"
 LOCK_FILENAME = "corpus.lock.json"
 SOURCES_FILENAME = "sources.json"
 
@@ -797,6 +810,14 @@ def recheck(lock_path: Path) -> int:
     return 1 if bad else 0
 
 
+def exit_code_for(exc: BaseException) -> int:
+    """把异常映射到退出码：FetchError = 运行期失败（3），其它异常（如 argparse 用法错误）
+    按冻结码表归为 fail-closed（5）。未知异常原样向上抛，不做静默降级。"""
+    if isinstance(exc, FetchError):
+        return EXIT_RUNTIME_FAILURE
+    return EXIT_FAIL_CLOSED
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="vox 公开语料获取器（先验许可后下载）")
     ap.add_argument("--sources", default=None, help=f"来源声明 JSON（缺省 = 本仓库根下的 {SOURCES_FILENAME}）")
@@ -808,6 +829,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="含 optional 来源（缺省跳过——大体量的可选项不该在例行跑里被拉下来）",
     )
     ap.add_argument("--only", metavar="ID", help="只处理指定 id")
+    ap.add_argument(
+        "--allow-all-skipped",
+        action="store_true",
+        help="全部来源被跳过（成功 0）时显式放行、以 0 退出并打 WARNING；"
+        "缺省一律非零退出（R09 验收 5：跑批脚本必须断言成功数）",
+    )
     ap.add_argument("--recheck", action="store_true", help="对已下载文件重算 sha256 与台账比对")
     ap.add_argument(
         "--out-root",
@@ -842,6 +869,26 @@ def main(argv: Optional[List[str]] = None) -> int:
     if skipped:
         print(f"跳过 optional 来源 {skipped}（要下用 --include-optional 或 --only <id>）")
 
+    # 成功数下限断言（R09 验收 5）：没有一份来源进入处理 = 「成功 0 / 拒绝 0」，
+    # 缺省一律非零退出；显式 --allow-all-skipped 才放行（并在 stderr 打 WARNING 留痕）。
+    if not picked_sources:
+        if args.allow_all_skipped:
+            print(
+                f"WARNING: 全部来源被跳过（成功 0 / 拒绝 0）——"
+                f"已按 {FLAG_ALLOW_ALL_SKIPPED} 显式放行，本批未获取任何语料。"
+                f"跳过声明: {skipped or '（无 optional，来源表为空）'}",
+                file=sys.stderr,
+            )
+            print("\n成功 0 / 拒绝 0（全部跳过，已显式放行）")
+            return 0
+        raise FetchError(
+            "全部来源被跳过（成功 0 / 拒绝 0）——本批未获取任何语料，不得以 0 退出"
+            f"（R09 验收 5：跑批脚本必须断言成功数）。"
+            f"跳过声明: {skipped or '（无 optional，来源表为空）'}；"
+            f"若确为预期请显式 {FLAG_ALLOW_ALL_SKIPPED} 放行并留痕"
+            f"，或核对 sources.json 的来源声明 / --include-optional"
+        )
+
     entries: List[Dict[str, Any]] = []
     rejected: List[Tuple[str, str]] = []
     for src in picked_sources:
@@ -869,4 +916,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except argparse.ArgumentError as e:
+        # 用法错误 = 2（docs/08 §8.5 冻结码表），消息带 argparse 给出的参数说明
+        print(f"用法错误: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:
+        # 冻结码表：FetchError → 3（运行期失败），其它 → 5（fail-closed 中止）。
+        # stderr 必须带异常类型名（docs/08 §8.5），否则事后无法定位是哪一类失败。
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(exit_code_for(e))

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from runtime import REASON_KEY_NOT_PREBAKED
-from assets.pack import AssetEntry
+from assets import AssetEntry
 
 from .normalize import normalize_text
 

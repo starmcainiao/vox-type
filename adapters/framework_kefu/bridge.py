@@ -26,10 +26,10 @@ from runtime import (
     REASON_KEY_NOT_PREBAKED,
     RuntimeMissError,
 )
-from runtime.events import build_event
-from core.metrics_spec import FALLBACK, HIT, MISS
-from runtime.executor import Executor
-from assets.pack import AssetEntry
+from runtime import build_event
+from core import FALLBACK, HIT, MISS
+from runtime import Executor
+from assets import AssetEntry
 
 from .normalize import normalize_text
 from . import hit_query

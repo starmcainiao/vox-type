@@ -44,8 +44,8 @@ trigger.plan — state 快照 → plan（触发器，行为侧）
 import hashlib
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from core.metrics_spec import PLAN_ID, TURN_ID
-from core.protocol import PlanUnit as CorePlanUnit
+from core import PLAN_ID, TURN_ID
+from core import PlanUnit as CorePlanUnit
 from trigger.format import (
     BudgetError,
     StateError,
