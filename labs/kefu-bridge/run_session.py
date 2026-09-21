@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-labs/kefu-bridge-2026-09-18/run_session.py — 真链路联调驱动（T11 验收第 7 条）
+labs/kefu-bridge/run_session.py — 真链路联调驱动（T11 验收第 7 条）
 
 把预铸包插进 kefu 真链路，跑两档命中率并把数字并排放出来：
 
@@ -8,7 +8,7 @@ labs/kefu-bridge-2026-09-18/run_session.py — 真链路联调驱动（T11 验�
     --mode text  自由文本档：turns 里给 user_text，说一次用户音频 → ASR → brain → 逐字比对
 
 用法：
-    python3 labs/kefu-bridge-2026-09-18/run_session.py \
+    python3 labs/kefu-bridge/run_session.py \
         --pack <已铸包> --turns <turns.json> --out <dir> \
         [--mode key|text|all] [--allow-fallback] [--offline] \
         [--brain-url http://127.0.0.1:8092] [--voice-url http://127.0.0.1:8096] \

@@ -20,19 +20,19 @@ T21 把 `源 → state → plan → 留痕` 端到端跑通了（39 条断言、
 
 ## 目标（可验收的产物）
 
-- 产物 1：`labs/ticket-source-2026-09-19/tickets.source.json` —— **扩充 fixture 行**（只加行，不改已有行的语义）
-- 产物 2：`labs/ticket-source-2026-09-19/run_e2e.py` —— 增断言：**6 条规则每条至少被驱动一次**
-- 产物 3：`labs/ticket-source-2026-09-19/summary.json`、`raw/turns.jsonl` —— 重跑后更新
-- 产物 4：`labs/ticket-source-2026-09-19/README.md` —— 更新覆盖说明（把"只覆盖 2 条"改成实际覆盖情况）
+- 产物 1：`labs/ticket-source/tickets.source.json` —— **扩充 fixture 行**（只加行，不改已有行的语义）
+- 产物 2：`labs/ticket-source/run_e2e.py` —— 增断言：**6 条规则每条至少被驱动一次**
+- 产物 3：`labs/ticket-source/summary.json`、`raw/turns.jsonl` —— 重跑后更新
+- 产物 4：`labs/ticket-source/README.md` —— 更新覆盖说明（把"只覆盖 2 条"改成实际覆盖情况）
 
 ## 允许修改的文件（白名单）
 
 ```
-允许修改：labs/ticket-source-2026-09-19/tickets.source.json
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py
-允许修改：labs/ticket-source-2026-09-19/README.md
-允许修改：labs/ticket-source-2026-09-19/raw/turns.jsonl（重跑产物）
-允许修改：labs/ticket-source-2026-09-19/summary.json（重跑产物）
+允许修改：labs/ticket-source/tickets.source.json
+允许修改：labs/ticket-source/run_e2e.py
+允许修改：labs/ticket-source/README.md
+允许修改：labs/ticket-source/raw/turns.jsonl（重跑产物）
+允许修改：labs/ticket-source/summary.json（重跑产物）
 禁止触碰：其他一切文件——尤其 **不得改 source_map.json 的既有映射语义**（只允许在"加行了需要新字段"时追加，
           且必须在 README 里说明为什么）、不得改 packs/、不得改 adapters/、不得改核心层
 ```
@@ -51,7 +51,7 @@ T21 把 `源 → state → plan → 留痕` 端到端跑通了（39 条断言、
 
 ## 验收标准（逐条可判定，我会逐条核对）
 
-1. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → **rc 0**；断言数 **≥39**（只增不减）；
+1. `python3 labs/ticket-source/run_e2e.py` → **rc 0**；断言数 **≥39**（只增不减）；
 2. **6 条规则全部至少被驱动一次**——脚本必须输出一张可达性表并在 `summary.json` 里落盘；
    若有规则判为不可达，**必须给出"为什么不可达"的具体理由**（指出是哪条声明/哪个校验挡住了），
    而不是只写一句 `unreachable`；
@@ -73,7 +73,7 @@ T21 把 `源 → state → plan → 留痕` 端到端跑通了（39 条断言、
 
 ## 回滚方式
 
-`git checkout -- labs/ticket-source-2026-09-19/`（T21 的产物已入库，可精确回滚）。
+`git checkout -- labs/ticket-source/`（T21 的产物已入库，可精确回滚）。
 
 ## 执行方式
 

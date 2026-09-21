@@ -2,9 +2,9 @@
 
 ## 背景（只写必需）
 
-`labs/corpus-harvest-2026-09-18/` 已用一次性脚本跑通首轮：5 份公开语料落盘（`corpus.lock.json` 台账）、
+`labs/corpus-harvest/` 已用一次性脚本跑通首轮：5 份公开语料落盘（`corpus.lock.json` 台账）、
 `packs/fin-cs/` 派生完成（17 key / 102 资产 / `vox pack check|build|bench` 三关全过）、
-逐字档与语义档实测出数（见 `labs/corpus-harvest-2026-09-18/README.md`）。
+逐字档与语义档实测出数（见 `labs/corpus-harvest/README.md`）。
 
 **问题是这三件套现在还是一次的**：脚本在 `labs/`（实验区，不进任何层契约），没有测试、没有回归保护。
 下一批（换业务语料、方言链路）还要用它，**必须先固化，否则每次都是重写一遍**。
@@ -19,7 +19,7 @@
 只做「搬位置 + 加测试 + 补缺口」。
 
 - 产物 1：`tools/corpus_fetch/{__init__.py,fetch.py,derive_golden.py,baseline_literal.py}`
-  （由 `labs/corpus-harvest-2026-09-18/` 的对应文件搬入并去硬编码；`sources.json` / `corpus.lock.json` **不搬**，
+  （由 `labs/corpus-harvest/` 的对应文件搬入并去硬编码；`sources.json` / `corpus.lock.json` **不搬**，
   它们是本批的数据，留在 `labs/`）
 - 产物 2：`tools/tests/test_corpus_fetch.py` + `tools/tests/test_derive_golden.py`（对应测试）
 - 产物 3：根 `AGENTS.md` 的目录清单**追加一行** `tools/ [扩] 仓外数据获取与派生（只写仓外，不进任何层契约）`
@@ -37,7 +37,7 @@
 允许新增：tools/**（含 tools/tests/**）
 允许修改：AGENTS.md（只允许在「三、目录与冻结状态」的代码块里追加 tools/ 那一行）
 禁止触碰：其他一切文件——尤其不得改 core/ rules/ compiler/ assets/ runtime/ eval/ cli/ 下任何文件、
-          不得改 docs/、不得改 labs/corpus-harvest-2026-09-18/ 下任何文件（它要作为本批的历史证据原样留着）
+          不得改 docs/、不得改 labs/corpus-harvest/ 下任何文件（它要作为本批的历史证据原样留着）
 ```
 
 ## 禁止事项
@@ -62,7 +62,7 @@
 6. **正例（派生）**：用一份 3~5 条的小 fixture 语料跑 `derive_golden`，断言
    ① 每条都带 `user_utterance` 与 `assistant_reply_free` **两个字段**（`docs/11 §11.9.3`）；
    ② 含占位符/超长/超短的用户话术被过滤；③ 策略 12「其它」产出 `expect_kind="unspecified"`；
-7. **两条已在 `labs/` 版本里修掉的坑，搬过去不许退化**（见 `labs/corpus-harvest-2026-09-18/README.md §8.1`）：
+7. **两条已在 `labs/` 版本里修掉的坑，搬过去不许退化**（见 `labs/corpus-harvest/README.md §8.1`）：
    - **`optional` 闸门**：缺省必须跳过 optional 来源，且**响亮打印**跳过声明（静默跳过 = 让人以为已经下了）；
      `--only <id>` 必须能显式拉单个 optional 项；
    - **大文件流式下载**：不得用「一次性读进内存」的写法；必须分块写盘 + 边下边算 sha256；

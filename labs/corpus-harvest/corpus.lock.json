@@ -1,6 +1,6 @@
 {
   "_schema": "vox-corpus-lock/1",
-  "_note": "由 labs/corpus-harvest-2026-09-18/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。",
+  "_note": "由 labs/corpus-harvest/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。",
   "entries": [
     {
       "id": "ASLP-lab/WenetSpeech-Wu-Bench",

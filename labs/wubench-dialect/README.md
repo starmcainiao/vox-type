@@ -52,10 +52,10 @@ Wu-Bench asr.parquet（吴语 RIFF/WAV 字节 + label 转写）
 cd （仓库根）
 
 # 1) 正式 100 条（约 1 分钟，受 oMLX 负载影响）
-PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py
+PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py
 
 # 2) 快验（只跑前 20 条；不影响抽样顺序与 seed）
-PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py --limit 20
+PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py --limit 20
 
 ```
 
@@ -108,7 +108,7 @@ sanity 自断言（证明 CER 管道真在工作，非恒真）：
 ## 七、回滚
 
 ```sh
-git clean -fd labs/wubench-dialect-2026-09-19
+git clean -fd labs/wubench-dialect
 ```
 
 本卡不触碰任何既有文件，回滚无残留。

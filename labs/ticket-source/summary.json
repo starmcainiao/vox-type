@@ -413,7 +413,7 @@
     "hit_is_first_match_of_matched_set": true
   },
   "sensitive_scan": {
-    "ledger_file": "labs/ticket-source-2026-09-19/raw/turns.jsonl",
+    "ledger_file": "labs/ticket-source/raw/turns.jsonl",
     "hits": {
       "ticket_id": 0,
       "customer_code": 0,

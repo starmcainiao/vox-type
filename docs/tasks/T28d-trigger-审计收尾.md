@@ -13,9 +13,9 @@ T28/T28b/T28c 验收通过后，`blackiron-silent-failure-hunter` 对迁移做�
 允许修改：trigger/__init__.py（仅 :3 落点说明一行）
 允许修改：trigger/tests/test_format.py :32、test_ledger.py :38、test_reachability.py :38、test_trigger.py :46
           （仅 _REPO_ROOT 行上方的路径链注释，一行注释各文件）
-允许修改：labs/ticket-source-2026-09-19/README.md（仅 :9 的 trigger.py → plan.py 字样）
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py（仅 :1592 note 字样 trigger.py → plan.py）
-允许重跑：python3 labs/ticket-source-2026-09-19/run_e2e.py（刷新 summary.json，:103 字样随之更新；
+允许修改：labs/ticket-source/README.md（仅 :9 的 trigger.py → plan.py 字样）
+允许修改：labs/ticket-source/run_e2e.py（仅 :1592 note 字样 trigger.py → plan.py）
+允许重跑：python3 labs/ticket-source/run_e2e.py（刷新 summary.json，:103 字样随之更新；
           本次 summary.json 的 20 行内 diff 属授权产物刷新，不是越界）
 禁止触碰：其他一切文件
 ```
@@ -42,9 +42,9 @@ T28/T28b/T28c 验收通过后，`blackiron-silent-failure-hunter` 对迁移做�
 1. **P1 修正实测**：`python3 -c "import sys; sys.path.insert(0,'.'); from trigger.ledger import _repo_root, _inside_repo; r=_repo_root(); print(r.name, _inside_repo(r/'packs'), _inside_repo(r.parent/'other.txt'))"`
    → 输出 **`vox-type True False`**（修前第三个值实测为 True——守卫错位）；
 2. `python3 -m unittest discover -s trigger` → **159 条全绿**；`discover -s adapters` → 152；十根 1,089；
-3. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → rc 0；`grep -c "plan.py 的既有口径" labs/ticket-source-2026-09-19/summary.json` → ≥1；
+3. `python3 labs/ticket-source/run_e2e.py` → rc 0；`grep -c "plan.py 的既有口径" labs/ticket-source/summary.json` → ≥1；
 4. **残留清零**：`grep -rn "state_trigger" trigger/ --include="*.py"` → 仅 `trigger/AGENTS.md` 不在内，
-   `.py` 文件中 0 命中（`__init__.py` 与 4 个测试注释修后不应再有）；`grep -n "trigger.py" labs/ticket-source-2026-09-19/README.md` → 0 命中；
+   `.py` 文件中 0 命中（`__init__.py` 与 4 个测试注释修后不应再有）；`grep -n "trigger.py" labs/ticket-source/README.md` → 0 命中；
 5. `git status --porcelain -uall` 终态核对（改动全部在白名单内；`summary.json` 为授权刷新）。
 
 ## 反空转条款
@@ -54,7 +54,7 @@ T28/T28b/T28c 验收通过后，`blackiron-silent-failure-hunter` 对迁移做�
 
 ## 回滚方式
 
-labs 侧 `git checkout -- labs/ticket-source-2026-09-19/{README.md,run_e2e.py}`；trigger 侧按 T28c 终态快照恢复。
+labs 侧 `git checkout -- labs/ticket-source/{README.md,run_e2e.py}`；trigger 侧按 T28c 终态快照恢复。
 
 ## 执行方式
 

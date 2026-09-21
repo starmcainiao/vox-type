@@ -34,7 +34,7 @@
 **复现**（任意机器）：
 
 ```bash
-cd labs/corpus-harvest-2026-09-18
+cd labs/corpus-harvest
 python3 fetch.py --dry-run    # 只审计许可，不下载
 python3 fetch.py              # 下载 + 校验
 python3 fetch.py --recheck    # 事后巡检：重算 sha256 与台账比对

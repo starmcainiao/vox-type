@@ -53,10 +53,10 @@ T21d 卡写了"不得在断言里硬编码这三组数字"，本意是**计数�
 ## 允许修改的文件（白名单）
 
 ```
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py
-允许修改：labs/ticket-source-2026-09-19/source_map.json（仅说明文字，不得改数据语义）
-允许修改：labs/ticket-source-2026-09-19/README.md
-允许修改：labs/ticket-source-2026-09-19/raw/turns.jsonl、summary.json（重跑产物）
+允许修改：labs/ticket-source/run_e2e.py
+允许修改：labs/ticket-source/source_map.json（仅说明文字，不得改数据语义）
+允许修改：labs/ticket-source/README.md
+允许修改：labs/ticket-source/raw/turns.jsonl、summary.json（重跑产物）
 禁止触碰：其他一切文件——不得改 packs/ adapters/ core/ rules/ compiler/ assets/ runtime/ eval/ cli/ docs/
           也不得改 tickets.source.json
 ```
@@ -70,12 +70,12 @@ T21d 卡写了"不得在断言里硬编码这三组数字"，本意是**计数�
   正确做法是**改成与实测一致的具体陈述**，或**用描述性文字指明"某类模糊表述"而不复制它**
 - 不得改 `packs/`（本卡只改 labs）
 - 不得联网；不得新增依赖；**不要 `git add` / `git commit`**；**不要做达标判定**
-- **判退出码不要接管道**：用 `python3 labs/ticket-source-2026-09-19/run_e2e.py >/tmp/e2e.log 2>&1; echo $?`
+- **判退出码不要接管道**：用 `python3 labs/ticket-source/run_e2e.py >/tmp/e2e.log 2>&1; echo $?`
   （`... | tail; echo $?` 取到的是 `tail` 的退出码，会把崩溃藏起来——这是本项目踩过的坑）
 
 ## 验收标准（逐条可判定，我会逐条核对）
 
-1. `python3 labs/ticket-source-2026-09-19/run_e2e.py >/tmp/e2e.log 2>&1; echo $?` → **0**；断言数 **≥145**；
+1. `python3 labs/ticket-source/run_e2e.py >/tmp/e2e.log 2>&1; echo $?` → **0**；断言数 **≥145**；
 2. **行内注释漏扫已修**（本卡核心，必须实测三态）：
    - 往 `run_e2e.py` 的**行内 `#` 注释**里注入 `没有任何一条规则的 when 依赖 is_overdue`
      → **rc != 0** 且消息**指名 `run_e2e.py` 与被禁短语**；
@@ -100,7 +100,7 @@ T21d 卡写了"不得在断言里硬编码这三组数字"，本意是**计数�
 
 ## 回滚方式
 
-`git checkout -- labs/ticket-source-2026-09-19/`（T21d 产物已入库，可精确回滚）。
+`git checkout -- labs/ticket-source/`（T21d 产物已入库，可精确回滚）。
 
 ## 执行方式
 

@@ -1,5 +1,5 @@
 """
-labs/ticket-source-2026-09-19/run_e2e.py — 源 → state → plan → 留痕（端到端 + 自断言）
+labs/ticket-source/run_e2e.py — 源 → state → plan → 留痕（端到端 + 自断言）
 
 跑一遍整条线，产出可复现的原始证据：
     raw/turns.jsonl   每轮一条留痕（state 结构化层 + plan，由 record_turn 写）
@@ -7,7 +7,7 @@ labs/ticket-source-2026-09-19/run_e2e.py — 源 → state → plan → 留痕�
 
 用法：
     cd <仓库根>
-    python3 labs/ticket-source-2026-09-19/run_e2e.py
+    python3 labs/ticket-source/run_e2e.py
 
 退出码：0 = 全部断言通过；3 = 任一断言失败（含负例未如预期抛错）。
 
@@ -18,7 +18,7 @@ labs/ticket-source-2026-09-19/run_e2e.py — 源 → state → plan → 留痕�
     trigger.record_turn     轮级留痕（敏感层绝不落盘）
     trigger.read_turns      读回留痕做复核
 
-本文件不联网、不启停服务、不 import 系统时钟；不写 labs/ticket-source-2026-09-19/ 之外的任何路径。
+本文件不联网、不启停服务、不 import 系统时钟；不写 labs/ticket-source/ 之外的任何路径。
 """
 
 from __future__ import annotations

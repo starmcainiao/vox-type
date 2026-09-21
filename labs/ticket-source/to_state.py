@@ -1,5 +1,5 @@
 """
-labs/ticket-source-2026-09-19/to_state.py — 工单系统导出 → state 快照
+labs/ticket-source/to_state.py — 工单系统导出 → state 快照
 
 职责：读「工单系统导出」形态的源 JSON，按 source_map.json 里声明的映射与
       派生规则，产出一份 state 快照；产出的 state 必须通过 T16 的

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """段级补齐：say 逐句合成 + 本地 oMLX LLM 热态 TTFT（报告 §三 的两行）。
 
-用法：python3 labs/chain-bench-2026-09-18/segments.py [say|llm|all]
+用法：python3 labs/chain-bench/segments.py [say|llm|all]
 输出：<本目录>/raw/tts_say_samples.jsonl、raw/llm_warm_samples.jsonl
 """
 import json, pathlib, subprocess, sys, tempfile, time, urllib.request

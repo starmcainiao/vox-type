@@ -2,7 +2,7 @@
 
 ## 背景（只写必需）
 
-T21 的 `labs/ticket-source-2026-09-19/source_map.json` 里有一段 `rule_reachability`，写的是：
+T21 的 `labs/ticket-source/source_map.json` 里有一段 `rule_reachability`，写的是：
 
 - `reachable: ["greeting", "closing"]`
 - `unreachable_from_source: ["overdue", "due_tonight", "due_days_left", "ask_assignee"]`
@@ -24,20 +24,20 @@ T21 的 `labs/ticket-source-2026-09-19/source_map.json` 里有一段 `rule_reach
 
 ## 目标（可验收的产物）
 
-- 产物 1：`labs/ticket-source-2026-09-19/source_map.json` —— **修正 `rule_reachability` 为与实测一致**的陈述
-- 产物 2：`labs/ticket-source-2026-09-19/run_e2e.py` —— **新增断言**：`source_map.json#rule_reachability`
+- 产物 1：`labs/ticket-source/source_map.json` —— **修正 `rule_reachability` 为与实测一致**的陈述
+- 产物 2：`labs/ticket-source/run_e2e.py` —— **新增断言**：`source_map.json#rule_reachability`
   必须与实际测得的覆盖一致（不一致 → 非零退出）
-- 产物 3：`labs/ticket-source-2026-09-19/README.md` —— 若其中也复述了旧结论，一并改正
+- 产物 3：`labs/ticket-source/README.md` —— 若其中也复述了旧结论，一并改正
 - 产物 4：重跑产物 `summary.json` / `raw/turns.jsonl`
 
 ## 允许修改的文件（白名单）
 
 ```
-允许修改：labs/ticket-source-2026-09-19/source_map.json
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py
-允许修改：labs/ticket-source-2026-09-19/README.md
-允许修改：labs/ticket-source-2026-09-19/raw/turns.jsonl（重跑产物）
-允许修改：labs/ticket-source-2026-09-19/summary.json（重跑产物）
+允许修改：labs/ticket-source/source_map.json
+允许修改：labs/ticket-source/run_e2e.py
+允许修改：labs/ticket-source/README.md
+允许修改：labs/ticket-source/raw/turns.jsonl（重跑产物）
+允许修改：labs/ticket-source/summary.json（重跑产物）
 禁止触碰：其他一切文件——尤其不得改 packs/ adapters/ core/ rules/ compiler/ assets/ runtime/ eval/ cli/ docs/，
           也不得改 tickets.source.json（本卡不涉及 fixture）
 ```
@@ -53,7 +53,7 @@ T21 的 `labs/ticket-source-2026-09-19/source_map.json` 里有一段 `rule_reach
 
 ## 验收标准（逐条可判定，我会逐条核对）
 
-1. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → **rc 0**；断言数 **≥84**（只增不减）；
+1. `python3 labs/ticket-source/run_e2e.py` → **rc 0**；断言数 **≥84**（只增不减）；
 2. **`rule_reachability` 与实测一致**：`reachable` 必须列出**实际被命中过**的规则；
    `unreachable_from_source` 在当前 fixture 下必须为**空**（T21b 实测 6/6）；理由文字必须与代码一致
    （尤其**不得再出现"is_overdue 恒为 false"这类与 `when` 声明不符的因果**）；
@@ -75,7 +75,7 @@ T21 的 `labs/ticket-source-2026-09-19/source_map.json` 里有一段 `rule_reach
 
 ## 回滚方式
 
-`git checkout -- labs/ticket-source-2026-09-19/`（T21b 的产物已入库，可精确回滚）。
+`git checkout -- labs/ticket-source/`（T21b 的产物已入库，可精确回滚）。
 
 ## 执行方式
 

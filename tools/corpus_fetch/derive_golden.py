@@ -21,7 +21,7 @@ derive_golden.py — 从公开语料派生 golden set 对照集（docs/11 §11.5
 
   `expect_key` 回答的是「**这一轮系统该说哪个 key**」——由该轮客服话轮的功能策略映射而来。
 
-**由 labs/corpus-harvest-2026-09-18/derive_golden.py 提升（T12）时去掉的硬编码**：
+**由 labs/corpus-harvest/derive_golden.py 提升（T12）时去掉的硬编码**：
   `STRATEGY_TO_KEY` → 外部映射文件（`--strategy-map <json>`）。**这张表是业务判断，不是语料自带的事实**——
   换业务时它一定不同，所以缺省值内置但必须能换。映射文件形如：
 

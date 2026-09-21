@@ -1,7 +1,7 @@
 {
   "corpus_id": "fin-cs-keydrive",
   "version": "1",
-  "notes": "fin-cs 包的全 key 脚本驱动档语料：key 由流程给定，不经语义检索。仅作回归闸门，不代表真实覆盖率（真实覆盖率见 labs/corpus-harvest-2026-09-18/）。",
+  "notes": "fin-cs 包的全 key 脚本驱动档语料：key 由流程给定，不经语义检索。仅作回归闸门，不代表真实覆盖率（真实覆盖率见 labs/corpus-harvest/）。",
   "units": [
     {
       "key": "greeting_inbound",

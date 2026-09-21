@@ -1,6 +1,6 @@
 """tools.corpus_fetch — 公开语料的自给管道（fetch / derive / baseline）。
 
-由 `labs/corpus-harvest-2026-09-18/` 的一次性脚本提升而来（T12）。**只写仓外**：
+由 `labs/corpus-harvest/` 的一次性脚本提升而来（T12）。**只写仓外**：
 第三方原始语料一律落 `--out-root`（缺省 `~/corpus/`），本目录不得写入语料。
 
 规格依据：`docs/11-语料自给与语义提案-口径.md`（§11.3 许可台账与 fail-closed 规则、

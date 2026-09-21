@@ -16,7 +16,7 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 
 ## 目标（可验收的产物）
 
-全部落在**新目录** `labs/wubench-dialect-2026-09-19/`：
+全部落在**新目录** `labs/wubench-dialect/`：
 
 - 产物 1：`run_dialect_probe.py` —— 主脚本（详见硬要求）；
 - 产物 2：`raw/samples.jsonl` —— 逐条明细：`utt_id`、`task`、音频时长、`label` 原文、ASR 转写原文、逐条 CER、
@@ -49,12 +49,12 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 7. **内置 sanity 自断言**（调产品 API，不是复制逻辑）：用已知对照断言 CER 管道——
    `cer(normalize_for_cer("你好世界"), normalize_for_cer("你好时界")) == 0.25`，不等即非零退出；
 8. **顺序执行，不并发**（本地服务，禁止压测）；不得起停任何服务；不得联网（除 oMLX 本机端点）；
-9. 落盘只在 `labs/wubench-dialect-2026-09-19/` 内；**不得 `git add` / `git commit`**（提交由主会话做）。
+9. 落盘只在 `labs/wubench-dialect/` 内；**不得 `git add` / `git commit`**（提交由主会话做）。
 
 ## 允许修改的文件（白名单）
 
 ```
-允许新增：labs/wubench-dialect-2026-09-19/**（run_dialect_probe.py、raw/、report.json、README.md）
+允许新增：labs/wubench-dialect/**（run_dialect_probe.py、raw/、report.json、README.md）
 允许修改：无
 禁止触碰：其他一切文件——尤其不得改 core/ rules/ compiler/ assets/ runtime/ eval/ cli/ adapters/ packs/ tools/ docs/
 ```
@@ -69,17 +69,17 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 
 ## 验收标准（逐条可判定，验收方会逐条核对）
 
-1. `cd （仓库根） && ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py`
+1. `cd （仓库根） && ~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py`
    → **rc 0**，产出 `raw/samples.jsonl` 与 `report.json`；
 2. `raw/samples.jsonl` 行数 == 100；每行必有 `utt_id` 与 `status` 三态之一（`ok` / `skipped_too_long` / `asr_error`）；
    `status=="ok"` 的行必有非空转写与 CER 数值；
 3. `report.json` 必含：计数四元组（`n_sampled==100` / `n_valid` / `n_skipped` / `n_asr_fail`，且和为 100）、
    CER 块（`mean`、`P50`、`P95`、`ci95_low`、`ci95_high`，基于 `eval/stats.py`）、时长分布、
    按 `task` 分桶（若多类）、抽样 `utt_id` 清单（100 个，按抽中顺序）、`env` 块、`scope` 范围裁定字段；
-4. **抽样可复现**：`~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py --limit 20`
+4. **抽样可复现**：`~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py --limit 20`
    → rc 0，且前 20 个 `utt_id` 与正式 100 条运行的清单**逐位一致**（`--limit` 只影响跑多少条，不影响抽样顺序）；
 5. **CER 独立复核**：验收方从 `raw/samples.jsonl` 随机抽 5 条 `ok` 行，用 `eval/cer.py` 独立复算 CER → 逐条一致；
-6. `git status --porcelain -uall` 的新增文件**全部**在 `labs/wubench-dialect-2026-09-19/` 内；
+6. `git status --porcelain -uall` 的新增文件**全部**在 `labs/wubench-dialect/` 内；
    `git diff --stat -- core rules compiler assets runtime eval cli adapters packs tools docs` 为空；
 7. 防污染回归：`python3 -m unittest discover -s adapters` 与 `-s eval` 全绿（adapters 301 / eval 192）。
 
@@ -94,7 +94,7 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 
 ## 回滚方式
 
-新增目录 → `git clean -fd labs/wubench-dialect-2026-09-19`。不触碰既有文件，回滚无残留。
+新增目录 → `git clean -fd labs/wubench-dialect`。不触碰既有文件，回滚无残留。
 
 ## 执行方式
 

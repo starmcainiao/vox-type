@@ -13,7 +13,7 @@
 迁移基线事实（验收判据的数字依据）：
 - `adapters/state_trigger/`：`format.py` 945 行、`trigger.py` 363、`ledger.py` 337、`reachability.py` 132、
   `__init__.py` 76、`README.md`、`tests/`（4 个测试文件，**159 条**测试全绿）；
-- 代码引用方（`*.py`）只有 3 处：`labs/ticket-source-2026-09-19/run_e2e.py`、`to_state.py`、以及包自身 `__init__.py`；
+- 代码引用方（`*.py`）只有 3 处：`labs/ticket-source/run_e2e.py`、`to_state.py`、以及包自身 `__init__.py`；
   产品层（core/runtime/assets/eval/cli/compiler/rules/packs/tools）**零引用**；
 - 迁移后预期：`trigger` 新测试根 159 条全绿；`adapters` 降为 **152** 条全绿；十根总数 **1,089 不变**。
 
@@ -27,7 +27,7 @@
 3. `adapters/state_trigger/` **整体删除**；
 4. `adapters/AGENTS.md §⑧` 改写为「已迁出（2026-09-19）→ `trigger/`」的历史记录（保留原条款要点与迁出原因，
    不再具约束力）；§② 不动；
-5. labs 三处 import 更新：`labs/ticket-source-2026-09-19/{run_e2e,to_state}.py` 与其 `README.md` 中的
+5. labs 三处 import 更新：`labs/ticket-source/{run_e2e,to_state}.py` 与其 `README.md` 中的
    `adapters.state_trigger` → `trigger`（`__init__.py` 内部 import 同步改为 `from trigger.format import …` 等）。
 
 ## 允许修改的文件（白名单）
@@ -36,7 +36,7 @@
 允许新增：trigger/**（含 AGENTS.md、README.md、5 个 .py、tests/4 文件）
 允许新增：无其他
 允许修改：adapters/AGENTS.md（仅 §⑧ 一节改写为迁出记录）
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py、to_state.py、README.md（仅 import 路径与对应说明文字）
+允许修改：labs/ticket-source/run_e2e.py、to_state.py、README.md（仅 import 路径与对应说明文字）
 允许删除：adapters/state_trigger/**（整体）
 禁止触碰：core/ rules/ compiler/ assets/ runtime/ eval/ cli/ packs/ tools/ docs/（docs 由验收方迁移后统一刷新）
 ```
@@ -59,10 +59,10 @@
    `git ls-files adapters/state_trigger` 为空（整体删除）；
 3. **全仓代码引用零残留**：`grep -rn "adapters\.state_trigger\|adapters/state_trigger" --include="*.py" .`
    （排除 `__pycache__`）→ **0 命中**；`--include="*.md"` 的命中只允许出现在 `adapters/AGENTS.md §⑧` 迁出记录、
-   `labs/ticket-source-2026-09-19/README.md` 的更新后说明、`docs/` 历史文档与 `docs/tasks/` 历史卡；
+   `labs/ticket-source/README.md` 的更新后说明、`docs/` 历史文档与 `docs/tasks/` 历史卡；
 4. **测试迁移正确**：`python3 -m unittest discover -s trigger` → **159 条全绿**；
    `discover -s adapters` → **152 条全绿**；`discover -s core -s rules …` 十根合计 **1,089** 不变（验收方复核）；
-5. **labs 回归**：`python3 labs/ticket-source-2026-09-19/run_e2e.py` → rc 0（它已 import `trigger.*`；
+5. **labs 回归**：`python3 labs/ticket-source/run_e2e.py` → rc 0（它已 import `trigger.*`；
    注意按 T21 卡它自带 sys.path 兜底，直接跑即可）；
 6. **新层纪律齐备**：`trigger/AGENTS.md` 七项存在；四条边界条款与 `adapters/AGENTS.md §⑧` 原文要点一一对应
    （验收方逐条比对）；行数口径条款按背景所写登记；
@@ -77,7 +77,7 @@
 
 ## 回滚方式
 
-`git checkout -- adapters/AGENTS.md labs/ticket-source-2026-09-19/`（还原修改）+
+`git checkout -- adapters/AGENTS.md labs/ticket-source/`（还原修改）+
 `git clean -fd trigger`（删新层）+ `git checkout -- adapters/state_trigger`（还原被删目录；若已 git rm 需先 reset）。
 执行方在动手前记录 `git stash list` 与 HEAD，报告里写明回滚命令的实际可用性。
 

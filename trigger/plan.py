@@ -192,7 +192,7 @@ def rule_matches(rule: Any, state: Dict[str, Any]) -> bool:
         - build_plan（本模块）：按 trigger.rules 顺序逐条判定，取第一条命中。
         - trigger.reachability.check_reachability：
           规则/字段可达性盘点，用它判断某规则能否被某 state 命中。
-        - labs/ticket-source-2026-09-19/run_e2e.py：端到端实验的规则覆盖表，
+        - labs/ticket-source/run_e2e.py：端到端实验的规则覆盖表，
           用它对每条源行的 state 逐条判定，生成 summary.json#rule_matching_matrix。
         - trigger.tests（test_trigger.py 的公开 API 直测）。
     """

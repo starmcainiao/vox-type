@@ -9,8 +9,8 @@ T17c 把 `_rule_matches` 更名为公开 `rule_matches` 并删除了私名。活
 1. `adapters/state_trigger/format.py:618` —— 注释「WHY：trigger._rule_matches 对 state 里缺值的字段…」
 2. `adapters/state_trigger/tests/test_format.py:582` —— docstring「trigger._rule_matches 对 state 里缺值的字段…」
 3. `adapters/state_trigger/tests/test_format.py:709` —— docstring「（涉及 _rule_matches 的语义）」
-4. `labs/ticket-source-2026-09-19/README.md:101、149` —— 两处方法说明
-5. `labs/ticket-source-2026-09-19/source_map.json:66` —— `verification` 字段里「用引擎的 _rule_matches」
+4. `labs/ticket-source/README.md:101、149` —— 两处方法说明
+5. `labs/ticket-source/source_map.json:66` —— `verification` 字段里「用引擎的 _rule_matches」
 
 修法：**只改名字**，`_rule_matches` → `rule_matches`，不改任何句子的其余内容、不改任何代码行为。
 
@@ -19,8 +19,8 @@ T17c 把 `_rule_matches` 更名为公开 `rule_matches` 并删除了私名。活
 ```
 允许修改：adapters/state_trigger/format.py（仅第 618 行附近那一处注释）
 允许修改：adapters/state_trigger/tests/test_format.py（仅 582/709 两处 docstring）
-允许修改：labs/ticket-source-2026-09-19/README.md（仅 101/149 两处）
-允许修改：labs/ticket-source-2026-09-19/source_map.json（仅第 66 行 verification 串内的名字）
+允许修改：labs/ticket-source/README.md（仅 101/149 两处）
+允许修改：labs/ticket-source/source_map.json（仅第 66 行 verification 串内的名字）
 禁止触碰：其他一切文件——trigger.py / reachability.py / summary.json / 任何逻辑
 ```
 
@@ -34,8 +34,8 @@ T17c 把 `_rule_matches` 更名为公开 `rule_matches` 并删除了私名。活
 
 1. `python3 -m unittest discover -s adapters` 全绿，测试数 **284 不变**（改名前基线）；
 2. `grep -rn "_rule_matches" --include='*.py' adapters/` → **0 命中**；
-3. `grep -n "_rule_matches" labs/ticket-source-2026-09-19/README.md labs/ticket-source-2026-09-19/source_map.json` → **0 命中**；
-4. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → **真 rc 0（不接管道量）**，断言条数 148 不变；
+3. `grep -n "_rule_matches" labs/ticket-source/README.md labs/ticket-source/source_map.json` → **0 命中**；
+4. `python3 labs/ticket-source/run_e2e.py` → **真 rc 0（不接管道量）**，断言条数 148 不变；
    （source_map.json 的 verification 串只改名字，可达性/命中数等被断言字段一字不动）
 5. `git diff` 逐行核对：全部改动落在注释 / docstring / JSON 字符串内，无一行可执行代码变更；
 6. `git status --porcelain -uall` 恰为白名单 4 个文件（summary.json 若因重跑再生，允许出现）。
@@ -46,7 +46,7 @@ T17c 把 `_rule_matches` 更名为公开 `rule_matches` 并删除了私名。活
 
 ## 回滚方式
 
-`git checkout -- adapters/state_trigger/format.py adapters/state_trigger/tests/test_format.py labs/ticket-source-2026-09-19/`。
+`git checkout -- adapters/state_trigger/format.py adapters/state_trigger/tests/test_format.py labs/ticket-source/`。
 
 ## 执行方式
 

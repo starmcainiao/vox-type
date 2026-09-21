@@ -26,7 +26,7 @@ adapters/framework_kefu/tests/__init__.py
 adapters/framework_kefu/tests/test_normalize.py
 adapters/framework_kefu/tests/test_bridge.py
 adapters/framework_kefu/tests/test_failclosed.py
-labs/kefu-bridge-2026-09-18/run_session.py 真链路联调驱动（抓话术、跑两档、出报告；产物只写 /tmp 与 labs 的 jsonl）
+labs/kefu-bridge/run_session.py 真链路联调驱动（抓话术、跑两档、出报告；产物只写 /tmp 与 labs 的 jsonl）
 ```
 
 ### 1. `normalize.py`（**不许加步**，docs/10 §10.3）
@@ -80,10 +80,10 @@ class KefuBridge:
 4. 命中 → 用 `runtime.Executor` 播包（`allow_fallback=False` 亦可，因为已确认命中）；**未命中 + `allow_fallback=False` → 抛 `RuntimeMissError`（fail-closed，不落盘、不播替代）**；未命中 + `allow_fallback=True` → 调 `live_tts` 合成并出 `miss` 事件（`reason` 区分 `text_not_prebaked` / `key_not_prebaked`）；
 5. 引擎不一致（包音色 ≠ 慢路合成器音色）→ `fallback` / `engine_mismatch`，**不播包内音频**。
 
-### 4. `labs/kefu-bridge-2026-09-18/run_session.py`（联调驱动，产物只写 `/tmp` 与 `labs/.../raw/`）
+### 4. `labs/kefu-bridge/run_session.py`（联调驱动，产物只写 `/tmp` 与 `labs/.../raw/`）
 
 ```
-python3 labs/kefu-bridge-2026-09-18/run_session.py --pack <已铸包> --turns <json> --out <dir> [--allow-fallback]
+python3 labs/kefu-bridge/run_session.py --pack <已铸包> --turns <json> --out <dir> [--allow-fallback]
 ```
 - 输入 `--turns`：`[{"user_text": "…"} | {"key": "…"}]` 的 JSON 列表（**我验收时把真链路抓到的固定话术喂进来**）；
 - 对每轮：`say` 造用户音频 → `run_turn` → 记录 `{state, match_mode, tts_calls, first_audio_ms, live_text}`；
@@ -97,7 +97,7 @@ python3 labs/kefu-bridge-2026-09-18/run_session.py --pack <已铸包> --turns <j
           adapters/framework_kefu/kefu_client.py, adapters/framework_kefu/bridge.py,
           adapters/framework_kefu/tests/__init__.py, adapters/framework_kefu/tests/test_normalize.py,
           adapters/framework_kefu/tests/test_bridge.py, adapters/framework_kefu/tests/test_failclosed.py,
-          labs/kefu-bridge-2026-09-18/run_session.py
+          labs/kefu-bridge/run_session.py
 允许修改：无
 禁止触碰：其余一切文件（含 core/**、rules/**、assets/**、compiler/**、runtime/**、eval/**、cli/**、
           packs/**、adapters/tts_macsay/**、docs/**、各层 AGENTS.md、根 AGENTS.md、README.md）；
@@ -143,7 +143,7 @@ python3 labs/kefu-bridge-2026-09-18/run_session.py --pack <已铸包> --turns <j
 
 ```
 cd （仓库根）
-rm -rf adapters/framework_kefu labs/kefu-bridge-2026-09-18
+rm -rf adapters/framework_kefu labs/kefu-bridge
 ```
 
 （本卡只新增文件，未跟踪 → `git clean` 等价可用。）

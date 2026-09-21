@@ -1,5 +1,5 @@
 """
-labs/wubench-dialect-2026-09-19/run_dialect_probe.py — 方言域 ASR 能力边界实测（T15）
+labs/wubench-dialect/run_dialect_probe.py — 方言域 ASR 能力边界实测（T15）
 
 链路（严格止于 ASR，止于 CER）：
     Wu-Bench asr.parquet（吴语 RIFF/WAV 字节 + label 转写）
@@ -28,8 +28,8 @@ labs/wubench-dialect-2026-09-19/run_dialect_probe.py — 方言域 ASR 能力边
   - 脚本结尾自断言 n_valid + n_skipped + n_asr_fail == n_sampled，失败即非零退出。
 
 用法（裸跑即可，无需 PYTHONPATH——main() 自带上仓库根）：
-    ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py
-    ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py --limit 20
+    ~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py
+    ~/miniforge3/bin/python labs/wubench-dialect/run_dialect_probe.py --limit 20
 
 落盘分流（防部分跑破坏性覆盖正式产物）：
     正式跑（无 --limit） → report.json / raw/samples.jsonl
@@ -600,7 +600,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
 
 def main(argv: List[str]) -> int:
-    # sys.path 兜底（对齐 labs/ticket-source-2026-09-19/run_e2e.py 先例）：
+    # sys.path 兜底（对齐 labs/ticket-source/run_e2e.py 先例）：
     # 验收命令是字面裸跑（无 PYTHONPATH），脚本必须自带上仓库根，不得依赖调用方环境。
     # 放在 parse_args 之后、任何产品模块 import（eval.cer / adapters.asr_omlx）之前——
     # 本脚本全部产品 import 都是函数内延迟导入，此位置即最早可达点。

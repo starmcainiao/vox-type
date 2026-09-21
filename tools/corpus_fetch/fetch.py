@@ -12,7 +12,7 @@ fetch.py — 公开语料的可复现获取器（纯标准库，无第三方依�
   3. 台账里的 size/sha256 必须来自**实测**并与平台声明交叉核对，不等即报错；
   4. 语料一律落仓外（缺省 ~/corpus/），本脚本拒绝往仓库目录里写数据。
 
-**由 labs/corpus-harvest-2026-09-18/fetch.py 提升（T12）时去掉的硬编码**：
+**由 labs/corpus-harvest/fetch.py 提升（T12）时去掉的硬编码**：
   - `CORPUS_ROOT`  → `--out-root`（缺省值保留为 ~/corpus/，可覆盖）
   - `REPO_ROOT`    → 缺省从 `__file__` 自推（仓库根 = 本文件往上两级），`--repo-root` 可覆盖
   - sources.json / corpus.lock.json **留在 labs/ 那批**（本批的数据），本工具用 `--sources` / `--lock` 指定

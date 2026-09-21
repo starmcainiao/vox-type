@@ -2,13 +2,13 @@
 
 > **定位**：`[扩]` 扩展区。仓外语料的获取与派生工具，**只写仓外，不进任何层契约**。
 > 规格依据：`docs/11-语料自给与语义提案-口径.md`（§11.3 许可台账、§11.5 golden 格式、§11.9 实测记录）。
-> 出身：由 `labs/corpus-harvest-2026-09-18/` 的三件套搬入并去硬编码（见 T12）。
+> 出身：由 `labs/corpus-harvest/` 的三件套搬入并去硬编码（见 T12）。
 
 ---
 
 ## 一、为什么在 tools/ 而不是 labs/
 
-`labs/corpus-harvest-2026-09-18/` 里那三件套**跑通了但是一次性的**：脚本没有测试、
+`labs/corpus-harvest/` 里那三件套**跑通了但是一次性的**：脚本没有测试、
 没有回归保护，下一批（换业务语料、方言链路）还得重写。T12 把它们固化为可复用的工具，
 **留口子优先于大重构**——不重写逻辑，只做「搬位置 + 去硬编码 + 补测试」。
 
@@ -54,12 +54,12 @@ cd （仓库根）
 
 # ① 只审计许可，不下载（先跑这个，别先跑下载）
 python3 tools/corpus_fetch/fetch.py --dry-run \
-        --sources labs/corpus-harvest-2026-09-18/sources.json \
+        --sources labs/corpus-harvest/sources.json \
         --lock    ~/corpus/corpus.lock.json
 
 # ② 下载 + 逐文件 sha256 交叉核对
 python3 tools/corpus_fetch/fetch.py \
-        --sources labs/corpus-harvest-2026-09-18/sources.json \
+        --sources labs/corpus-harvest/sources.json \
         --lock    ~/corpus/corpus.lock.json
 
 # ③ 事后巡检：重算 sha256 与台账比对
@@ -97,14 +97,14 @@ python3 -m unittest discover -s tools/tests -v
 | **坑 2 · 大文件一次性读进内存** | 已修 | `http_download_to_file`：流式分块写盘 + 边下边算 sha256；先写 `.part` 再改名，失败删 `.part`（残留 = 会被误认成完整语料） |
 | **坑 3 · 台账 read-modify-write 不是原子** | 记录为已知限制 | `write_lock`：临时文件 + `rename`；`_hold_lease` 用 `fcntl.flock` 拿写锁，**检测到并发实例直接拒绝启动** |
 
-## 六、与 labs/corpus-harvest-2026-09-18/ 的关系
+## 六、与 labs/corpus-harvest/ 的关系
 
-- `labs/corpus-harvest-2026-09-18/` **原样保留**，作为本批的历史证据（T12 白名单明确禁止改动它）。
+- `labs/corpus-harvest/` **原样保留**，作为本批的历史证据（T12 白名单明确禁止改动它）。
 - 搬的是三个脚本；**`sources.json` 与 `corpus.lock.json` 不搬**——它们是那一批的**数据**（具体来源声明与
   实测台账），留在 `labs/` 里跟那批的结论绑定。本目录的脚本通过 `--sources` / `--lock` 指向它们。
 - `labs/` 里的 `semantic_probe*.py` / `cross_check_template_rate.py` / `raw/` **没有搬**（T12 只列了三个），
   仍是那批的一次性产物。
-- 那批的 README（`labs/corpus-harvest-2026-09-18/README.md`）仍是**数字的出处**：
+- 那批的 README（`labs/corpus-harvest/README.md`）仍是**数字的出处**：
   逐字档 `0/2433 = 0.00%`、语义档 top-1 `11.8%`、句式可复用率 `1.8%`——对外引用一律以那份为准，
   本目录不提供新的对外数字。
 

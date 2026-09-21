@@ -14,7 +14,7 @@ baseline_literal.py — 逐字档基线测量（docs/11 §11.5 的「实验①�
   - 不判定大小写/空白以外的任何松弛；不许语义近似
   - 同时报「若误用用户话术当输入」的对照值——证明那是范畴错误而非命中率问题
 
-**由 labs/corpus-harvest-2026-09-18/baseline_literal.py 提升（T12）时去掉的硬编码**：
+**由 labs/corpus-harvest/baseline_literal.py 提升（T12）时去掉的硬编码**：
   `REPO` → `--repo-root` 参数，缺省从 `--pack` 向上推仓库根（packs/<业务>/ → 仓库根）。
   仓库根唯一用途是把 `adapters.*` 加入 `sys.path`（复用产品归一化），不参与任何判定。
 """

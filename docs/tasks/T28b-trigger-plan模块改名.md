@@ -48,7 +48,7 @@ T28 迁移已落地（`adapters/state_trigger/` → `trigger/`，语义零变化
 2. **数字守恒**：`discover -s adapters` → **152 条全绿**；十根合计 **1,089** 不变；
 3. **负例**：`python3 -c "import trigger.trigger"` → 非零退出（ModuleNotFoundError，旧模块名已死）；
    `python3 -c "import trigger; print(len(trigger.__all__))"` → 输出 `25`（导出面无变化）；
-4. **labs 回归**：`python3 labs/ticket-source-2026-09-19/run_e2e.py` → rc 0（应不受影响，跑一遍确认）；
+4. **labs 回归**：`python3 labs/ticket-source/run_e2e.py` → rc 0（应不受影响，跑一遍确认）；
 5. **diff 卫生**：`git status --porcelain -uall` 新增改动全部在白名单内；`plan.py` 与改名前 `trigger.py` 的
    内容差异仅限 import/文档字符串中的模块名提法（验收方逐行 diff）。
 

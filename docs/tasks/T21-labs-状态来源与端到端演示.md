@@ -10,7 +10,7 @@
 本卡补上第一个状态来源，并让 `源 → state → plan → 留痕` 端到端跑通，产出**可复现的原始证据**。
 
 **为什么落 `labs/` 而不是 `adapters/`**（三条，缺一不可）：
-1. 形态未稳定，照 T11 的前身做法先落实验区（`labs/kefu-bridge-2026-09-18/run_session.py` 就是这么起步的）；
+1. 形态未稳定，照 T11 的前身做法先落实验区（`labs/kefu-bridge/run_session.py` 就是这么起步的）；
 2. **真实业务系统（工单/CRM/账务）不在公开仓里**，正式适配器现在做不了——本卡用公开 demo 形态代替；
 3. `adapters/AGENTS.md §⑧` 已**明文禁止**再往 `adapters/` 加第二个非引擎同类模块。
 
@@ -21,7 +21,7 @@
 
 ## 目标（可验收的产物）
 
-全部落在**新目录** `labs/ticket-source-2026-09-19/`：
+全部落在**新目录** `labs/ticket-source/`：
 
 - 产物 1：`tickets.source.json` —— 公开 demo 的「工单系统导出」形态（自造数据，**无任何私人信息**）
 - 产物 2：`source_map.json` —— **显式映射表**：源字段 → `state` 字段、派生字段的计算规则、敏感字段声明
@@ -38,13 +38,13 @@
    落进 `state` 的 structured 层即报错；
 4. **不依赖真实时钟**：派生字段需要"今天"的地方**必须能注入**（否则结果不确定、也无法测）；未注入即报错；
 5. **fail-closed**：源缺字段 / 类型不符 / 无法计算派生字段 → **抛错，不产出半个 state**；
-6. **落盘一律在 `labs/ticket-source-2026-09-19/` 内**（留痕、原始数据、摘要都在这里）；不得写进 `packs/`、
+6. **落盘一律在 `labs/ticket-source/` 内**（留痕、原始数据、摘要都在这里）；不得写进 `packs/`、
    不得写仓外、**不得写仓内其他目录**。
 
 ## 允许修改的文件（白名单）
 
 ```
-允许新增：labs/ticket-source-2026-09-19/**（含 raw/、README.md、fixture 与脚本）
+允许新增：labs/ticket-source/**（含 raw/、README.md、fixture 与脚本）
 允许修改：无
 禁止触碰：其他一切文件——尤其不得改 core/ rules/ compiler/ assets/ runtime/ eval/ cli/（冻结区）、
           不得改 adapters/（本卡只**读**它的公开 API，不改任何字符）、不得改 packs/、不得改 docs/
@@ -60,7 +60,7 @@
 
 ## 验收标准（逐条可判定，我会逐条核对）
 
-1. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → **rc 0**，产出 `raw/turns.jsonl` 与 `summary.json`；
+1. `python3 labs/ticket-source/run_e2e.py` → **rc 0**，产出 `raw/turns.jsonl` 与 `summary.json`；
 2. **端到端断言在内**：源 → state 通过 `validate_state`；`build_plan` 产出的 plan 的每个 key 都 ∈ `phrases.json`；
    `record_turn` 写出留痕且 **留痕行数 == 处理条数**；
 3. **负例（脚本内自断言，失败即非零退出）**：
@@ -70,7 +70,7 @@
 4. **敏感值独立复核**（脚本里做，把结果打进 `summary.json` 并在报告里贴）：
    留痕文件里 grep 工单号 / 客户标识 → **0 命中**；
 5. **可复现**：同一份源 + 同一注入日期，跑两次 → `summary.json` **逐字段相同**（除时间戳类字段外）；
-6. `git status --porcelain -uall` 的新增文件**全部**在 `labs/ticket-source-2026-09-19/` 内；
+6. `git status --porcelain -uall` 的新增文件**全部**在 `labs/ticket-source/` 内；
    **冻结区与 `adapters/` 零 diff**（我会跑 `git diff --stat -- core rules compiler assets runtime eval cli adapters packs` 应为空）；
 7. `python3 -m unittest discover -s adapters` → 仍 **241 条全绿**（证明本卡没有反向污染既有层）。
 
@@ -84,7 +84,7 @@
 
 ## 回滚方式
 
-新增目录 → `git clean -fd labs/ticket-source-2026-09-19`。不触碰既有文件，回滚无残留。
+新增目录 → `git clean -fd labs/ticket-source`。不触碰既有文件，回滚无残留。
 
 ## 执行方式
 

@@ -3,7 +3,7 @@
 ## 背景（只写必需）
 
 `trigger.py::_rule_matches` 是规则匹配的**唯一实现**（兜底语义、字段缺值不命中、区间比较都在里面）。
-labs 的规则覆盖表（`labs/ticket-source-2026-09-19/run_e2e.py`）已经在用它生成
+labs 的规则覆盖表（`labs/ticket-source/run_e2e.py`）已经在用它生成
 `covered_by_ticket_id` —— 当时用的是**私有名**（下划线开头），这是 T21b 验收记录里明文登记的权宜：
 「替代方案是在 labs 复制匹配逻辑，那违反『不复制校验逻辑』；但已登记待办：若长期要用，
 应在 adapters/state_trigger 暴露公开匹配 API」。
@@ -20,7 +20,7 @@ labs 的规则覆盖表（`labs/ticket-source-2026-09-19/run_e2e.py`）已经在
    **私有名一个不留**（不留 `_rule_matches = rule_matches` 这类别名影子——与行为不符的名字
    必须消失，T21e 的教训）；
 2. `adapters/state_trigger/__init__.py`：**纯追加**导出 `rule_matches`（`__all__` 同步追加一行）；
-3. `labs/ticket-source-2026-09-19/run_e2e.py`：两处代码（`from adapters.state_trigger.trigger import _rule_matches`
+3. `labs/ticket-source/run_e2e.py`：两处代码（`from adapters.state_trigger.trigger import _rule_matches`
    的 import 与唯一调用点）改用公开名；三处**说明文字**里出现的 `_rule_matches` 字样同步改为
    `rule_matches`（说明文字不许指向一个已经不存在的名字——否则就是新的假陈述）；
 4. `tests/test_trigger.py`：**新增**公开名的直接单测 ≥3 条（兜底 when=None → True；
@@ -32,7 +32,7 @@ labs 的规则覆盖表（`labs/ticket-source-2026-09-19/run_e2e.py`）已经在
 允许修改：adapters/state_trigger/trigger.py
 允许修改：adapters/state_trigger/__init__.py（只允许追加导出，不得删改既有行）
 允许修改：adapters/state_trigger/tests/test_trigger.py（只允许新增用例，不得删改既有用例）
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py（只允许改名与上述说明文字，不得改判定逻辑）
+允许修改：labs/ticket-source/run_e2e.py（只允许改名与上述说明文字，不得改判定逻辑）
 禁止触碰：其他一切文件——尤其 format.py、ledger.py、packs/、docs/、summary.json / source_map.json
           （它们由 run_e2e.py 重跑再生，不许手改）
 ```
@@ -50,9 +50,9 @@ labs 的规则覆盖表（`labs/ticket-source-2026-09-19/run_e2e.py`）已经在
 2. `python3 -c "from adapters.state_trigger import rule_matches; print(rule_matches)"` 可导入；
 3. **影子名清零**：`grep -rn "_rule_matches" --include='*.py' --include='*.json' --include='*.md' .`
    （仓库根起，排除 `.git`）→ **0 命中**；
-4. **labs 重跑可再生**（验收方会亲自跑）：`python3 labs/ticket-source-2026-09-19/run_e2e.py` →
+4. **labs 重跑可再生**（验收方会亲自跑）：`python3 labs/ticket-source/run_e2e.py` →
    **真退出码 0（不许接管道量 `$?`）**，断言条数与改动前一致（148 条，只许多不许少），
-   重跑后 `git diff --stat labs/ticket-source-2026-09-19/` 里只允许出现本卡白名单内的文件
+   重跑后 `git diff --stat labs/ticket-source/` 里只允许出现本卡白名单内的文件
    与 `summary.json`（`generated_from` 字段随脚本再生而更新，属正常）；
 5. **语义零变化（行为对照）**：`packs/demo-brief` 走 `build_plan`——构造条件规则全不匹配的
    state → 命中兜底 `closing`；构造 `is_overdue=true` → 命中 `overdue`。两条行为与改名前一致；
@@ -67,8 +67,8 @@ labs 的规则覆盖表（`labs/ticket-source-2026-09-19/run_e2e.py`）已经在
 ## 回滚方式
 
 前三个白名单文件：`git checkout -- adapters/state_trigger/`；
-labs 文件：`git checkout -- labs/ticket-source-2026-09-19/run_e2e.py`；
-再生产物若残留：`git checkout -- labs/ticket-source-2026-09-19/summary.json`。
+labs 文件：`git checkout -- labs/ticket-source/run_e2e.py`；
+再生产物若残留：`git checkout -- labs/ticket-source/summary.json`。
 
 ## 执行方式
 

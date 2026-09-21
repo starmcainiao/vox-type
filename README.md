@@ -1,103 +1,88 @@
+<div align="center">
+
 # vox-type
 
-> **Pre-cast voice assets + duplex behaviour controller for voice agents.**
-> 让语音链路里**流程决定的那部分话术**零延迟、零成本、可审核；不确定的部分才动用模型。
-> （公开语料实测：事实密集型客服里流程决定性话轮约占 23%——适用边界见 `docs/11`。）
+**Pre-cast voice asset layer + duplex behaviour controller for voice agents**
+**语音链路的预铸话术资产层 + 双工行为控制器**
 
-**Status**：**十一个测试根全绿（1,142 条测试，含 2 条按设计 skip）**，端到端闭环已通——
-`compiler` 出包 → `assets` 校验 → `runtime` 播包 → `eval` 对拍；`bin/vox` 五命令可用；
-已通过适配器接入一个开源客服框架**真链路实测**（key 驱动档首帧 P50 0.14 ms，n=5，见 T11 验收；
-docs/09 另轮 0.232 ms，n=20；
-LLM 自由文本档 0% 命中——命中率上限由上游表示形态决定，见 `docs/09` / `docs/10`）。
-业务包 3 个（`packs/repair/`、`packs/fin-cs/`、`packs/demo-brief/`），新增业务 = 新增目录、零内核改动。
-回读 CER 基准已可复现（本地 ASR 回读，真机闭环 CER 0.0，见 `eval/readback.py` 与 `docs/13`）；
-方言域 ASR 边界已实测（Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect-2026-09-19/`）。
-License: **Apache-2.0**（2026-09-19 拍板；与仓内 MIT/Apache-2.0 派生语料兼容——语料台账见
-`labs/corpus-harvest-2026-09-18/`；`packs/*/golden/` 按 `packs/AGENTS.md` 不进公开分发）。
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org)
+[![Tests](https://img.shields.io/badge/tests-1147%20passing-brightgreen.svg)](#quick-start)
+[![Dependencies](https://img.shields.io/badge/dependencies-zero-standard%20library-orange.svg)](#quick-start)
+
+</div>
+
+> 让语音链路里**流程决定的那部分话术**零延迟、零成本、可审核；不确定的部分才动用模型。
+> 定位：**可短路语音栈的覆盖层**——级联链路（ASR→LLM→TTS）里坐在 LLM 与 TTS 之间，
+> 端到端 S2S 模型里做整轮旁路。
+
+**English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
+dialogue into audited, versioned audio assets, and plays them in ~0.2 ms when the upstream model
+decides to speak them — falling back to your existing TTS path on every miss (fail-closed, fully
+traced). Zero third-party dependencies.
 
 ---
 
-## 一句话
+## Why
 
-大厂做端到端语音模型（语音进、语音出）；我们做**模型外面的那一层**——
-把「哪些话该预铸成音频、怎么按 key 取、命中怎么播、未命中怎么兜底、双工节奏怎么配」
-做成开放协议 + 参考实现。
+1. **流程话术在替慢链路陪跑。** 一通「查一下账单」的电话，用户要等 ASR + LLM 首 token + TTS
+   才能听到「请提供您的户号」——这句话由业务流程决定，却陪整条链路等了几秒，还烧一次推理。
+   我们实测：预铸命中读包首响 **P50 0.232 ms**，链路级实时合成 **586.7 ms**（≈2530×，n 见 `docs/09`）。
+2. **生成式话术不可审计。** 客服话术（催收/政务/通知）有合规要求，LLM 每次生成都在赌。
+   预铸资产 = **字节级一致、可审核、可版本化**；源话术一改，指纹门禁自动让缓存失效（fail-closed）。
+   行业背景：AI 骚扰电话投诉年增 230%（财联社 2025-04），厂商靠「500 套合规话术模板」应对——
+   模板没有治理，我们有准入判据（[`docs/14`](docs/14-预铸准入判据.md)）。
+3. **缓存手法行业皆知，资产层没有开源件。** 「缓存预合成音频」是 Vapi 官方文档里的优化技巧；
+   把它做成**有准入、有质检、有指纹、能差量重铸的层**（含双工参数治理）没有现成开源实现
+   （同类项目检索见 [`docs/04-prior-art.md`](docs/04-prior-art.md)、市场验证见 [`docs/16`](docs/16-行业痛点与切入点分析.md)）。
 
-## 为什么是这一层
+**诚实边界**：适用范围 = 流程决定的话轮（真实客服语料实测占 23%，催收/账户服务场景）；
+自由对话部分永远走原路——本项目不试图、也不应该覆盖它。
 
-1. **端到端模型把语义行为压进权重里**：语速档、耐心窗、回读密度这些业务参数，
-   在 E2E 模型里改不了、审不了、版本化不了——每个业务都得重训。
-   资产层天生是**显式、可编辑、可审核、可版本化**的。
-2. **延迟的账**：级联链路里 LLM 首 token（300–1000ms）才是大头，TTS 首包只占 75–200ms。
-   所以预铸必须「文本 + 音频成对」——命中时**连 LLM 一起跳过**，才有 2.5s → 0.5s 量级的收益
-   （Vapi 公开案例口径）。
-3. **业界已验证但没开源**：预录音（IVR 传统）、音频缓存（Vapi 2025）、
-   部分语音预测整句并预取（Amazon, Interspeech 2023）、推测式语音处理（NVIDIA）——
-   都是各家私有实现。**「plan 键值寻址的预铸资产层 + 双工参数控制器」这个组合没有现成开源件**
-   （检索记录见 [docs/04-prior-art.md](docs/04-prior-art.md)）。
+## Architecture
 
-## 三件东西（协议草案）
+```
+ compiler（编译期管线）        trigger（决策表）           runtime（线性执行器）
+ phrases.json ──预铸──▶  assets 包 ◀──选 key──  state → plan ──▶ 播包/槽位合成/事件流
+   │  五类规则校验         │ key→音频+指纹+TTL     │ 规则按序匹配       │
+   │  四属性校验          │ +变体池+语速档         │ 显式兜底           │ 未命中 → fail-closed
+   ▼                     ▼                      ▼                   ▼ 走宿主原 TTS（留痕）
+ packs/<业务>/（数据）─── bin/vox（check/build/bench/verify/run）─── adapters/<宿主>（钩子）
+```
+
+三件核心抽象（协议草案见 [`docs/02-protocols-draft.md`](docs/02-protocols-draft.md)）：
 
 | 件 | 职责 | 形态 |
 |---|---|---|
 | **plan** | 控制面：模型/状态机输出 `{key, slots, variant, rate}` 序列，而非自由文本 | JSON 协议 |
-| **asset registry** | 数据面：`key → 音频 + 版本 + TTL + 变体池 + 语速档`，含文本指纹防「文音不符」 | 端上 SQLite+文件 / 服务端 KV |
-| **duplex controller** | 行为面：耐心窗（自适应端点）、语速档收敛、留白/背景回应、打断策略 | 配置 + 策略代码 |
+| **asset registry** | 数据面：`key → 音频 + 版本 + TTL + 变体池 + 语速档`，文本指纹防「文音不符」 | 端上 SQLite+文件 / 服务端 KV |
+| **duplex controller** | 行为面：耐心窗、语速档收敛、留白/背景回应、打断策略 | 配置 + 策略代码 |
 
-细节见 [docs/02-protocols-draft.md](docs/02-protocols-draft.md)。
+## Status（全部实测，口径见 `docs/09` / `docs/13`）
 
-## 设计要点（讨论沉淀）
-
-- 字模最小粒度 = **整句**（含完整语调轮廓），拼接只发生在句边界 + 自然停顿；
-  词级拼接仅在**封闭词表**（数字/金额/日期/是-否）合法。
-- 难点不在预铸，在**一致性**：同源 TTS、同版本、统一响度、变体池防复读机、
-  预铸流水线自动质检。
-- 预存的是**话术**（静态资产），**用户数据不预存**——槽值现场本地合成、不进资产库。
-
-见 [docs/03-design-notes.md](docs/03-design-notes.md)。
-
-## 证据计划（开源前先有数据）
-
-五条指标：首响延迟 P50/P99 · 预铸命中率/时长占比 · 单位会话成本 ·
-拼接自然度（回读 CER + 盲测 A/B）· 双工质量（打断准确率/轮转延迟）。
-数据集与评测协议见 [docs/05-evidence-plan.md](docs/05-evidence-plan.md)。
-其中「**拼接自然度评测协议**」目前业界没有标准基准，是本仓库打算贡献的首个公开资产。
-
-## 文档索引
-
-- [docs/01-problem-and-scope.md](docs/01-problem-and-scope.md) — 问题与被砍掉的范围
-- [docs/02-protocols-draft.md](docs/02-protocols-draft.md) — 三契约草案
-- [docs/03-design-notes.md](docs/03-design-notes.md) — 设计结论（为什么这么设计）
-- [docs/04-prior-art.md](docs/04-prior-art.md) — 同类项目检索与缺口论证
-- [docs/05-evidence-plan.md](docs/05-evidence-plan.md) — 数据集与验证方案
-- `docs/06`~`docs/08` — 预铸/执行补定口径、链路级对拍、CLI 行为口径
-- `docs/09`~`docs/11` — 真链路对拍、命中口径、语料自给与语义提案（含实测边界）
-- `docs/12` — 前置包定位与任务清单（个人助手形态）
-- [`docs/14-预铸准入判据.md`](docs/14-预铸准入判据.md) — **哪些话允许"固定"**（准三类/禁四类，2026-09-19 拍板成文；新增 key 前必读）
-- [`docs/16-行业痛点与切入点分析-2026-09.md`](docs/16-行业痛点与切入点分析-2026-09.md) — 市场验证：合规可审核的预铸话术资产层（含来源）
-- [`docs/17-业界坐标与改造预测-2026-09.md`](docs/17-业界坐标与改造预测-2026-09.md) — 前瞻：约束解码（Trie/FSM）是「brain 按 key 说话」的下一跳；缓存分层全景（含来源）
-- [`docs/18-开源就绪评估-2026-09-19.md`](docs/18-开源就绪评估-2026-09-19.md) — 开源纪律逐条核对与差距清单
-- [`docs/13-未完成清单.md`](docs/13-未完成清单.md) — **「还没做完什么」的唯一权威来源**（待拍板 / 冻结区批次 / 已关闭裁定）
-- `docs/tasks/` — 全部任务卡与逐卡验收记录（`00-索引.md` / `01-接手指南-新会话入口.md`）
-- `labs/` — 一次性实验与外部对拍（不进任何层契约，产物自带口径与原始数据）
-
+- **十一个测试根 1,147 条测试全绿**；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
+- 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
+- **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
+  命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
+- 回读 CER 基准可复现（本地 ASR 回读，真机闭环 CER 0.0）；方言域 ASR 边界已实测
+  （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）。
 
 ## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
 
 ```sh
-git clone <本仓库> vox-type && cd vox-type
+git clone https://github.com/starmcainiao/vox-type && cd vox-type
 
 # 1) 全量测试（十一个测试根）
 for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do
   python3 -m unittest discover -s $d 2>&1 | tail -1
 done
 
-# 2) 铸一个业务包（预铸成功率必须 100%）
+# 2) 铸一个业务包（预铸成功率必须 100%，带病不上线）
 bin/vox pack build packs/heat_kefu --out ~/vox-build/heat-kefu --json
 
-# 3) 查包/对拍/质检
+# 3) 查包 / 对拍 / 质检
 bin/vox pack check packs/heat_kefu --json
-bin/vox bench ~/vox-build/heat-kefu --help   # 离线对拍（详见 docs/08）
+bin/vox bench ~/vox-build/heat-kefu --help   # 离线对拍（口径见 docs/08）
 bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
 ```
 
@@ -105,18 +90,45 @@ bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
 `adapters/framework_kefu/`（环境变量 `KEFU_AGENT_ROOT` 指向其仓根）。
 
-## 第三方语料与归属
+## Documentation
 
-- `packs/fin-cs/` 话术为**改写**（`docs/11 §11.7` 禁止逐字复制语料原文），源语料 MIT /
-  Apache-2.0，来源与 sha256 台账：`labs/corpus-harvest-2026-09-18/corpus.lock.json`；
-- `labs/corpus-harvest-2026-09-18/raw/`、`labs/corpus-harvest-2026-09-18/corpus.lock.json`
-  含第三方语料**逐字转写**（均为可再分发许可，本仓保留来源台账即 attribution）；
-- `packs/fin-cs/golden/`、`packs/heat_kefu/admission.md` 等验收资产随仓（无真人隐私；
-  真人标注（若未来出现）将按 `docs/11 §11.7` 排除出公开分发）；
+| 主题 | 文档 |
+|---|---|
+| 问题界定 / 协议草案 / 设计结论 / 同类检索 / 证据计划 | [docs/01](docs/01-problem-and-scope.md) · [02](docs/02-protocols-draft.md) · [03](docs/03-design-notes.md) · [04](docs/04-prior-art.md) · [05](docs/05-evidence-plan.md) |
+| 预铸与执行口径 / 剧本四属性 / CLI 行为口径 | `docs/06` ~ `docs/08` |
+| 真链路对拍 / 命中口径 / 语料自给实测（23% 边界） | `docs/09` ~ `docs/11` |
+| **预铸准入判据**（哪些话允许"固定"；新增 key 前必读） | [`docs/14`](docs/14-预铸准入判据.md) |
+| 市场验证 / 业界坐标与改造预测 / 开源就绪评估 | [16](docs/16-行业痛点与切入点分析.md) · [17](docs/17-业界坐标与改造预测.md) · [18](docs/18-开源就绪评估.md) |
+| 前置包定位 / 未完成清单（单一事实源） | [docs/12](docs/12-前置包-定位与任务清单.md) · [`docs/13`](docs/13-未完成清单.md) |
+| 全部任务卡与逐卡验收记录 / 实验区 | `docs/tasks/` · `labs/` |
+
+## Roadmap
+
+- [x] M1 · 八层机制闭环（compiler → assets → runtime → eval，离线对拍出数）
+- [x] M2 · 真链路集成（kefu 钩子 21 行接入 + 实弹命中，字节级验证）
+- [x] M2.5 · 话术同源包（`packs/heat_kefu`，yaml 指纹门禁）+ 方言域 ASR 边界实测
+- [ ] **双工行为控制器**：四参数（耐心窗/背景回应/打断/语速档）从校验走向消费（T19/T20）
+- [ ] **整段 → plan 拼接匹配**：多分句话术的序列命中（当前 14 条多分句走原路）
+- [ ] **key 约束解码**：用 Trie/FSM 把 LLM 输出空间物理约束到合法 key 集合（业界正解，见 [`docs/17`](docs/17-业界坐标与改造预测.md)）
+- [ ] 回流闭环：日志挖掘 → 话术建议（M3）
+
+## Third-party data & attribution
+
+- `packs/fin-cs/` 话术为**改写**（`docs/11 §11.7` 禁止逐字复制语料原文），源语料 MIT / Apache-2.0，
+  来源与 sha256 台账：`labs/corpus-harvest/corpus.lock.json`；
+- `labs/corpus-harvest/raw/` 含第三方语料**逐字转写**（均为可再分发许可，来源台账即 attribution）；
+- 本仓库不含任何用户录音、会话数据或私有部署信息；真人标注（若未来出现）按 `docs/11 §11.7`
+  排除出公开分发；
 - 环境变量：`CORPUS_ROOT`（语料根，缺省 `~/corpus`）、`KEFU_AGENT_ROOT`（kefu 仓根）、
-  `KEFU_PRECAST_*`（预铸钩子开关，见 `adapters/framework_kefu/`）。
+  `KEFU_PRECAST_*`（预铸钩子开关）。
 
-## 贡献与边界
+## Contributing
 
-- 设计讨论期，欢迎提 issue 质疑协议；代码开工后按里程碑推进。
-- **本仓库不含任何用户录音、会话数据或私有部署信息**——资产库内容只使用公开 demo 话术。
+设计讨论期：欢迎 issue 质疑协议与边界。提 PR 前请读
+[CONTRIBUTING.md](CONTRIBUTING.md)（测试跑法 / 纪律要点：fail-closed、数字必须有出处、
+包是数据不是代码）。安全漏洞走 [SECURITY.md](SECURITY.md)，勿用公开 issue。
+
+## License
+
+[Apache-2.0](LICENSE)。与仓内 MIT / Apache-2.0 派生语料兼容；
+`packs/*/golden/` 的真人标注资产（若未来出现）不进公开分发。

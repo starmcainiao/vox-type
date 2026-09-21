@@ -1,4 +1,4 @@
-# labs/ticket-source-2026-09-19 — 状态来源 + 前置包端到端演示（T21 / T21b / T21c）
+# labs/ticket-source — 状态来源 + 前置包端到端演示（T21 / T21b / T21c）
 
 **这是 `labs/` 实验区的产物：不进任何层的契约。**
 
@@ -15,7 +15,7 @@
 T21c 又补上了**事实陈述的自我校验**：`source_map.json#rule_reachability` 这段手写陈述
 必须与实测覆盖逐条一致，不一致即 rc 3（见「T21c：把过期陈述改成自我验证」）。
 
-**为什么落 `labs/` 而不是 `adapters/`**：① 形态未稳定，照 `labs/kefu-bridge-2026-09-18/` 的前身做法；
+**为什么落 `labs/` 而不是 `adapters/`**：① 形态未稳定，照 `labs/kefu-bridge/` 的前身做法；
 ② 真实业务系统（工单/CRM/账务）不在公开仓里，正式适配器现在做不了；
 ③ `adapters/AGENTS.md §⑧` 已明文禁止再往 `adapters/` 加第二个非引擎同类模块。
 
@@ -42,7 +42,7 @@ T21c 又补上了**事实陈述的自我校验**：`source_map.json#rule_reachab
 cd （仓库根）
 
 # 端到端（rc 0 = 全部断言通过；3 = 有断言失败）
-python3 labs/ticket-source-2026-09-19/run_e2e.py
+python3 labs/ticket-source/run_e2e.py
 
 # 既有测试必须仍全绿（证明本实验没有反向污染既有层）
 python3 -m unittest discover -s adapters        # 241 条
@@ -52,7 +52,7 @@ git diff --stat -- core rules compiler assets runtime eval cli adapters packs
 ```
 
 留痕文件是 append 写，`run_e2e.py` 每次运行前会先清空 `raw/turns.jsonl` 以保证幂等
-（清空动作只发生在 `labs/ticket-source-2026-09-19/` 内）。
+（清空动作只发生在 `labs/ticket-source/` 内）。
 
 ## 口径
 

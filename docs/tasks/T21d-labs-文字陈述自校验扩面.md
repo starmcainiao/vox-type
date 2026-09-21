@@ -28,22 +28,22 @@ T21c 把 `source_map.json#rule_reachability` 那段错陈述改对了，并加�
 
 ## 目标（可验收的产物）
 
-- 产物 1：`labs/ticket-source-2026-09-19/` 下**所有文字陈述**做一次贯通审计：
+- 产物 1：`labs/ticket-source/` 下**所有文字陈述**做一次贯通审计：
   逐条列出**可判定的事实陈述**，标注它"由什么验证"；与实际不符的**改正**
-- 产物 2：`labs/ticket-source-2026-09-19/run_e2e.py` —— **一致性/禁语扫描从单段扩到整个目录**
+- 产物 2：`labs/ticket-source/run_e2e.py` —— **一致性/禁语扫描从单段扩到整个目录**
   （`source_map.json` / `README.md` / `tickets.source.json#_fixture_meta` / `run_e2e.py` 自身的说明文字）
-- 产物 3：`labs/ticket-source-2026-09-19/README.md` —— 补一节「本目录的文字陈述由什么守着」
+- 产物 3：`labs/ticket-source/README.md` —— 补一节「本目录的文字陈述由什么守着」
 - 产物 4：重跑产物 `summary.json` / `raw/turns.jsonl`
 
 ## 允许修改的文件（白名单）
 
 ```
-允许修改：labs/ticket-source-2026-09-19/source_map.json
-允许修改：labs/ticket-source-2026-09-19/README.md
-允许修改：labs/ticket-source-2026-09-19/run_e2e.py
-允许修改：labs/ticket-source-2026-09-19/tickets.source.json（**仅限 `_fixture_meta` 等注解文字**，
+允许修改：labs/ticket-source/source_map.json
+允许修改：labs/ticket-source/README.md
+允许修改：labs/ticket-source/run_e2e.py
+允许修改：labs/ticket-source/tickets.source.json（**仅限 `_fixture_meta` 等注解文字**，
           不得改任何一行 fixture 数据）
-允许修改：labs/ticket-source-2026-09-19/raw/turns.jsonl、summary.json（重跑产物）
+允许修改：labs/ticket-source/raw/turns.jsonl、summary.json（重跑产物）
 禁止触碰：其他一切文件——不得改 packs/ adapters/ core/ rules/ compiler/ assets/ runtime/ eval/ cli/ docs/
 ```
 
@@ -60,7 +60,7 @@ T21c 把 `source_map.json#rule_reachability` 那段错陈述改对了，并加�
 
 ## 验收标准（逐条可判定，我会逐条核对）
 
-1. `python3 labs/ticket-source-2026-09-19/run_e2e.py` → **rc 0**；断言数 **≥109**（只增不减）；
+1. `python3 labs/ticket-source/run_e2e.py` → **rc 0**；断言数 **≥109**（只增不减）；
 2. **那条错陈述已改正且可核**：`_why_is_as_of_still_needed` 里对"规则是否依赖字段"的表述，
    必须与 `trigger.json` 的实际 `when` 引用一致（`days_left` 2 条、`is_overdue` 3 条、`overdue_days` 0 条）；
    断言要**从 `trigger.json` 现算**引用关系再与文字比对，**不得在断言里硬编码这三组数字**；
@@ -88,7 +88,7 @@ T21c 把 `source_map.json#rule_reachability` 那段错陈述改对了，并加�
 
 ## 回滚方式
 
-`git checkout -- labs/ticket-source-2026-09-19/`（T21c 的产物已入库，可精确回滚）。
+`git checkout -- labs/ticket-source/`（T21c 的产物已入库，可精确回滚）。
 
 ## 执行方式
 
@@ -105,5 +105,5 @@ opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21d-labs-
 
 - [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
 
-> **本卡是本线的收尾卡。** 做完之后：`labs/ticket-source-2026-09-19/` 的文字陈述由自校验托管，
+> **本卡是本线的收尾卡。** 做完之后：`labs/ticket-source/` 的文字陈述由自校验托管，
 > **不再为"某句话与事实不符"单开卡片**——那属于机制没覆盖到位，而不是新问题。
