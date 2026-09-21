@@ -30,7 +30,7 @@
          runtime/executor.py（过期判定 + 明确 reason + fail-closed）
          compiler/tests/**、assets/tests/**、runtime/tests/**（新增测试；**既有断言一行不得改**）
          compiler/AGENTS.md、assets/AGENTS.md、runtime/AGENTS.md（实现变更记录 + 迁移说明）
-禁止触碰：其他一切（docs/**、adapters/**、packs/**、eval/**、cli/**、trigger/**、/Volumes/macos/kefu-agent/**）
+禁止触碰：其他一切（docs/**、adapters/**、packs/**、eval/**、cli/**、trigger/**、kefu 仓（另一仓，本卡不动））
 ```
 
 ## 规格要点
