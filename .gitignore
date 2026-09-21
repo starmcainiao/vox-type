@@ -25,3 +25,7 @@ assets/audio/
 # 工具链会话/计划产物（不进仓：ZCode 会话计划、OpenCode 计划目录）
 .zcode/
 .hermes/
+
+# 云端评测凭据（本地专有，永不入库）
+labs/cloud-bench/.env.local
+*.env.local
