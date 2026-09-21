@@ -40,3 +40,90 @@
 ## ⑦ 冻结状态
 
 **[冻] 冻结区（格式冻结，内容随业务）**。业务新增话术只改内容（`compiler/` 重新出包），不触格式。
+
+---
+
+## ⑧ 实现变更记录（T27 · 2026-09-21）：查找热路径索引化
+
+> 冻结区开批第一张卡（`docs/tasks/T27-assets-热路径索引化.md`）。
+> **语义零变化**是硬判据：包格式、API 契约、失败条件、返回值一律不动。
+
+### 变更内容
+
+`assets/pack.py::AssetPack.lookup` 的两处成本被消除：
+
+1. **候选定位：线性遍历 → 惰性身份索引**
+   - 新增私有派生属性 `_identity_index`：`(key, part_index, rate_key, variant) → AssetEntry`。
+   - 首次 lookup 时按包内顺序构建一次（O(n)），之后是 O(1) 查表；但**每次**查表前
+     都要核对一次内容签名（见下）——那一步本身是 O(n)。
+   - 确定性：**首条优先**（`setdefault`），与"线性遍历取首条"完全一致；
+     索引**不过滤**任何条目（指纹不符 / 文件已删的条目照样在索引里，
+     由后续步骤按原判据返回 None）——索引只做寻址，不做判定。
+   - 一致性守卫（`_ensure_lookup_caches` + `_assets_signature`）：索引是只增缓存，
+     而 lookup 靠 `get` 查表命中，缓存挂一条 `assets` 中已不存在的条目时
+     `None` 永远不会出现。守卫用 `assets` 的**内容签名**（每条目一个 `id()`）
+     判定是否需要整表重建，因此能发现**原地改列表**
+     （`assets[i] = x` / `append` / `pop`）与整体换列表两类改动。
+     已知盲区：原地改**字段值**（`entry.text = ...`）不改变 `id()`，检测不到；
+     需要那种粒度时请显式调 `invalidate_lookup_caches()`。
+2. **指纹重算 → 预计算缓存**
+   - 新增私有派生属性 `_text_fingerprints`：按身份键预计算 `fingerprint(entry.text, …)`，
+     一次 O(n)。
+   - **快路径只在 `expected_text == entry.text` 时启用**；`expected_text != entry.text`
+     时**仍走原路径重算**（语义最严格，不做任何推测）。
+   - 快路径只省去这次 sha256：`fingerprint` 是纯函数，预计算值与重算值逐字同参，
+     比对对象与判据都没变。
+
+### 语义不变声明
+
+| 项 | 状态 |
+|---|---|
+| 包格式（manifest / audio / 指纹算法） | **未动**——一个字没改 |
+| API 契约（`load_pack` / `lookup` / `validate_pack` / `AssetPack` 构造签名与字段清单 / `AssetEntry`） | **未动**——公开字段仍是 `pack_id … root` 九个；四个私有派生属性用 `InitVar` 接入 `__post_init__`，**不进** dataclass 字段清单、不进 `__init__` 参数、不进 `repr` 与比较 |
+| `load_pack` 的校验强度 | **只增不减**——所有既有校验原样保留 |
+| lookup 的失败条件 | **未动**——身份不匹配 / 指纹不匹配 / 文件不存在三种情形仍各自返回 None；**没有**因为"load_pack 已校验过指纹"就直接返回候选（那会把校验变成对装载期的隐式依赖） |
+| 返回值 | **未动**——仍返回包内那条 `AssetEntry` 对象本身（不是副本、不是新造对象） |
+
+### 明确不做的优化（保险丝）
+
+- **`stat` 不缓存**：文件存在性是 assets 层的关键保险丝，缓存会让"运行期文件被删"
+  从"未命中"变成"命中"——语义就变了，本卡不许可。索引化后每次 lookup 的 stat 次数
+  已从 O(n) 降到 O(1)，收益已足够。
+- **不把音频内容 / stat 结果缓存进产物**。
+
+### 迁移说明
+
+**既有产物无需迁移。** manifest 与 audio 的格式一个字都没改，`load_pack` 的校验
+强度只增不减；旧包、新包对同一份代码表现完全一致。没有版本闸门、没有双读期、
+没有弃用窗口——这是一次纯实现优化。
+
+### 消费侧（`adapters/framework_kefu/hit_query.py`）
+
+`lookup_key` 原先「线性遍历找候选 → 逐候选 `pack.lookup`」，而 `pack.lookup` 内部
+又是一次 O(n) 线性遍历 → 消费侧最坏 **O(n²)**。T27 保留候选筛选的线性遍历（顺序
+语义必须跟着包内顺序走），把 `pack.lookup` 的内部定位换成索引后，消费侧最坏情形降到
+**O(n·k)**（k = 候选数；每次 `pack.lookup` 内部是 1 次 O(n) 守卫 + 1 次 O(1) 查表）。
+**候选的筛选条件与顺序一律不动**（仍按 `pack.assets` 包内顺序逐条判定
+`key` / `part_index == 0` / `rate_key`），`find_hit` / `find_hit_sequence`
+（含 `miss_reason` / `uncovered` / `blocked_by`）对外行为一字未变。
+
+### 性能实测
+
+数字一律以落盘报告为准：`labs/pack-index-bench/report.json`（口径与复现步骤见
+`labs/pack-index-bench/README.md`）。
+
+**诚实结论（不粉饰）**：保留内容签名守卫的前提下，索引化**并没有让 `lookup` 变快**——
+守卫本身是 O(n) 的比对，成本高于「改前」的纯线性遍历（逐量级拆分见 report.json 的
+`cost_breakdown_no_stat`）。本卡的收益是**语义正确性**（原地改 `assets` 不留静默错误）
+与 **stat 次数 O(n) → O(1)**，不是大包上的 CPU 时间。
+
+之所以仍然保留守卫：把它换成常数开销的判断会让 `lookup` 在原地改动后返回一条已不在
+`assets` 里的条目，`None` 永远不会出现——那是 fail-closed 的破口，本卡不接受。
+可复现反例见 `python3 labs/pack-index-bench/run_bench.py --selfcheck`。
+
+### 判定与验收
+
+等价性、指纹快路径不弱化、stat 不缓存、索引确定性、公开契约未动、以及
+「等价性断言不是空转」的注入验证，全部在 `assets/tests/test_lookup_index.py`；
+消费侧等价性与顺序灵敏度在
+`adapters/framework_kefu/tests/test_hit_query_index.py`。

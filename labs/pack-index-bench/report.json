@@ -1,0 +1,267 @@
+{
+  "card": "docs/tasks/T27-assets-热路径索引化.md",
+  "what": "AssetPack.lookup：线性遍历 + 每次重算 sha256 → 惰性身份索引 + 预计算指纹（语义零变化）",
+  "headline": "保留失效守卫的前提下，索引化并未让 lookup 更快——守卫本身是 O(n) 的内容签名比对，成本高于线性遍历。本卡的收益是语义正确性（原地改 assets 不留下静默错误）与 stat 次数 O(n)→O(1)，不是大包上的 CPU 时间。逐量级数字见 sizes。",
+  "measurement": {
+    "main_arm": "未命中身份臂 + 指纹不匹配臂 + 命中臂按位置分档，stat 用内存 stub 隔离，只测「定位 + 指纹」",
+    "stat_arm": "命中臂走真实 Path.exists()，单列不进主对比",
+    "why_isolated": "Path.exists() 在本机磁盘单次约数百微秒，会淹没定位成本；而 stat 不缓存是保险丝（本卡硬约束②），它必须留在实现里，但不该混进定位成本的对比",
+    "baseline_arm": "本文件 legacy_lookup：T27 之前的 lookup 本体，逐语句照抄；指纹算法调 assets.fingerprint，不复制",
+    "ratio_field": "ratio_old_over_new_p50 = 旧 P50 / 新 P50；>1 表示旧更慢"
+  },
+  "env": {
+    "machine": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "machine_model": "arm64",
+    "python": "3.14.6",
+    "py_impl": "cpython",
+    "repeat": 3
+  },
+  "sizes": {
+    "n=10000": {
+      "n_assets": 10000,
+      "cold_first_lookup_us": {
+        "new_includes_index_build_and_guard": 7472.2,
+        "old": 21.7
+      },
+      "miss_key_arm_no_stat": {
+        "new_index": {
+          "p50_us": 238.541,
+          "p99_us": 379.346,
+          "min_us": 228.833,
+          "max_us": 6243.75,
+          "mean_us": 249.405,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 60.708,
+          "p99_us": 74.586,
+          "min_us": 58.584,
+          "max_us": 176.333,
+          "mean_us": 61.592,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.25
+      },
+      "fingerprint_mismatch_arm_no_stat": {
+        "new_index": {
+          "p50_us": 235.584,
+          "p99_us": 335.182,
+          "min_us": 227.833,
+          "max_us": 691.5,
+          "mean_us": 241.007,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.583,
+          "p99_us": 0.791,
+          "min_us": 0.5,
+          "max_us": 9.083,
+          "mean_us": 0.617,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.0
+      },
+      "hit_first_no_stat": {
+        "new_index": {
+          "p50_us": 470.083,
+          "p99_us": 587.377,
+          "min_us": 453.541,
+          "max_us": 1281.583,
+          "mean_us": 477.615,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.667,
+          "p99_us": 0.833,
+          "min_us": 0.583,
+          "max_us": 19.209,
+          "mean_us": 0.724,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.0
+      },
+      "hit_mid_no_stat": {
+        "new_index": {
+          "p50_us": 472.25,
+          "p99_us": 663.805,
+          "min_us": 453.584,
+          "max_us": 1455.25,
+          "mean_us": 483.798,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 32.605,
+          "p99_us": 57.543,
+          "min_us": 31.167,
+          "max_us": 272.916,
+          "mean_us": 33.767,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.07
+      },
+      "hit_last_no_stat": {
+        "new_index": {
+          "p50_us": 472.02,
+          "p99_us": 627.21,
+          "min_us": 454.209,
+          "max_us": 1261.583,
+          "mean_us": 481.573,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 74.75,
+          "p99_us": 107.185,
+          "min_us": 70.25,
+          "max_us": 476.084,
+          "mean_us": 77.309,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.16
+      },
+      "cost_breakdown_no_stat": {
+        "new_index_plus_guard": 238.541,
+        "new_index_only_no_guard": 0.125,
+        "guard_alone_ensure_lookup_caches": 233.791,
+        "old_linear_scan_full": 60.708,
+        "note": "拆开看：索引查表本身比线性遍历便宜，但失效守卫（内容签名比对）本身是 O(n)，把这部分节省抵消掉了"
+      },
+      "hit_arm_with_real_stat": {
+        "new_index_p50_us": 475.4,
+        "old_linear_p50_us": 4.7,
+        "note": "命中臂必须做一次真实的 Path.exists()（stat 不缓存是保险丝）。该成本主导且两条实现相同，因此单列、不进主对比。"
+      }
+    },
+    "n=200000": {
+      "n_assets": 200000,
+      "cold_first_lookup_us": {
+        "new_includes_index_build_and_guard": 175238.4,
+        "old": 74.3
+      },
+      "miss_key_arm_no_stat": {
+        "new_index": {
+          "p50_us": 6371.167,
+          "p99_us": 9403.117,
+          "min_us": 5781.958,
+          "max_us": 154001.583,
+          "mean_us": 6589.544,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 2043.854,
+          "p99_us": 3024.466,
+          "min_us": 1767.75,
+          "max_us": 19620.709,
+          "mean_us": 2129.165,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.32
+      },
+      "fingerprint_mismatch_arm_no_stat": {
+        "new_index": {
+          "p50_us": 6651.52,
+          "p99_us": 9231.497,
+          "min_us": 5783.042,
+          "max_us": 29457.375,
+          "mean_us": 6735.098,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.583,
+          "p99_us": 1.752,
+          "min_us": 0.5,
+          "max_us": 66.959,
+          "mean_us": 0.697,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.0
+      },
+      "hit_first_no_stat": {
+        "new_index": {
+          "p50_us": 12701.979,
+          "p99_us": 16495.646,
+          "min_us": 11631.709,
+          "max_us": 36803.625,
+          "mean_us": 12978.837,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.708,
+          "p99_us": 0.917,
+          "min_us": 0.583,
+          "max_us": 14.167,
+          "mean_us": 0.727,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.0
+      },
+      "hit_mid_no_stat": {
+        "new_index": {
+          "p50_us": 13672.624,
+          "p99_us": 17405.538,
+          "min_us": 11744.375,
+          "max_us": 52820.0,
+          "mean_us": 13753.919,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 966.771,
+          "p99_us": 2168.993,
+          "min_us": 759.667,
+          "max_us": 13645.167,
+          "mean_us": 1053.102,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.07
+      },
+      "hit_last_no_stat": {
+        "new_index": {
+          "p50_us": 13295.792,
+          "p99_us": 19344.548,
+          "min_us": 11821.5,
+          "max_us": 42730.583,
+          "mean_us": 13522.503,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 2249.124,
+          "p99_us": 3500.883,
+          "min_us": 1913.792,
+          "max_us": 15509.208,
+          "mean_us": 2330.223,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 0.17
+      },
+      "cost_breakdown_no_stat": {
+        "new_index_plus_guard": 6371.167,
+        "new_index_only_no_guard": 0.125,
+        "guard_alone_ensure_lookup_caches": 6431.52,
+        "old_linear_scan_full": 2043.854,
+        "note": "拆开看：索引查表本身比线性遍历便宜，但失效守卫（内容签名比对）本身是 O(n)，把这部分节省抵消掉了"
+      },
+      "hit_arm_with_real_stat": {
+        "new_index_p50_us": 14010.8,
+        "old_linear_p50_us": 5.7,
+        "note": "命中臂必须做一次真实的 Path.exists()（stat 不缓存是保险丝）。该成本主导且两条实现相同，因此单列、不进主对比。"
+      }
+    }
+  },
+  "text_arm_find_hit": {
+    "n_assets": 10000,
+    "p50_us": 19594.2,
+    "p99_us": 23857.0,
+    "note": "文本档每次调用都会重建 build_text_index（O(n)），T27 只影响其中 confirm → pack.lookup 的定位成本"
+  },
+  "problems": [
+    "n=10000 miss_key_arm_no_stat: 旧 P50=60.708us 不比新 P50=238.541us 更差",
+    "n=10000 fingerprint_mismatch_arm_no_stat: 旧 P50=0.583us 不比新 P50=235.584us 更差",
+    "n=10000 hit_first_no_stat: 旧 P50=0.667us 不比新 P50=470.083us 更差",
+    "n=10000 hit_mid_no_stat: 旧 P50=32.605us 不比新 P50=472.25us 更差",
+    "n=10000 hit_last_no_stat: 旧 P50=74.75us 不比新 P50=472.02us 更差",
+    "n=200000 miss_key_arm_no_stat: 旧 P50=2043.854us 不比新 P50=6371.167us 更差",
+    "n=200000 fingerprint_mismatch_arm_no_stat: 旧 P50=0.583us 不比新 P50=6651.52us 更差",
+    "n=200000 hit_first_no_stat: 旧 P50=0.708us 不比新 P50=12701.979us 更差",
+    "n=200000 hit_mid_no_stat: 旧 P50=966.771us 不比新 P50=13672.624us 更差",
+    "n=200000 hit_last_no_stat: 旧 P50=2249.124us 不比新 P50=13295.792us 更差"
+  ]
+}

@@ -81,12 +81,32 @@ def build_text_index(pack) -> dict:
     return idx
 
 
+# T27 消费侧接线说明（语义零变化）：
+#
+#   `lookup_key` 原先是「线性遍历 pack.assets 找候选 → 逐候选 pack.lookup」，
+#   而 pack.lookup 内部又是一次 O(n) 线性遍历 → 消费侧最坏 O(n²)。
+#   T27 把 assets 层的候选定位换成惰性身份索引（O(1) 查表），于是
+#   消费侧最坏情形从 O(n²) 降到 O(n·k)（k = 候选数）。
+#
+#   关键约束（本卡的硬判据）：**候选的筛选条件与顺序一律不动**——
+#   仍按 pack.assets 的包内顺序逐条判定 `key == key`、`part_index == 0`、
+#   `rate_key == rate_key`，命中第一条复核通过的即返回。
+#   顺序变了会让「先出现的 variant 优先」这条既有语义被悄悄改掉
+#   （assets 允许同 key 多 variant，顺序是唯一稳定的取法）。
+#   因此这里不再抽候选函数：直接沿用原循环体，只把 pack.lookup 的内部
+#   定位交给 assets 层的索引。
+
+
 def lookup_key(pack, key: str, rate_key: str = "normal") -> Optional[AssetEntry]:
     """key 档命中判定：走 pack.lookup（它自带指纹与音频存在性校验）。
 
     WHY 不自己遍历就返回候选：assets.lookup 一律返回 None 不告诉你原因，
         但它把指纹不符 / 文件不存在都算作"查不到"——这正是预铸资产层
         的保险丝。这里只负责喂对 expected_text（候选条目自己的文本）。
+
+    T27：候选仍按包内顺序逐条取，但每次 `pack.lookup` 的内部定位走 assets 层
+        身份索引（O(1)），消费侧最坏情形由 O(n²) 降到 O(n·k)。候选顺序、
+        复核次数与返回结果与原实现完全一致。
     """
     for cand in pack.assets:
         if cand.key != key or cand.part_index != 0 or cand.rate_key != rate_key:

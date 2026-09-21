@@ -9,11 +9,24 @@ assets.pack — 包结构定义 + 装载 + 校验
   - load_pack：任一条不合格 → 抛 AssetPackError（不得跳过坏条目继续）
   - lookup：指纹不匹配 / 文件不存在 → 返回 None（由调用方决定降级）
   - validate_pack：返回问题列表（空列表=通过），用于 CLI vox verify
+
+T27（查找热路径索引化，**语义零变化**）：
+  - lookup 的线性遍历改为**惰性身份索引**定位候选（首次 O(n) 一次）；
+  - 指纹从"每次 lookup 重算"改为**预计算缓存**（惰性、一次 O(n)），且仅在
+    `expected_text == entry.text` 时使用——`!=` 时仍走原路径重算（最严格，不推测）；
+  - 文件存在性校验**保持每次实查、绝不缓存**：缓存会让"运行期文件被删"从未命中变命中，
+    语义就变了。索引化后每次 lookup 的 stat 次数已从 O(n) 降到 O(1)。
+  - 失效判断用 `assets` 的**内容签名**（每条目 `id()`），能发现原地改列表
+    （`assets[i] = x`），不留下"本该命中却换了路径"的破口。
+  - **诚实结论**：保留内容签名守卫的前提下，大包上索引并不比线性遍历快
+    （守卫本身是 O(n)）；收益在 stat 次数与"不重复 sha256"上。详见
+    `labs/pack-index-bench/report.json` 与 `_ensure_lookup_caches` 的说明。
+  包格式 / API 契约 / 失败条件 / 返回值一律未动（见 AGENTS.md「实现变更记录（T27）」）。
 """
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -61,7 +74,7 @@ class AssetEntry:
 class AssetPack:
     """完整资产包：manifest 元数据 + 资产条目列表。
 
-    属性：
+    属性（公开契约，冻结）：
         pack_id:          包唯一标识
         pack_version:     包版本号
         protocol_version: 协议版本号
@@ -71,7 +84,14 @@ class AssetPack:
         created_at:       创建时间（ISO 8601）
         assets:           资产条目列表
         root:             包根目录路径（用于 lookup 时校验文件存在性）
+
+    T27 追加的四个私有属性（`_identity_index` / `_text_fingerprints` /
+    `_fingerprint_cache_built` / `_assets_token`）是 lookup 热路径的惰性缓存，
+    **非公开契约**——调用方不得读取或写入。它们用 `InitVar` 接入 `__post_init__`，
+    因此**不出现在 dataclass 字段清单与构造签名里**：`AssetPack(...)` 的参数清单、
+    顺序、默认值与 `load_pack` 的校验强度一字未动。
     """
+
     pack_id: str
     pack_version: str
     protocol_version: str
@@ -81,6 +101,181 @@ class AssetPack:
     created_at: str
     assets: List[AssetEntry] = field(default_factory=list)
     root: Optional[Path] = None
+
+    def __post_init__(
+        self,
+        _identity_index: InitVar[Optional[Dict[tuple, AssetEntry]]] = None,
+        _text_fingerprints: InitVar[Optional[Dict[tuple, str]]] = None,
+        _fingerprint_cache_built: InitVar[bool] = False,
+        _assets_token: InitVar[Optional[List[tuple]]] = None,
+    ) -> None:
+        # WHY 用 InitVar 而不是普通字段：缓存必须**不进公开契约**——
+        # InitVar 既不出现在 dataclass 字段清单（`dataclasses.fields`）里，
+        # 也不进构造签名、不进 repr、不参与相等性比较。
+        # 四个 InitVar 全部有默认值，`AssetPack(八个公开字段)` 的位置/关键字
+        # 传参方式与「改前」完全一致。传非 None 只作一次初始化，之后由
+        # lookup 按需重建，不构成可写契约。
+        self._identity_index = _identity_index if _identity_index is not None else {}
+        self._text_fingerprints = (
+            _text_fingerprints if _text_fingerprints is not None else {}
+        )
+        self._fingerprint_cache_built = bool(_fingerprint_cache_built)
+        # 令牌为 None = "尚未构建缓存"；构建缓存时钉成当前 assets 的**内容签名**
+        # （每条目一个 `id()`，见 `_assets_signature`）。
+        self._assets_token = _assets_token
+
+
+    def invalidate_lookup_caches(self) -> None:
+        """使两个派生缓存失效，下一次 lookup 时按**当前** assets 重建。
+
+        语义边界：本包是**只读**数据层（契约规定永不被写入），正常运行期不会有人
+        改 assets。生产代码若确需改动 assets，请显式调用本方法。
+
+        不需要主动清缓存也能自动跟上的是**整体换列表**（`pack.assets = [...]`）
+        ——那种改动会立刻改变内容签名（`_assets_signature`），下一次 lookup 自动
+        重建。本方法同样覆盖**原地改列表**（`assets[i] = x` / `append` / `pop`），
+        那类改动也会改变签名，所以其实同样能自动跟上；显式调用它只在一种情形
+        下是必要的——**原地改字段值**（`entry.text = ...`），那不改变 `id()`，
+        签名检测不到。
+
+        不缓存的东西：文件存在性（stat）与音频内容——不缓存是保险丝（见 lookup）。
+
+        返回：None
+        """
+        # WHY 就地 clear 而不是赋新对象：_identity_lookup_index() 按**引用**返回
+        # 缓存本体，调用方手里那份旧引用同样需要失效；赋新对象会让旧引用继续装着
+        # 已不在 assets 里的条目。
+        self._identity_index.clear()
+        self._text_fingerprints.clear()
+        self._fingerprint_cache_built = False
+        self._assets_token = None   # 显式标记"未构建"，下一次 lookup 必然重建
+
+    @staticmethod
+    def _assets_signature(assets: List[AssetEntry]) -> List[int]:
+        """`assets` 的内容签名：每个条目的 `id()` 顺序列表。
+
+        为什么不用单个 `id(self.assets)`：那只反映「列表对象是不是换了」，
+        抓不住**原地改列表**（`assets[i] = x`）——那种改动下列表对象没变、
+        但里面的条目已经换了，索引会继续指着被替换掉的旧对象，`lookup` 的
+        `get` 就永远不会返回 None。逐个条目取 `id()` 才能发现它。
+
+        只用 `id()`、不比较字段值：`AssetEntry` 是可变 dataclass，字段级比较
+        既贵又可能因为调用方改字段值而产生假阴性。这里只问「是不是同一条目」，
+        `is` 语义足够，也最便宜。
+        """
+        return [id(entry) for entry in assets]
+
+    def _ensure_lookup_caches(self) -> None:
+        """按需重建两个派生缓存。
+
+        触发条件（都走一次 O(n) 构建）：
+          ① `_assets_token is None` —— 尚未构建，或刚被 `invalidate_lookup_caches`
+             清掉（必须重建，不能因为"令牌恰好等于当前签名"就跳过）；
+          ② 令牌不等于当前签名 —— assets 被整体换列表、或原地替换/增删了条目。
+
+        之所以仍然值得：它让索引在原地改动 `assets` 后仍然正确，而不是一次
+        "看起来对、实际返回了旧条目"的错误。代价已在 `labs/pack-index-bench/`
+        如实记录。真正省掉的是哈希计算与逐条字符串比对。
+
+        原地改字段值（`entry.text = ...`）不改变 `id()`，因此**检测不到**；
+        需要那种粒度时请显式走 `invalidate_lookup_caches()`。
+        """
+        signature = self._assets_signature(self.assets)
+        if self._assets_token is not None and self._assets_token == signature:
+            return
+        self._assets_token = signature
+        self._identity_index.clear()
+        self._rebuild_identity_index()
+        self._rebuild_text_fingerprints()
+
+    def _identity_lookup_index(self) -> Dict[tuple, AssetEntry]:
+        """惰性身份索引：`(key, part_index, rate_key, variant) → AssetEntry`。
+
+        确定性：**首条优先**（`setdefault`）——与"线性遍历取首条"完全一致。
+        重复身份在 load_pack 层已被拒绝，这里只为手工构造的包兜住顺序语义。
+
+        语义：**不过滤任何条目**。指纹不符、文件已删的条目照常在索引里，由后续
+        步骤按原判据各自返回 None。索引只做寻址，不做判定（否则会把校验变成
+        对装载期的隐式依赖，改变 lookup 的失败条件）。
+
+        成本：首次 O(n)，之后每次调用仍要付一次 O(n) 的内容签名比对（见
+        `_ensure_lookup_caches` 的诚实成本说明）。索引本身是 O(1) 的查表；
+        变慢的不是查表，而是"确认索引还没过期"这一步。
+
+        注意这**不是**文件存在性的缓存 —— stat 仍在 lookup 里每次实查。
+
+        返回：身份 → 条目 的字典（内部可变缓存；不要外传）
+        """
+        self._ensure_lookup_caches()
+        return self._identity_index
+
+    def _rebuild_identity_index(self) -> None:
+        """按包内顺序重建身份索引（首条优先）。
+
+        抽出成独立方法：lookup 的指纹分支也需要在缓存失效时重建索引，
+        两处共用同一份构建逻辑，避免两个副本各自演化。
+        """
+        for entry in self.assets:
+            identity = (
+                entry.key, entry.part_index, entry.rate_key, entry.variant
+            )
+            self._identity_index.setdefault(identity, entry)
+
+    def _rebuild_text_fingerprints(self) -> None:
+        """按当前 `assets` 全表预计算指纹（身份 → 指纹）。
+
+        必须与身份索引**同时**重建：两个缓存都从 `assets` 派生，只重建一个
+        会让它们指向不同的版本，lookup 的指纹比对就会失真。
+
+        口径与 lookup 的重算路径逐字一致；值等于条目自己的 `fingerprint`
+        （load_pack 已保证一致），但这里**不读** `entry.fingerprint` 而是重算
+        ——这样即使有手工构造的包把 `fingerprint` 字段写错，快路径也不会把
+        错值当成判据（与 lookup 第 2 步的判据保持同一来源）。
+        """
+        cache = self._text_fingerprints
+        cache.clear()
+        self._fingerprint_cache_built = False
+        for item in self.assets:
+            identity = (
+                item.key, item.part_index, item.rate_key, item.variant
+            )
+            cache[identity] = fingerprint(
+                text=item.text,
+                voice=self.voice,
+                rate_value=item.rate_key,
+                model_version=self.model_version,
+            )
+        self._fingerprint_cache_built = True
+
+    def _text_fingerprint(self, identity: tuple, entry: AssetEntry) -> str:
+        """身份对应的**预计算**指纹（惰性，全表一次 O(n)，命中后 O(1)）。
+
+        口径与 lookup 的重算路径逐字一致：`text=entry.text`、`voice=self.voice`、
+        `rate_value=entry.rate_key`、`model_version=self.model_version`
+        （指纹四要素的 voice / model_version 取包级，格式冻结里没有条目级字段）。
+
+        为什么按 identity 而不是按条目对象做键：`AssetEntry` 是可变 dataclass，
+        不可哈希，做 dict 键会直接 TypeError。按四元组键还有一个额外好处——
+        重复身份时 `setdefault` 天然落到先出现的那条，与身份索引的取首条一致。
+        预计算的是"条目自己文本的指纹"，不是某个 expected_text 的指纹——
+        只有 `expected_text == entry.text` 时才允许用它。
+
+        身份不在缓存里时**不重建整表**，直接按同口径重算该条目的指纹：条目不在
+        缓存里说明它不是本次缓存构建时的包内条目，走重算与「改前」行为一致，
+        且**不写回**缓存（避免一条外部条目把后续真条目的指纹顶掉）。
+        """
+        self._ensure_lookup_caches()
+        cache = self._text_fingerprints
+        cached = cache.get(identity)
+        if cached is not None:
+            return cached
+        return fingerprint(
+            text=entry.text,
+            voice=self.voice,
+            rate_value=entry.rate_key,
+            model_version=self.model_version,
+        )
+
 
     def lookup(
         self,
@@ -107,34 +302,40 @@ class AssetPack:
         返回：
             匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在）
         """
-        # 1. 遍历条目找到 key + part_index + rate_key + variant 匹配的条目
-        candidate = None
-        for entry in self.assets:
-            if (
-                entry.key == key
-                and entry.part_index == part_index
-                and entry.rate_key == rate_key
-                and entry.variant == variant
-            ):
-                candidate = entry
-                break
+        # 1. 定位候选：身份索引（T27 惰性派生）。索引按包内顺序"首条优先"构建，
+        #    与原线性遍历取首条完全一致。注意索引只**寻址**，不做任何判定——
+        #    指纹不符、文件已删的条目依然在索引里，由第 2 / 3 步按原判据返回 None。
+        #    取索引前要核对内容签名（`_ensure_lookup_caches`），以发现运行期对
+        #    assets 的原地改动——那一步是 O(n)，成本说明见 `_ensure_lookup_caches`。
+        identity = (key, part_index, rate_key, variant)
+        candidate = self._identity_lookup_index().get(identity)
 
         if candidate is None:
             return None
 
-        # 2. 指纹校验——用 expected_text 重算指纹并与条目指纹比对
+        # 2. 指纹校验——用 expected_text 重算指纹并与条目指纹比对。
         # WHY：即使 key/part/rate/variant 全部匹配，文本内容变了也必须视为未命中，
         #       否则会念错版本，这是静默降级的根源。
-        expected_fp = fingerprint(
-            text=expected_text,
-            voice=self.voice,
-            rate_value=rate_key,
-            model_version=self.model_version,
-        )
+        if expected_text == candidate.text:
+            # 指纹快路径（T27）：text 相等 → 与**预计算**的指纹比对，省掉这次 sha256。
+            # 语义等价：fingerprint 是纯函数，fingerprint(candidate.text) 与下面重算的
+            # expected_fp 逐字同参，比对对象与判据都没变。
+            expected_fp = self._text_fingerprint(identity, candidate)
+        else:
+            # expected_text != entry.text → **仍走原路径重算**（不做任何推测）。
+            # 在这里改判成"直接 None"或"直接放行"都会改变 lookup 的失败条件，不许可。
+            expected_fp = fingerprint(
+                text=expected_text,
+                voice=self.voice,
+                rate_value=rate_key,
+                model_version=self.model_version,
+            )
         if candidate.fingerprint != expected_fp:
             return None
 
-        # 3. 音频文件存在性校验
+        # 3. 音频文件存在性校验——**每次实查，绝不缓存**（T04 的保险丝）。
+        # WHY 不缓存：缓存会让"运行期文件被删"从"未命中"变成"命中"，语义就变了。
+        # 索引化后每次 lookup 的 stat 次数已从 O(n) 降到 O(1)，收益已足够。
         if self.root is not None:
             audio_path = self.root / candidate.path
             if not audio_path.exists():
