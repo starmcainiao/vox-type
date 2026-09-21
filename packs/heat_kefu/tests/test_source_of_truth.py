@@ -66,6 +66,26 @@ MULTI_CLAUSE_KEYS = (
     "repair_ask_natural_userNo",
 )
 
+# T33：14 条多分句整段按 `__1..__N` 拆句铸入（29 条 key）——
+#   整段本身仍不在包内（`find_hit` 对整段不回归未命中），
+#   整段由 `find_hit_sequence` 逐段覆盖命中（docs/10 §10.7）。
+SEQ_KEYS = (
+    "opening__1", "opening__2",
+    "chat_smalltalk__1", "chat_smalltalk__2",
+    "clarify_work_order__1", "clarify_work_order__2",
+    "clarify_repair__1", "clarify_repair__2", "clarify_repair__3",
+    "fallback_internal__1", "fallback_internal__2",
+    "lifeboat_fallback__1", "lifeboat_fallback__2",
+    "user_no_unknown__1", "user_no_unknown__2",
+    "repair_confirm_question__1", "repair_confirm_question__2",
+    "work_order_no_unknown__1", "work_order_no_unknown__2",
+    "internal_chat_hint__1", "internal_chat_hint__2",
+    "stop_warm_plan__1", "stop_warm_plan__2",
+    "inject_refuse__1", "inject_refuse__2",
+    "repair_ask_natural_address__1", "repair_ask_natural_address__2",
+    "repair_ask_natural_userNo__1", "repair_ask_natural_userNo__2",
+)
+
 # exclusion·带槽 13 条：variant 不得含槽位（docs/06 §6.2.5）→ 不铸 → 走原路
 SLOT_KEYS = (
     "repair_progress_reminder", "repair_ask_new_value", "repair_create_ok",
@@ -157,12 +177,15 @@ class TestPackSourceStructure(unittest.TestCase):
             self.phrases = json.load(f)["phrases"]
         self.by_key = {p["key"]: p for p in self.phrases}
 
-    def test_pack_is_40_keys_unique(self):
-        self.assertEqual(len(self.phrases), 40)
-        self.assertEqual(len(self.by_key), 40, "phrases.json 里 key 有重复")
+    def test_pack_is_69_keys_unique(self):
+        # 40 单句（T31b）+ 29 拆句（T33）= 69，无重复
+        self.assertEqual(len(self.phrases), 69)
+        self.assertEqual(len(self.by_key), 69, "phrases.json 里 key 有重复")
 
-    def test_pack_key_set_matches_baked_list(self):
-        self.assertEqual(set(self.by_key), set(BAKED_KEYS))
+    def test_pack_key_set_matches_baked_and_sequence_lists(self):
+        # 既不能多也不能少：40 单句 + 29 拆句
+        self.assertEqual(set(self.by_key), set(BAKED_KEYS) | set(SEQ_KEYS))
+        self.assertEqual(len(SEQ_KEYS), 29, "拆句清单必须是 29 条")
 
     def test_each_phrase_has_exactly_one_variant(self):
         # 「一条 variant」是本包的口径（防复读机不需要在这里解决）
@@ -189,20 +212,89 @@ class TestPackSourceStructure(unittest.TestCase):
                 n = sum(1 for ch in v if ch in _SENTENCE_TERMINATORS)
                 self.assertLess(n, 2, f"key={p['key']} 含 {n} 个句末标点，不是一句: {v!r}")
 
-    def test_variant_texts_are_distinct(self):
-        # 逐字同源的另一半：两条 variant 不该撞成同一串（撞了说明铸重了）
+    def test_variant_texts_are_distinct_except_the_known_duplicate(self):
+        # 逐字同源的另一半：两条 variant 不该撞成同一串（撞了说明铸重了）。
+        # 唯一豁免（T33 卡内点名的对账事实）：`点下方按钮或直接说明即可。` 同属
+        # clarify_work_order__2 与 clarify_repair__3 —— 两条归属都明确，包内允许同文本
+        # 两条资产（文本档索引取首条是既有行为）。所以断言的是"除这对之外无重复"，
+        # 而不是无脑放宽成"允许重复"。
         texts = [p["variants"][0] for p in self.phrases]
-        self.assertEqual(len(set(texts)), len(texts), "存在逐字重复的 variant")
+        dup_keys = []
+        seen = {}
+        for p in self.phrases:
+            t = p["variants"][0]
+            if t in seen:
+                dup_keys.append((seen[t], p["key"]))
+            else:
+                seen[t] = p["key"]
+        self.assertEqual(
+            dup_keys, [("clarify_work_order__2", "clarify_repair__3")],
+            f"除已知豁免对之外的重复 variant: {dup_keys}",
+        )
+        self.assertEqual(len(texts), 69)
+        self.assertEqual(len(set(texts)), 68)
 
     def test_script_covers_all_baked_keys(self):
         with open(PACK_DIR / "script.json", "r", encoding="utf-8") as f:
             script = json.load(f)
         used = {u["key"] for u in script["units"]}
-        self.assertEqual(used, set(BAKED_KEYS), "剧本未覆盖全部必铸 key")
+        self.assertEqual(used, set(BAKED_KEYS) | set(SEQ_KEYS),
+                       "剧本未覆盖全部包内 key（40 单句 + 29 拆句）")
 
     def test_exclusion_keys_are_absent_from_pack(self):
+        # 整段源 key 仍不得进包（拆句以 `<源 key>__<句序>` 独立铸入）
         for k in MULTI_CLAUSE_KEYS + SLOT_KEYS:
             self.assertNotIn(k, self.by_key, f"exclusion key 被铸进了包: {k}")
+
+    def test_sequence_keys_are_exactly_the_14_sources(self):
+        """拆句 key 命名 = `<源 key>__<句序>`，句序连续从 1 起、覆盖 14 个源 key。"""
+        from compiler.source import _SENTENCE_TERMINATORS
+        for k in SEQ_KEYS:
+            base, _, n = k.rpartition("__")
+            self.assertIn(base, MULTI_CLAUSE_KEYS, f"{k} 的源 key 不在多分句清单里")
+            self.assertTrue(n.isdigit() and int(n) >= 1, f"{k} 句序非法")
+        by_source = {}
+        for k in SEQ_KEYS:
+            base, _, n = k.rpartition("__")
+            by_source.setdefault(base, []).append(int(n))
+        self.assertEqual(len(by_source), 14, "必须正好覆盖 14 个源 key")
+        for base, ns in by_source.items():
+            self.assertEqual(sorted(ns), list(range(1, len(ns) + 1)),
+                             f"{base} 的句序不连续: {sorted(ns)}")
+
+    def test_sequence_variants_cover_the_source_verbatim(self):
+        """拆句同源（不依赖 yaml 的半套）：`''.join(拆句 variant)` 必须等于
+        按 `_SENTENCE_TERMINATORS` 切出来的同一批段 —— 即 join 恒等于输入。
+
+        完整的「== yaml 原文」断言见 TestSourceOfTruthVerbatim（需要 yaml）。
+        这里验的是拆句的**可逆性**：切完再拼回去一字不差。
+        """
+        from compiler.source import _SENTENCE_TERMINATORS
+
+        def split_sentences(text):
+            out, cur = [], ""
+            for ch in text:
+                cur += ch
+                if ch in _SENTENCE_TERMINATORS:
+                    out.append(cur)
+                    cur = ""
+            if cur:
+                out.append(cur)
+            return out
+
+        by_key = self.by_key
+        for k in SEQ_KEYS:
+            base, _, n = k.rpartition("__")
+            parts = [by_key[f"{base}__{i}"]["variants"][0] for i in
+                     range(1, sum(1 for kk in SEQ_KEYS if kk.rpartition("__")[0] == base) + 1)]
+            # 每段自己都是一句（编译器同一判据）
+            for part in parts:
+                self.assertLess(sum(1 for ch in part if ch in _SENTENCE_TERMINATORS), 2,
+                                f"{base} 的拆句不是一句: {part!r}")
+            # 可逆性：拼回去还是原来那串
+            joined = "".join(parts)
+            self.assertEqual(split_sentences(joined), parts,
+                             f"{base} 拆句不可逆（拼回后重新切分不一致）")
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +361,42 @@ class TestSourceOfTruthVerbatim(unittest.TestCase):
             self.assertGreaterEqual(
                 n, 2, f"key={key} 实测 {n} 个句末标点，不该进 exclusion·多分句")
 
+    def test_sequence_split_concatenates_back_to_yaml(self):
+        """拆句同源（验收 2）：包内 `__1..__N` 的 variant 依次拼接 == yaml 原文，
+        逐码位比对（`[ord(c) for c in …]`）——一个标点、一个全角码位都不能差。"""
+        from compiler.source import _SENTENCE_TERMINATORS
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_value = str(_yaml_lookup(self.yaml_doc, base))
+            expected_n = sum(1 for ch in yaml_value if ch in _SENTENCE_TERMINATORS)
+            pack_parts = [self.by_key[f"{base}__{i}"]["variants"][0]
+                          for i in range(1, expected_n + 1)]
+            joined = "".join(pack_parts)
+            self.assertEqual(
+                [ord(c) for c in joined], [ord(c) for c in yaml_value],
+                f"key={base} 拆句拼回与 yaml 原文不一致（逐码位）",
+            )
+
+    def test_sequence_split_count_matches_yaml_terminator_count(self):
+        """N == 该 yaml 原文按 `_SENTENCE_TERMINATORS` 的实际句数（不多不少）。"""
+        from compiler.source import _SENTENCE_TERMINATORS
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_value = str(_yaml_lookup(self.yaml_doc, base))
+            expected_n = sum(1 for ch in yaml_value if ch in _SENTENCE_TERMINATORS)
+            actual = [int(k.rpartition("__")[2]) for k in SEQ_KEYS
+                      if k.rpartition("__")[0] == base]
+            self.assertEqual(sorted(actual), list(range(1, expected_n + 1)),
+                             f"key={base} 拆句数 {sorted(actual)} != yaml 句数 {expected_n}")
+
+    def test_sequence_segments_are_verbatim_substrings_of_yaml(self):
+        """每一段都必须逐字出现在 yaml 原文里（含标点与引号），且是连续子串。"""
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_value = str(_yaml_lookup(self.yaml_doc, base))
+            for k in SEQ_KEYS:
+                if k.rpartition("__")[0] != base:
+                    continue
+                segment = self.by_key[k]["variants"][0]
+                self.assertIn(segment, yaml_value, f"{k} 不是 yaml 原文的连续子串")
+
     def test_excluded_slot_keys_really_contain_slots(self):
         for key in SLOT_KEYS:
             value = str(_yaml_lookup(self.yaml_doc, key))
@@ -325,6 +453,88 @@ class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
         if cls.pack is None:
             raise unittest.SkipTest("packs/heat_kefu 无预铸产物——exclusion 断言跳过")
 
+    def _expected_segment_keys(self, base):
+        """期望的段 key 序列：按 §10.7 的冻结判据从**包内索引顺序**推导。
+
+        「同长度多候选取索引内首条」意味着某一段若与另一 key 的 variant 归一化后
+        同文本，会取**先在 pack.assets 里出现**的那个 key。所以期望值不是
+        写死的 `__1..__N`，而是「逐段切出来的文本 + 索引首条」推出来的：
+        断言验的是「段数正确 + 每段文本正确 + 段序正确」，
+        同文本取首条带来的 key 差异单独断言（见 test_duplicate_segment_text_takes_first_key）。
+        """
+        import json as _json
+        from adapters.framework_kefu import normalize_text
+        from compiler.source import _SENTENCE_TERMINATORS
+        with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
+            phrases = json.load(f)["phrases"]
+        # 索引顺序 = phrases.json 顺序 = pack.assets 顺序
+        first_key_by_norm = {}
+        for ph in phrases:
+            n = normalize_text(ph["variants"][0])
+            first_key_by_norm.setdefault(n, ph["key"])
+        doc = self.yaml_doc
+        parts = []
+        cur = ""
+        for ch in str(_yaml_lookup(doc, base)):
+            cur += ch
+            if ch in _SENTENCE_TERMINATORS:
+                parts.append(cur)
+                cur = ""
+        if cur:
+            parts.append(cur)
+        return [first_key_by_norm[normalize_text(part)] for part in parts]
+
+    def test_duplicate_segment_text_takes_first_key(self):
+        """同文本两 key 的已知行为：`点下方按钮或直接说明即可。` 同时是
+        clarify_work_order__2 与 clarify_repair__3，序列命中取**索引首条**。
+
+        断言的是「取首条 + 段数不变」，不是「必须是 clarify_repair__3」——
+        前者是 docs/10 §10.7 的冻结判据，后者取决于包内排布（实现细节）。
+        """
+        from adapters.framework_kefu import find_hit_sequence, normalize_text
+        text = "点下方按钮或直接说明即可。"
+        res = find_hit_sequence(self.pack, text)
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(len(res.entries), 1)
+        self.assertEqual(res.entries[0].text, text)
+        self.assertIn(res.entries[0].key, {"clarify_work_order__2", "clarify_repair__3"},
+                      "同文本候选只能是这两条之一")
+        # 索引首条稳定性：连跑 10 次取同一条
+        seen = {r.entries[0].key for r in
+                (find_hit_sequence(self.pack, text) for _ in range(10))}
+        self.assertEqual(len(seen), 1, f"同长度多候选取首条不稳定: {seen}")
+        self.assertEqual(
+            normalize_text(res.entries[0].text), normalize_text(text))
+
+    def test_multi_clause_14_hit_by_sequence_with_expected_key_order(self):
+        """T33 的正例：14 条整段经 find_hit_sequence 命中，段数 == 句数，
+        段 key 顺序 == `__1..__N`。"""
+        from adapters.framework_kefu import find_hit_sequence
+        bad = []
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_text = str(_yaml_lookup(self.yaml_doc, base))
+            expected_n = len([k for k in SEQ_KEYS if k.rpartition("__")[0] == base])
+            res = find_hit_sequence(self.pack, yaml_text, rate_key="normal")
+            if res.miss_reason is not None or res.uncovered != "":
+                bad.append((base, "miss", res.miss_reason, res.uncovered))
+                continue
+            got = [e.key for e in res.entries]
+            want = self._expected_segment_keys(base)
+            if got != want or len(got) != expected_n:
+                bad.append((base, f"段序不符 want={want} got={got}"))
+        self.assertEqual(bad, [], f"{len(bad)}/{len(MULTI_CLAUSE_KEYS)} 条整段未按预期序列命中: {bad}")
+
+    def test_sequence_hit_entries_all_have_rate_normal(self):
+        """命中序列里的每条 entry 都必须是 normal 档（本包只有 normal 档）。"""
+        from adapters.framework_kefu import find_hit_sequence
+        for base in MULTI_CLAUSE_KEYS:
+            res = find_hit_sequence(self.pack, str(_yaml_lookup(self.yaml_doc, base)))
+            if res.miss_reason is None:
+                self.assertEqual(
+                    [e.rate_key for e in res.entries], ["normal"] * len(res.entries),
+                    f"{base} 命中了非 normal 档条目",
+                )
+
     def test_multi_clause_14_not_hit_by_text(self):
         from adapters.framework_kefu import find_hit
         hits = []
@@ -337,6 +547,134 @@ class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
             hits, [],
             f"{len(hits)}/{len(MULTI_CLAUSE_KEYS)} 条多分句竟然命中了（不该铸却进了命中路径）: {hits}",
         )
+
+    @classmethod
+    def _by_key(cls):
+        with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
+            return {p["key"]: p for p in json.load(f)["phrases"]}
+
+    def test_multi_clause_negative_cases_are_full_miss_not_partial(self):
+        """T33 的负例（fail-closed）：整段删标点 / 中间插包外文本 / 未预铸的整段
+        → entries 必须是**空元组**（不得部分命中），miss_reason 具体。
+
+        两条负例都构造在**整段**级别：因为 T33 把每段单独铸入了，
+        拿拆出来的段去拼再颠倒仍能逐字覆盖（段序自由是设计事实，见
+        test_swap_two_segments_is_not_partial_hit），那测的不是 fail-closed。
+        """
+        from adapters.framework_kefu import find_hit_sequence, REASON_TEXT_NOT_PREBAKED
+        from compiler.source import _SENTENCE_TERMINATORS
+
+        def split_sentences(text):
+            out, cur = [], ""
+            for ch in text:
+                cur += ch
+                if ch in _SENTENCE_TERMINATORS:
+                    out.append(cur)
+                    cur = ""
+            if cur:
+                out.append(cur)
+            return out
+
+        bad = []
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_text = str(_yaml_lookup(self.yaml_doc, base))
+            parts = split_sentences(yaml_text)
+            # ① 删第一个句末标点（整段第一个断点）
+            first = next(ch for ch in yaml_text if ch in _SENTENCE_TERMINATORS)
+            drop = yaml_text.replace(first, "", 1)
+            # ③ 中间插一句包外文本（包里没有「这是一句包外的话。」）
+            insert = parts[0] + "这是一句包外的话。" + "".join(parts[1:]) if parts else yaml_text
+
+            for label, text in (("删句末标点", drop), ("中间插包外文本", insert)):
+                res = find_hit_sequence(self.pack, text, rate_key="normal")
+                if res.entries != () or res.miss_reason != REASON_TEXT_NOT_PREBAKED:
+                    bad.append((base, label,
+                                [e.key for e in res.entries],
+                                res.miss_reason, res.uncovered[:60]))
+        self.assertEqual(
+            bad, [],
+            f"{len(bad)} 条负例出现部分命中或原因码错误: {bad}",
+        )
+
+    def test_swap_two_segments_is_not_partial_hit(self):
+        """段级重排的对账：`__2 + __1` 仍能被逐字覆盖（不允许"只播后半段"）。
+
+        口径（docs/10 §10.7）：判据只有"逐字覆盖"一种，不做段序约束；
+        而 T33 把每段单独铸入了，所以段的顺序交换后仍能逐段覆盖——
+        这是**设计事实**，不是 fail-closed 失效。
+        断言锁定三件事：整体命中（不是部分命中）、段数不缩水、
+        段 key 恰好是被颠倒的那两条。
+        """
+        from adapters.framework_kefu import find_hit_sequence
+        from compiler.source import _SENTENCE_TERMINATORS
+
+        def split_sentences(text):
+            out, cur = [], ""
+            for ch in text:
+                cur += ch
+                if ch in _SENTENCE_TERMINATORS:
+                    out.append(cur)
+                    cur = ""
+            if cur:
+                out.append(cur)
+            return out
+
+        for base in MULTI_CLAUSE_KEYS:
+            with self.subTest(key=base):
+                by = self._by_key()
+                yaml_text = str(_yaml_lookup(self.yaml_doc, base))
+                n = len(split_sentences(yaml_text))
+                k1 = f"{base}__1"
+                k2 = f"{base}__2"
+                tail = "".join(by[f"{base}__{i}"]["variants"][0] for i in range(3, n + 1))
+                res = find_hit_sequence(self.pack, by[k2]["variants"][0]
+                                        + by[k1]["variants"][0] + tail,
+                                        rate_key="normal")
+                self.assertIsNone(res.miss_reason, f"{base} 段级重排后应仍命中")
+                self.assertEqual(len(res.entries), n,
+                                 f"{base} 段级重排后段数应不缩水（期望 {n}，实际 {len(res.entries)}）")
+                got = [e.key for e in res.entries]
+                # 前两段必须按颠倒后的顺序出现（同文本取索引首条时 key 可能是别名，
+                # 所以比的是「段文本序列」而不是「key 序列」；alias 情况另有专测）
+                self.assertEqual(
+                    [e.text for e in res.entries[:2]],
+                    [by[k2]["variants"][0], by[k1]["variants"][0]],
+                    f"{base} 段级重排后前两段文本必须是颠倒后的顺序（实际 {got}）",
+                )
+
+    def test_swap_whole_text_is_full_miss(self):
+        """整段级重排（在包外）→ 整体未命中。
+
+        与上一条对照：整段本身不在包内，位置 0 就覆盖不上，所以是 miss；
+        而段的任意重排仍命中——两条合起来锁住了"逐字覆盖"这个判据的边界。
+        """
+        from adapters.framework_kefu import find_hit_sequence, REASON_TEXT_NOT_PREBAKED
+        from compiler.source import _SENTENCE_TERMINATORS
+
+        def split_sentences(text):
+            out, cur = [], ""
+            for ch in text:
+                cur += ch
+                if ch in _SENTENCE_TERMINATORS:
+                    out.append(cur)
+                    cur = ""
+            if cur:
+                out.append(cur)
+            return out
+
+        # 把整段当**未预铸**的长句：它的任一前缀都不等于包内任何 variant 的
+        # 归一化文本（整段不在包内），所以位置 0 就断。
+        for base in MULTI_CLAUSE_KEYS:
+            with self.subTest(key=base):
+                yaml_text = str(_yaml_lookup(self.yaml_doc, base))
+                # 前缀截断：截到第一个句末标点前，剩下的串既不是任何 variant，
+                # 也不能被任何 variant 前缀覆盖
+                first = next(ch for ch in yaml_text if ch in _SENTENCE_TERMINATORS)
+                cut = yaml_text[:yaml_text.index(first)] + yaml_text[yaml_text.index(first) + 1:]
+                res = find_hit_sequence(self.pack, cut, rate_key="normal")
+                self.assertEqual(res.entries, (),
+                                 f"{base} 删标点后的整段必须整体未命中")
+                self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
 
     def test_slot_filled_results_not_hit(self):
         # 带槽句填上假值后走文本档 → 必须未命中（带槽不铸的真实行为 = 走原路）
@@ -370,6 +708,29 @@ class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # D. 断言可打破性（负例）
 # ---------------------------------------------------------------------------
+@unittest.skipUnless(YAML_PATH.is_file(), "kefu 供热预设 yaml 不在本仓——序列命中确定性跳过")
+class TestSequenceHitDeterministic(unittest.TestCase):
+    """同一整段连跑 10 次：段 key 序列与长度完全一致（同长度多候选取索引首条）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.yaml_doc = _load_yaml()
+        cls.pack = _load_pack_dir()
+        if cls.pack is None:
+            raise unittest.SkipTest("packs/heat_kefu 无预铸产物——序列命中断言跳过")
+
+    def test_ten_runs_are_identical(self):
+        from adapters.framework_kefu import find_hit_sequence
+        for base in MULTI_CLAUSE_KEYS:
+            yaml_text = str(_yaml_lookup(self.yaml_doc, base))
+            seen = set()
+            for _ in range(10):
+                res = find_hit_sequence(self.pack, yaml_text, rate_key="normal")
+                seen.add((len(res.entries), tuple(e.key for e in res.entries),
+                          res.uncovered, res.miss_reason))
+            self.assertEqual(len(seen), 1, f"{base} 连跑 10 次结果不一致: {seen}")
+
+
 class TestAssertionBreaksOnTamper(unittest.TestCase):
     """证明同源断言不是空转：篡改一个字就变红。
 
@@ -401,6 +762,38 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
         tampered2 = pack_value.replace("，", ",", 1)
         self.assertNotEqual(tampered2, original,
                             "全角→半角后仍相等 —— 同源断言失效，断言不能打破")
+
+    def test_sequence_one_char_tamper_is_detected(self):
+        """拆句断言同样不空转：把某段改一个字，拼回就不等于 yaml 原文。"""
+        if not YAML_PATH.is_file():
+            self.skipTest("kefu yaml 不在本仓——拆句负例跳过")
+        doc = _load_yaml()
+        with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
+            by_key = {p["key"]: p for p in json.load(f)["phrases"]}
+        base = "clarify_repair"
+        keys = [f"{base}__{i}" for i in range(1, 4)]
+        parts = [by_key[k]["variants"][0] for k in keys]
+        yaml_value = str(_yaml_lookup(doc, base))
+        self.assertEqual("".join(parts), yaml_value, "未篡改时必须逐字相等")
+
+        tampered = [parts[0], parts[1].rstrip("。！？!?"), parts[2]]
+        self.assertNotEqual("".join(tampered), yaml_value,
+                            "删句末标点后仍相等 —— 拆句断言失效，断言不能打破")
+        # 注意：`.replace("。", "！")` 验不到断言灵敏度——normalize_text 把两者都归一成
+        # `!`，归一化空间相等。所以这条改用**删字**（真正的字节差异）。
+        tampered2 = [parts[0][:-1], parts[1], parts[2]]
+        self.assertNotEqual("".join(tampered2), yaml_value,
+                            "删一个字后仍相等 —— 拆句断言失效，断言不能打破")
+        # 再补一条：把引号删掉（yaml 里的中文引号是逐字比对对象）
+        with_quote = None
+        for seg in parts:
+            if "“" in seg or "」" in seg or "「" in seg:
+                with_quote = seg
+                break
+        if with_quote is not None:
+            stripped = with_quote.replace("“", "").replace("”", "").replace(
+                "「", "").replace("」", "")
+            self.assertNotEqual(stripped, with_quote, "删引号后应不等")
 
     def test_mismatch_report_lists_every_offending_key(self):
         # 断言的失败消息必须能定位到哪几条（否则事后无法复算）

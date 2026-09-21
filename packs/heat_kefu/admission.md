@@ -1,6 +1,7 @@
 # heat-kefu · 话术准入申报表（T31b）
 
-> 包：`packs/heat_kefu`（40 key / 40 条资产 / 四属性 0 违规 / 预铸成功率 100%）
+> 包：`packs/heat_kefu`（69 key / 69 条资产 / 四属性 0 违规 / 预铸成功率 100%）
+>   （T31b 铸入 40 单句；**T33 追加 29 条拆句**，见 §1.5「拆句铸入申报」）
 > 数据分级：**公开级**（kefu 供热预设是自造业务 demo 文案；无录音/真实会话/内网地址/token，
 >   FAQ 条目标注「演示样例」）。用户拍板放行进 `packs/`（`docs/15 §四`）。
 > 本包无真人标注，故**不需要**「不进公开分发」声明。
@@ -22,11 +23,12 @@
 
 | 归类 | 数量 | 说明 |
 |---|---|---|
+| 拆句铸入（T33） | **29** | 14 条多分句整段按 `<源 key>__<句序>` 拆句逐段铸入，见 §1.5 |
 | 必铸（本包） | **40** | 35 个 top-level key + `repair_ask.*` 嵌套 5 个 + `repair_ask_natural_*` 嵌套 3 个（`repair_ask` dict 本身不计为话术） |
-| exclusion·多分句 | **14** | ≥2 句末标点，按 `docs/11 §11.6`「一句一 variant」不铸 → 走原路 |
+| exclusion·多分句（整段） | **14** | ≥2 句末标点，整段不铸（`docs/11 §11.6`「一句一 variant」）；T33 起**逐段铸入 29 条**（§1.5），整段由 `find_hit_sequence` 逐段覆盖命中 |
 | exclusion·带槽 | **13** | variant 不得含槽位（`docs/06 §6.2.5`）→ 走原路 |
 | 非话术结构 / 配置 | **13** | 结构 dict/int 6 + 非话术标量 7 |
-| **合计** | **76** | = yaml top-level 实际 key 数，无遗漏无越界 |
+| **合计** | **76** | = yaml top-level 实际 key 数，无遗漏无越界（40 单句 + 14 整段 + 13 带槽 + 13 非话术；29 拆句是这 14 整段的派生，不占新的 top-level key） |
 
 非话术 13 项：`next_prefetch`(dict) `routing`(dict) `trace`(dict) `transfer_route`(dict) `slot_labels`(dict)
 `prompts`(dict) `model_params`(dict) `faq_overrides`(list) `pay_cache_ttl_seconds`(int)
@@ -108,6 +110,86 @@
 
 A1（流程决定性话轮）= 15 条：问候/意图澄清/转人工/收尾等由流程决定的话轮。
 A2（业务可枚举播报）= 25 条：账单/工单/实时参数/停暖/非营业时间等固定结果播报。
+
+## 1.5 拆句铸入申报（T33）
+
+### 为什么要拆
+
+`compiler/source.py::_validate_variant` 的判据是「一句一 variant」（句末标点 < 2，
+`docs/06 §6.1.4` 字模最小粒度 = 一句）。所以 14 条多分句整段（§2）整段进不了包 →
+brain 说整段时文本档查不到 → 走原路（秒级 TTS）。这批含 `opening`（每通必说）、
+`fallback_internal`（系统降级）、`repair_confirm_question`（确认）等高频句。
+
+T33 按 `docs/10 §10.7` 的裁定把它们**逐段**铸入，查询面用新入口
+`adapters.framework_kefu.find_hit_sequence` 逐字覆盖命中（每段仍是「归一化后逐字相等」，
+最长优先，任一段不中即整体未命中、不播半句）。整段本身仍不在包内
+（`find_hit` 对整段不回归未命中）。
+
+### 命名与拆句规则（冻结）
+
+- 拆句 key = `<源 key>__<句序>`，句序从 1 起（3 句 = `__1`/`__2`/`__3`）。
+- 拆句点 = 按 `compiler.source._SENTENCE_TERMINATORS`（`。！？!?`）**逐字符**切分，
+  句末标点归前句，使 `"".join(拆句) == yaml 原文`（逐字符）。
+  **不得用任何其他切分规则**（例如不得按 `；` 切）。
+- 每条 1 个 variant、`rates: ["normal"]`、文本与 yaml 子串**逐字一致**（含标点与引号）。
+- 同源判据：`tests/test_source_of_truth.py` 的
+  `test_sequence_split_concatenates_back_to_yaml`（拼回 == yaml 原文，逐码位）与
+  `test_sequence_split_count_matches_yaml_terminator_count`（N == 实测句数）。
+
+### 29 条拆句的 A1/A2 归类（源 key 类别，拆句继承）
+
+| 源 key（类别） | 拆句 key | 句数 |
+|---|---|---|
+| `opening`（A1） | `opening__1`、`opening__2` | 2 |
+| `chat_smalltalk`（A1） | `chat_smalltalk__1`、`chat_smalltalk__2` | 2 |
+| `clarify_work_order`（A1） | `clarify_work_order__1`、`clarify_work_order__2` | 2 |
+| `clarify_repair`（A1） | `clarify_repair__1`、`clarify_repair__2`、`clarify_repair__3` | 3 |
+| `repair_confirm_question`（A1） | `repair_confirm_question__1`、`repair_confirm_question__2` | 2 |
+| `inject_refuse`（A1） | `inject_refuse__1`、`inject_refuse__2` | 2 |
+| `repair_ask_natural_address`（A1） | `repair_ask_natural_address__1`、`repair_ask_natural_address__2` | 2 |
+| `repair_ask_natural_userNo`（A1） | `repair_ask_natural_userNo__1`、`repair_ask_natural_userNo__2` | 2 |
+| `fallback_internal`（A2） | `fallback_internal__1`、`fallback_internal__2` | 2 |
+| `lifeboat_fallback`（A2） | `lifeboat_fallback__1`、`lifeboat_fallback__2` | 2 |
+| `user_no_unknown`（A2） | `user_no_unknown__1`、`user_no_unknown__2` | 2 |
+| `work_order_no_unknown`（A2） | `work_order_no_unknown__1`、`work_order_no_unknown__2` | 2 |
+| `internal_chat_hint`（A2） | `internal_chat_hint__1`、`internal_chat_hint__2` | 2 |
+| `stop_warm_plan`（A2） | `stop_warm_plan__1`、`stop_warm_plan__2` | 2 |
+
+A1（流程决定性话轮）源 8 个 → **拆句 17 条**：`opening` 2 + `chat_smalltalk` 2 +
+`clarify_work_order` 2 + `clarify_repair` 3 + `repair_confirm_question` 2 + `inject_refuse` 2 +
+`repair_ask_natural_address` 2 + `repair_ask_natural_userNo` 2；
+A2（业务可枚举播报）源 6 个 → **拆句 12 条**：`fallback_internal` 2 + `lifeboat_fallback` 2 +
+`user_no_unknown` 2 + `work_order_no_unknown` 2 + `internal_chat_hint` 2 + `stop_warm_plan` 2。
+（17 + 12 = 29。验收方 2026-09-21 复算更正——原稿写「A1 16 / A2 13」，总数对、分项错。）
+
+### 重复句（卡内点名的对账事实，不是笔误）
+
+`点下方按钮或直接说明即可。` 同时属于 `clarify_work_order__2` 与 `clarify_repair__3`
+—— **两条都铸**。各自归属明确，包内允许同文本两条资产；文本档索引取首条是既有行为
+（`pick_by_text` 的「顺序稳定」）。`tests/test_variant_texts_are_distinct_except_the_known_duplicate`
+把这唯一一对写成**具名豁免**，不放宽成「允许任意重复」。
+
+### script.json
+
+29 条拆句各加一个 unit（`{"key": "<拆句 key>", "rate": "normal"}`）——这些句子确实可能被播报，
+且包测试 `test_script_covers_all_baked_keys` 的口径是「剧本覆盖全部包内 key」
+（比 C3 的单向检查更严）。
+
+⚠️ **unit 必须插在终态单元之前**：编译器 `compiler/checks.py` 的 C1b（无孤立枝）
+判定「首个终态单元之后的单元归 orphan_branch」，而本包 `terminal_keys = ["farewell"]`。
+若把 29 条追加在 `farewell` 之后，`bin/vox pack check` 会报 29 条 `orphan_branch`
++ 1 条 `no_exit`（实测 rc 4）。T33 的实际排布是 68 个 SAY unit + 末位 `farewell`，
+check rc 0、violations 0。
+
+### 对账（刷新）
+
+| 归类 | 数量 |
+|---|---|
+| 必铸单句 | 40 |
+| 拆句铸入（T33） | 29 |
+| 不铸带槽 | 13 |
+| 非话术结构 / 配置 | 13 |
+| **合计** | **76**（= yaml top-level key 数，守恒） |
 
 禁入项 ⅰ–ⅳ 零命中：40 条全部**无槽位占位符**（测试
 `test_no_variant_contains_slot_placeholder` 逐条断言）、全部**单句**

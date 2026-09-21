@@ -13,6 +13,7 @@ text_for_key，以及做一致性对照的 KefuBridge.run_turn。
 """
 
 import shutil
+import signal
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,9 +27,11 @@ from adapters.framework_kefu import (
     REASON_KEY_NOT_PREBAKED,
     REASON_TEXT_NOT_PREBAKED,
     KefuBridge,
+    SequenceHitResult,
     build_text_index,
     confirm,
     find_hit,
+    find_hit_sequence,
     lookup_key,
     normalize_text,
     pick_by_text,
@@ -511,3 +514,451 @@ class TestExportSurface(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# 序列命中（T33，docs/10 §10.7：整段 → 多段逐字覆盖）
+# ---------------------------------------------------------------------------
+
+# 自造话术（禁止使用 kefu 的真实业务文案）。
+# 包内两条资产**逐字同文**（都用 ASK）—— 用来造"同长度多候选"的稳定取首条场景。
+# 包内重复文本是允许的（assets 校验不禁止同文本多条资产，heat_kefu 里
+# `点下方按钮或直接说明即可。` 就有两条：clarify_work_order__2 与 clarify_repair__3）。
+SEG_A_1 = "您好，我是报修服务热线。"
+OUT_OF_PACK = "很高兴为您服务。"
+PREFIX = "您好。"
+
+
+class SequenceHitBase(unittest.TestCase):
+    """公用夹具：前缀句 + 逐字同文的两条资产 + 成对整段（无子句）的临时资产包。
+
+    包内**重复文本**是允许的（assets 校验不禁止同文本多条资产；heat_kefu 里
+    `点下方按钮或直接说明即可。` 就有两条），这正是"同长度多候选取索引内首条"
+    要复现的形态。SEG_C 只以成对整段铸入，其子句与颠倒句序都没有对应 variant，
+    保证"两句颠倒"这个负例在位置 0 就断，不会退化成合法覆盖。
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="kefu-seqh-"))
+        SEG_C_1 = "稍等一下，我帮您查进度。"
+        SEG_C_2 = "查好了，马上给您回复。"
+        self.pack = build_pack(
+            self.tmp / "pack",
+            [
+                ("prefix", PREFIX, 0),                    # 与 SEG_A_1 同前缀，考最长优先
+                ("seg_a_1", SEG_A_1, 0),
+                ("ask_fault_type", ASK, 0),               # 同文本、排在 seg_a_2 前
+                ("seg_a_2", ASK, 0),                       # 与 ask_fault_type 逐字同文
+                ("seg_c_pair", f"{SEG_C_1}{SEG_C_2}", 0), # 只有整段，没有两个子句
+            ],
+        )
+        self.text = f"{SEG_A_1}{ASK}{ASK}"
+        self.ordered = f"{SEG_C_1}{SEG_C_2}"
+        self.reversed = f"{SEG_C_2}{SEG_C_1}"
+        # 包外前缀：包里没有 OUT_OF_PACK 的任何变体，位置 0 就断
+        self.prefixed = f"{OUT_OF_PACK}{SEG_A_1}{ASK}{ASK}"
+        # 中间插一句包外文本：位置 0 能覆盖，插在中间处断
+        self.middle = f"{SEG_A_1}{OUT_OF_PACK}{ASK}{ASK}"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _norm(self, s):
+        return normalize_text(s)
+
+
+class TestSequencePositive(SequenceHitBase):
+    """正例：整段被逐字覆盖 → 命中，entries 按消费顺序，uncovered 为空串。"""
+
+    def test_sequence_hit_shape(self):
+        res = find_hit_sequence(self.pack, self.text)
+
+        self.assertEqual(len(res.entries), 3)
+        self.assertEqual(
+            [e.key for e in res.entries], ["seg_a_1", "ask_fault_type", "ask_fault_type"],
+            "段 key 顺序必须等于输入里的字面顺序（消费顺序）",
+        )
+        self.assertEqual(res.mode, MODE_TEXT, "序列只服务文本档")
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(res.uncovered, "")
+        self.assertEqual(res.text, self.text, "text 报输入原文（未归一化）")
+        self.assertIsInstance(res.entries, tuple)
+        self.assertIsInstance(res, type(res))      # frozen dataclass 实例
+
+    def test_result_is_frozen(self):
+        """结论不可变：调用方可以安全缓存/传参（与 HitResult 同纪律）。"""
+        res = find_hit_sequence(self.pack, self.text)
+        with self.assertRaises(Exception):
+            res.entries = ()
+
+    def test_k_equals_one_degenerates_to_find_hit(self):
+        """单句输入：序列入口与既有 find_hit 给出同一结论（k=1 退化）。"""
+        res = find_hit_sequence(self.pack, ASK)
+        self.assertEqual(len(res.entries), 1)
+        self.assertIs(res.entries[0], find_hit(self.pack, text=ASK).entry,
+                      "k=1 时两条入口必须命中同一条目")
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(res.uncovered, "")
+
+    def test_fullwidth_and_spacing_perturbation_still_hits(self):
+        """四步归一化对**每段**都生效：整段的全角标点/空白扰动后仍逐字覆盖命中。
+
+        扰动点（与 T29 文本档同族）：首尾半角空格、全角空格 U+3000、
+        句末标点全角→半角、包内半角句末→全角。四步归一化后逐段仍相等。
+        """
+        perturbed = " 您好，我是报修服务热线.　" + ASK + ASK
+        res = find_hit_sequence(self.pack, perturbed)
+        self.assertEqual(
+            [e.key for e in res.entries], ["seg_a_1", "ask_fault_type", "ask_fault_type"],
+            f"归一化后应逐段命中: {perturbed!r}")
+        self.assertEqual(res.uncovered, "")
+
+    def test_all_pack_phrases_hit_as_single_segment(self):
+        """包内每一条单句 asset 都能以 len(entries)==1 命中（不回归既有单句行为）。"""
+        misses = []
+        for entry in self.pack.assets:
+            res = find_hit_sequence(self.pack, entry.text)
+            if res.miss_reason is not None or len(res.entries) != 1:
+                misses.append((entry.key, len(res.entries), res.uncovered))
+        self.assertEqual(misses, [], f"单句条目未能逐字覆盖: {misses}")
+
+
+class TestSequenceMissIsFailClosed(SequenceHitBase):
+    """负例：任一段覆盖不上即整体未命中——entries 必须是空元组，不是"命中了前半"。"""
+
+    def test_drop_a_terminator_is_full_miss(self):
+        """删第一个句末标点 → miss，且 uncovered 从断点（归一化空间的第 9 字符）起。
+
+        `您好，我是报修服务热线。` 去掉 `。` 后与包内 `您好。` 也不相等
+        （归一化后 `您好,我是报修服务热线` vs `您好.`）→ 位置 0 就断，整条未命中。
+        """
+        from compiler.source import _SENTENCE_TERMINATORS
+        first = next(ch for ch in self.text if ch in _SENTENCE_TERMINATORS)
+        tampered = self.text.replace(first, "", 1)
+        res = find_hit_sequence(self.pack, tampered)
+
+        self.assertEqual(res.entries, (), "不得部分命中：任一段不中即整体未命中")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertNotEqual(res.uncovered, "", "断点起剩余不能是空串")
+        self.assertIn(normalize_text(ASK), res.uncovered,
+                      f"uncovered 必须包含断点后的整段剩余: {res.uncovered!r}")
+        # 断点精确：整段的第一段没有别的可匹配项（`您好,我是报修服务热线` 既不等于
+        # 包内 `您好,我是报修服务热线.` 也不等于 `您好.`），断在位置 0 → uncovered 就是
+        # 整段归一化文本（长度少一个标点）。
+        norm_all = normalize_text(self.text)
+        self.assertEqual(res.uncovered, normalize_text(tampered),
+                         f"断在位置 0，uncovered 应为整段归一化文本: {res.uncovered!r}")
+        self.assertEqual(len(res.uncovered), len(norm_all) - 1)
+
+    def test_swap_two_segments_is_full_miss(self):
+        """两句颠倒 → miss（颠倒后位置 0 覆盖不上 → pos=0 断）。"""
+        res = find_hit_sequence(self.pack, self.reversed)
+
+        self.assertEqual(res.entries, ())
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.uncovered, self._norm(self.reversed),
+                         "位置 0 就覆盖不上，uncovered 应为整段剩余")
+
+    def test_insert_out_of_pack_text_is_full_miss(self):
+        """中间插一句包外文本 → miss，且不得跳过、不得只播前半。"""
+        res = find_hit_sequence(self.pack, self.prefixed)
+
+        self.assertEqual(res.entries, (), "不允许跳过包外文本只覆盖后面的段")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.uncovered, self._norm(self.prefixed),
+                         "包外前缀在位置 0 → 整段都是剩余，不得从中间接着覆盖")
+        self.assertNotIn("seg_a", "".join(e.key for e in res.entries))
+
+    def test_middle_insert_of_out_of_pack_text_is_full_miss(self):
+        """整段**中间**插一句包外文本 → miss，且不得跳过、不得只播前半。"""
+        middle = self.middle
+        res = find_hit_sequence(self.pack, self.middle)
+
+        self.assertEqual(res.entries, (), "不允许跳过包外文本只播前半段")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertTrue(res.uncovered.startswith(self._norm(OUT_OF_PACK)),
+                        f"uncovered 必须从插入的包外那段起: {res.uncovered!r}")
+        self.assertNotEqual(res.uncovered, "", "断点起的剩余不能是空串")
+
+    def test_prefix_does_not_shorten_the_coverage(self):
+        """最长优先：`您好。` 与 `您好，我是报修服务热线。` 并存时，整段必须取长句。"""
+        res = find_hit_sequence(self.pack, self.text)
+
+        self.assertEqual(res.entries[0].key, "seg_a_1",
+                         "最长优先失败 → 位置 0 被前缀句吃掉，整段会断在标点处")
+        self.assertEqual(res.uncovered, "")
+
+    def test_slot_filled_sequence_is_miss(self):
+        """混入带槽整段（.format() 填充结果）→ miss（带槽不铸的真实行为）。"""
+        filled = f"{SEG_A_1}您的户号是{{{'userNo'}}}，请核对。{ASK}".format(
+            userNo="U99999999")
+        res = find_hit_sequence(self.pack, filled)
+        self.assertEqual(res.entries, ())
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertNotEqual(res.uncovered, "")
+
+    def test_no_hit_never_partial(self):
+        """三条负例统一断言"不得部分命中"（entries 恒为空元组，非命中了前一段）。"""
+        for label, text in (
+            ("删句末标点", self.text.replace("。", "", 1)),
+            ("两句颠倒", self.reversed),
+            ("包外前缀", self.prefixed),
+            ("中间插包外文本", self.middle),
+        ):
+            with self.subTest(label=label):
+                res = find_hit_sequence(self.pack, text)
+                self.assertEqual(res.entries, (), f"{label} 不得部分命中")
+                self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+                self.assertIsInstance(res.entries, tuple)
+                self.assertNotEqual(res.uncovered, "", f"{label} 必须带断点起剩余")
+
+
+class TestSequenceEdgeCases(SequenceHitBase):
+    """边界：空串、类型护栏、候选复核、候选过滤、确定性。"""
+
+    def test_empty_and_whitespace_input_is_miss_not_error(self):
+        """空串 / 纯空白 → 未命中且不抛错，entries 为空元组、uncovered 为空串。"""
+        for text in ("", "   ", "　　", "\t\n"):
+            with self.subTest(text=text):
+                res = find_hit_sequence(self.pack, text)
+                self.assertEqual(res.entries, ())
+                self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+                self.assertEqual(res.uncovered, "")
+                self.assertEqual(res.mode, MODE_TEXT)
+                self.assertEqual(res.text, text)
+
+    def test_non_str_input_raises_typeerror(self):
+        """text 非 str → TypeError（与 normalize_text 同口径：不把 None 当空串）。"""
+        for bad in (None, 123, b"\xe4\xbd\xa0\xe5\xa5\xbd", ["您好"]):
+            with self.subTest(text=bad):
+                with self.assertRaises(TypeError) as ctx:
+                    find_hit_sequence(self.pack, bad)
+                self.assertIn("str", str(ctx.exception))
+                self.assertIn(type(bad).__name__, str(ctx.exception))
+
+    def test_candidate_failing_confirm_is_excluded(self):
+        """指纹不符的候选不进索引 → 该段覆盖不上 → 整体 miss（§10.7 判据 4）。
+
+        构造：把 seg_a_1 的条目指纹改成错值（文本不变，所以归一化索引能查到它，
+        但 confirm 的 pack.lookup 复核失败）——这正是"复核不过 = 不可用"的分支。
+        """
+        import json
+        entry = next(e for e in self.pack.assets if e.key == "seg_a_1")
+        manifest = json.loads((self.pack.root / "manifest.json").read_text(encoding="utf-8"))
+        for a in manifest["assets"]:
+            if a["key"] == "seg_a_1":
+                a["fingerprint"] = "0" * len(entry.fingerprint)
+        (self.pack.root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.pack.assets = [
+            AssetEntry(
+                key=e.key, part_index=e.part_index, rate_key=e.rate_key,
+                variant=e.variant, text=e.text,
+                fingerprint=("0" * len(e.fingerprint)) if e.key == "seg_a_1" else e.fingerprint,
+                path=e.path, duration_ms=e.duration_ms,
+            )
+            for e in self.pack.assets
+        ]
+
+        res = find_hit_sequence(self.pack, self.text)
+        self.assertEqual(res.entries, (), "复核不过的段不得被覆盖")
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertNotEqual(res.uncovered, "")
+
+    def test_part_index_nonzero_and_wrong_rate_are_excluded(self):
+        """part_index!=0 与 rate 不匹配的条目不参与序列候选。"""
+        # text = SEG_A_1 + ASK + ASK，位置 0 只能用 seg_a_1 覆盖 → 把它挡掉即整体 miss
+        i = next(k for k, a in enumerate(self.pack.assets) if a.key == "seg_a_1")
+        e = self.pack.assets[i]
+        pack = self.pack
+        pack.assets = list(self.pack.assets)
+
+        # ① part_index != 0 → 不是候选
+        pack.assets[i] = AssetEntry(key=e.key, part_index=1, rate_key=e.rate_key,
+                                    variant=e.variant, text=e.text, fingerprint=e.fingerprint,
+                                    path=e.path, duration_ms=e.duration_ms)
+        res = find_hit_sequence(pack, self.text)
+        self.assertEqual(res.entries, (), "part_index!=0 的条目不得参与序列覆盖")
+
+        # ② rate 不匹配 → 不是候选
+        pack.assets[i] = AssetEntry(key=e.key, part_index=0, rate_key="slow",
+                                    variant=e.variant, text=e.text,
+                                    fingerprint=e.fingerprint, path=e.path,
+                                    duration_ms=e.duration_ms)
+        res2 = find_hit_sequence(pack, self.text, rate_key="normal")
+        self.assertEqual(res2.entries, (), "rate 不匹配的条目不得参与序列覆盖")
+
+        # ③ 对照：恢复 part_index=0 + normal 档 → 又命中 3 段
+        pack.assets[i] = e
+        res3 = find_hit_sequence(pack, self.text)
+        self.assertEqual(len(res3.entries), 3)
+
+    def test_deterministic_across_ten_runs(self):
+        """同一输入连跑 10 次：段 key 序列与长度完全一致（同长度多候选取首条）。"""
+        seen = set()
+        for _ in range(10):
+            res = find_hit_sequence(self.pack, self.text)
+            seen.add((len(res.entries), tuple(e.key for e in res.entries)))
+        self.assertEqual(len(seen), 1, f"10 次结果不一致: {seen}")
+
+    def test_first_of_equal_length_candidates_is_stable(self):
+        """同长度多候选取索引内**首条**：ask_fault_type 排在 seg_a_2 前面。"""
+        res = find_hit_sequence(self.pack, self.text)
+        self.assertEqual(res.entries[1].key, "ask_fault_type",
+                         "同长度候选必须取索引首条（顺序稳定，与 pick_by_text 同源）")
+
+    def test_repeated_sentence_still_covers_every_occurrence(self):
+        """同一句连着说两遍：两段各消费一条资产（不跨段去重、不跨段吞并）。"""
+        res = find_hit_sequence(self.pack, f"{ASK}{ASK}")
+        self.assertEqual(
+            [e.key for e in res.entries], ["ask_fault_type", "ask_fault_type"],
+            "两段必须各消费一条资产：同长度多候选取索引首条（ask_fault_type 在前）")
+        self.assertEqual(res.uncovered, "")
+        self.assertEqual(res.miss_reason, None)
+
+
+
+class TestSequenceAssertionBreaksOnTamper(SequenceHitBase):
+    """证明序列断言不是空转：改一字就变红（内存篡改，不落盘）。
+
+    机制：正例断言的期望是**结构化的**（段数、段 key 序列、uncovered=""），
+    所以把包内某段文本改一个字，覆盖就会断在某段，entries 立刻不再是 3 条。
+    这里用内存里的临时篡改复现这件事，不写盘。
+    """
+
+    def test_one_char_tamper_breaks_the_sequence_hit(self):
+        import json
+        orig = next(e.text for e in self.pack.assets if e.key == "seg_a_1")
+        orig_text = self.text                      # 未篡改的整段原文
+        from adapters.framework_kefu.tests import build_pack as _bp
+        # 保留一份未篡改的包做对照臂（篡改只改内存与临时 manifest，不落盘到仓）
+        self.pack_orig = _bp(self.tmp / "pack-orig", [
+            ("prefix", PREFIX, 0),
+            ("seg_a_1", orig, 0),
+            ("ask_fault_type", ASK, 0),
+            ("seg_a_2", ASK, 0),
+            ("seg_c_pair", "稍等一下，我帮您查进度。查好了，马上给您回复。", 0),
+        ])
+        tampered = orig[:-1] + ("。" if orig.endswith("！") else "！")
+
+        from adapters.framework_kefu.tests import build_pack as _bp
+        # 保留一份未篡改的包做对照臂（篡改只改内存与临时 manifest，不落盘到仓）
+        self.pack_orig = _bp(self.tmp / "pack-orig", [
+            ("prefix", PREFIX, 0),
+            ("seg_a_1", orig, 0),
+            ("ask_fault_type", ASK, 0),
+            ("seg_a_2", ASK, 0),
+            ("seg_c_pair", "稍等一下，我帮您查进度。查好了，马上给您回复。", 0),
+        ])
+
+        entry = next(e for e in self.pack.assets if e.key == "seg_a_1")
+        manifest = json.loads((self.pack.root / "manifest.json").read_text(encoding="utf-8"))
+        for a in manifest["assets"]:
+            if a["key"] == "seg_a_1":
+                a["text"] = tampered
+        (self.pack.root / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.pack.assets = [
+            AssetEntry(key=e.key, part_index=e.part_index, rate_key=e.rate_key,
+                       variant=e.variant, text=(tampered if e.key == "seg_a_1" else e.text),
+                       fingerprint=e.fingerprint, path=e.path, duration_ms=e.duration_ms)
+            for e in self.pack.assets
+        ]
+
+        # 1) 未篡改的包 + 原文 → 整段逐字覆盖，3 段（对照臂）
+        res_ok = find_hit_sequence(self.pack_orig, orig_text)
+        self.assertEqual(len(res_ok.entries), 3)
+        self.assertEqual(res_ok.uncovered, "")
+
+        # 2) 同一个包被改了一个字符（句末 。→ ！）→ 位置 0 就覆盖不上，整体 miss
+        res_bad = find_hit_sequence(self.pack, orig_text)
+        self.assertEqual(
+            res_bad.entries, (),
+            "改一字后仍命中 —— 序列断言失效，断言不能打破")
+        self.assertEqual(res_bad.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertNotEqual(res_bad.uncovered, "",
+                            "未命中必须带 uncovered，供诊断定位断点")
+
+    def test_miss_message_carries_the_offending_remainder(self):
+        """未命中消息能定位断点：uncovered 逐字符可复核，不是笼统的"未命中"。"""
+        res = find_hit_sequence(self.pack, self.prefixed)
+        self.assertEqual(res.uncovered, self._norm(self.prefixed))
+        self.assertTrue(res.uncovered.startswith(self._norm(OUT_OF_PACK)),
+                        "uncovered 必须从包外那段起")
+
+
+class TestSequenceExportSurface(unittest.TestCase):
+    """T33 追加的两个符号能从包根导入；既有导出一个不少。"""
+
+    def test_new_symbols_exported(self):
+        import adapters.framework_kefu as pkg
+        for name in ("find_hit_sequence", "SequenceHitResult"):
+            self.assertIn(name, pkg.__all__, f"{name} 未进 __all__")
+            self.assertTrue(hasattr(pkg, name), f"{name} 未导出")
+
+    def test_existing_exports_untouched(self):
+        import adapters.framework_kefu as pkg
+        for name in ("find_hit", "HitResult", "build_text_index", "lookup_key",
+                     "pick_by_text", "confirm", "text_for_key", "normalize_text",
+                     "KefuBridge", "MODE_KEY", "MODE_TEXT",
+                     "REASON_TEXT_NOT_PREBAKED", "REASON_KEY_NOT_PREBAKED",
+                     "KefuClient", "BridgeResult"):
+            self.assertIn(name, pkg.__all__, f"既有导出 {name} 被本卡动到")
+
+
+class _AlarmTimeout(Exception):
+    """SIGALRM 兜底：被测函数空转不返回时让测试失败，而不是把整轮测试挂住。"""
+
+
+def _raise_alarm(signum, frame):
+    raise _AlarmTimeout("find_hit_sequence 未在限时内返回（疑似覆盖循环空转）")
+
+
+class TestSequenceEmptyNormalizedGuard(unittest.TestCase):
+    """T33 静默失败审计 P1 回归：归一化后为空的条目不得让序列覆盖空转。
+
+    背景（审计实测）：包内若有 text 归一化后为空串的条目（" " / "　" / "\\t"），
+    修复前 `rest.startswith("")` 恒真 → `pos += 0` → while 永不退出、entries 无上限
+    增长（3 秒 3100 万条），零日志零异常——公开 API 面对可装载的包会挂死进程。
+    修法 = 两道护栏：候选过滤（_sequence_candidates）+ 消费长度检查（while 内）。
+    这两条断言在修复前会挂死（由 SIGALRM 转成失败），因此能判红。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(self.__class__.__name__)
+        self.addCleanup(self.tmp.cleanup)
+        # 一条正常句 + 两条归一化后为空的条目（半角空格 / 全角空格）
+        self.pack = build_pack(
+            Path(self.tmp.name) / "p",
+            [("blank_halfwidth", " ", 0), ("greet", "您好。", 0),
+             ("blank_fullwidth", "　", 0)],
+        )
+        old = signal.signal(signal.SIGALRM, _raise_alarm)
+        self.addCleanup(signal.signal, signal.SIGALRM, old)
+
+    def _call_timed(self, text, seconds=5):
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            return find_hit_sequence(self.pack, text)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+
+    def test_blank_normalized_entry_excluded_from_candidates(self):
+        """白盒：空归一化条目不进候选索引（修复点本身可被判红）。"""
+        from adapters.framework_kefu.hit_query import _sequence_candidates
+        keys = [e.key for _, e in _sequence_candidates(self.pack, "normal")]
+        self.assertEqual(keys, ["greet"])
+
+    def test_uncoverable_tail_misses_failclosed_not_hangs(self):
+        """端到端：可覆盖前缀 + 包外尾巴 → 整体未命中且 uncovered 指向断点。"""
+        res = self._call_timed("您好。这是一句包外的话。")
+        self.assertEqual(res.entries, ())
+        self.assertEqual(res.miss_reason, REASON_TEXT_NOT_PREBAKED)
+        self.assertEqual(res.uncovered, normalize_text("这是一句包外的话。"))
+
+    def test_coverable_text_still_hits_with_blank_entry_present(self):
+        """不误伤：空条目在场时，正常可覆盖文本仍命中（重复两次 = 两段）。"""
+        res = self._call_timed("您好。您好。")
+        self.assertEqual(len(res.entries), 2)
+        self.assertIsNone(res.miss_reason)
+        self.assertEqual(res.uncovered, "")

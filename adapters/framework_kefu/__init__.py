@@ -31,9 +31,11 @@ from .bridge import (
 )
 from .hit_query import (
     HitResult,
+    SequenceHitResult,
     build_text_index,
     confirm,
     find_hit,
+    find_hit_sequence,
     lookup_key,
     pick_by_text,
     text_for_key,
@@ -69,6 +71,9 @@ __all__ = [
     "pick_by_text",
     "confirm",
     "text_for_key",
+    # 序列命中（T33，docs/10 §10.7：整段 → 多段逐字覆盖）
+    "find_hit_sequence",
+    "SequenceHitResult",
     # kefu 侧客户端
     "KefuClient",
     "KefuError",

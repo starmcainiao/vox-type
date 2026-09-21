@@ -165,6 +165,122 @@
       "rate": "normal"
     },
     {
+      "key": "opening__1",
+      "rate": "normal"
+    },
+    {
+      "key": "opening__2",
+      "rate": "normal"
+    },
+    {
+      "key": "chat_smalltalk__1",
+      "rate": "normal"
+    },
+    {
+      "key": "chat_smalltalk__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_work_order__1",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_work_order__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__1",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__3",
+      "rate": "normal"
+    },
+    {
+      "key": "fallback_internal__1",
+      "rate": "normal"
+    },
+    {
+      "key": "fallback_internal__2",
+      "rate": "normal"
+    },
+    {
+      "key": "lifeboat_fallback__1",
+      "rate": "normal"
+    },
+    {
+      "key": "lifeboat_fallback__2",
+      "rate": "normal"
+    },
+    {
+      "key": "user_no_unknown__1",
+      "rate": "normal"
+    },
+    {
+      "key": "user_no_unknown__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_confirm_question__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_confirm_question__2",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_no_unknown__1",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_no_unknown__2",
+      "rate": "normal"
+    },
+    {
+      "key": "internal_chat_hint__1",
+      "rate": "normal"
+    },
+    {
+      "key": "internal_chat_hint__2",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_plan__1",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_plan__2",
+      "rate": "normal"
+    },
+    {
+      "key": "inject_refuse__1",
+      "rate": "normal"
+    },
+    {
+      "key": "inject_refuse__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_address__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_address__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_userNo__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_userNo__2",
+      "rate": "normal"
+    },
+    {
       "key": "farewell",
       "rate": "normal"
     }

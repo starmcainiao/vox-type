@@ -12,14 +12,17 @@ adapters.framework_kefu.hit_query — 命中查询公开 API（T29：为内嵌�
     key 档：lookup_key —— part_index=0 + rate 档优先 + pack.lookup 指纹复核
     text 档：normalize_text（docs/10 §10.3 四步）→ pick_by_text（rate 档优先
              → 索引首条，顺序稳定）→ confirm
+    序列档（T33）：normalize_text → 按包内 variant 归一化文本逐段**逐字覆盖**
+             （最长优先、任一段不中即整体未命中）→ 每段仍过 confirm 复核
+             —— docs/10 §10.7 的算法判据，冻结，不得另立规则
     禁止语义/模糊/embedding/编辑距离/去语气词/去标点匹配（docs/10 §10.2 裁定 1）。
 
 未命中返回不抛：fail-closed 的抛错留在 run_turn 层——本 API 的语义是"报结论"
-      （带 miss_reason 的 HitResult），由调用方决定要不要中止。
+      （带 miss_reason 的 HitResult / SequenceHitResult），由调用方决定要不要中止。
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 from runtime import REASON_KEY_NOT_PREBAKED
 from assets import AssetEntry
@@ -193,4 +196,138 @@ def find_hit(pack, *, key: Optional[str] = None,
         key=None,
         text=text,
         miss_reason=None if entry is not None else REASON_TEXT_NOT_PREBAKED,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 序列命中（T33，docs/10 §10.7）
+#
+# 为什么有第二个入口：docs/06 §6.1.4 的准入判据是「一句一 variant」（字模最小
+#   粒度 = 一句），所以多分句整段不在包内；上游说整段时单段逐字查不到 → 走原路
+#   （秒级合成）。§10.7 的裁定 4 允许把整段按包内 variant 的归一化文本逐段覆盖，
+#   每段仍是归一化后逐字相等——这不是近似匹配，只是把 (b) 推广到 k 段拼接。
+#
+# 本入口**不改 find_hit**（T29 公开 API，语义冻结）；k=1 时两者结论一致。
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SequenceHitResult:
+    """一次序列命中查询的结论（不抛错，命中与否都靠字段读）。
+
+    属性：
+        entries:      命中序列（按消费顺序，即输入里的字面顺序）；未命中为空元组
+        mode:         恒为 MODE_TEXT——序列只服务文本档，没有 key 档输入
+        text:         输入原文（**未归一化**，与 HitResult.text 同口径）
+        miss_reason:  命中恒 None；未命中为 REASON_TEXT_NOT_PREBAKED
+        uncovered:    未覆盖的剩余——未命中时是**归一化空间**的剩余文本
+                      （从第一个覆盖不上的位置起），命中为空串
+    """
+
+    entries: Tuple[AssetEntry, ...]
+    mode: str
+    text: str
+    miss_reason: Optional[str]
+    uncovered: str
+
+
+def _sequence_candidates(pack, rate_key: str) -> Tuple[Tuple[str, AssetEntry], ...]:
+    """建可用候选索引：(归一化文本, 条目)，按 pack.assets 顺序。
+
+    只收 part_index == 0 且 rate_key 匹配的条目，且必须过 confirm(pack, cand) 的
+    指纹/文件复核——复核不过的**不进**候选（指纹漂移/文件缺失在这里就排除，
+    对应 §10.4 的 fingerprint_mismatch / audio_file_missing 语义）。
+
+    同一条归一化文本在包内可能有多条资产（例：`点下方按钮或直接说明即可。` 同属
+    clarify_work_order__2 与 clarify_repair__3）；本函数**不跨条目去重**，保留全部
+    可用条目，让"同长度多候选取首条"在**调用点**判定（见 find_hit_sequence 的
+    严格大于替换）——同长度多候选取索引内首条是 §10.7 的判据，不是本函数的私事。
+    """
+    cands = []
+    for cand in pack.assets:
+        if cand.part_index != 0 or cand.rate_key != rate_key:
+            continue
+        entry = confirm(pack, cand)
+        if entry is None:
+            continue
+        text_norm = normalize_text(entry.text)
+        if not text_norm:
+            # 归一化后为空的条目（" " / "　" / "\t"）不是"可消费的一段"：
+            # startswith("") 恒真、消费长度 0 → 覆盖循环会空转（pos 不前进、
+            # entries 无上限增长）。这类条目本该在预铸质检被拦（帧数 / 峰值 dBFS），
+            # 但 load_pack 层放行任何 manifest，所以这里显式排除——宁可少一个候选，
+            # 不可空转（T33 静默失败审计 P1：实测 3 秒内 entries 涨到 3100 万条）。
+            continue
+        cands.append((text_norm, entry))
+    return tuple(cands)
+
+
+def find_hit_sequence(pack, text: str, rate_key: str = "normal") -> SequenceHitResult:
+    """序列命中查询：整段文本能否被包内 variant 的归一化文本**逐字覆盖**（docs/10 §10.7）。
+
+    算法（§10.7 冻结判据，逐条对应，不得另立）：
+        1. norm = normalize_text(text)；空串 → 未命中（uncovered=""，不抛错）；
+        2. 建可用候选索引（_sequence_candidates：part_index=0 + rate_key 匹配
+           + confirm 复核通过）；
+        3. 从 pos=0 起，取**能匹配 norm[pos:] 的最长**归一化文本（str.startswith，
+           最长优先——"更长的完整句"优先于它的前缀句）；同长度多候选取索引内首条
+           （顺序稳定，与 pick_by_text 同源）；找不到 → 未命中，
+           uncovered = norm[pos:]（第一个覆盖不上的剩余）；
+        4. 消费该段（pos += len(匹配文本)）并记录条目，重复 3 直到覆盖完毕；
+        5. 命中：entries 按消费顺序、uncovered=""、miss_reason=None。
+
+    红线（§10.7「不做什么」）：不做部分播放——任一段覆盖不上即**整体未命中**，
+        entries 恒为空元组，绝不返回"命中了前几段"。不做近似匹配（无编辑距离/语义/
+        去标点），不做段序重排/去重，不允许跨段吞并（每段必须是某条 variant 的
+        **完整**归一化文本）。
+
+    参数：
+        pack:       只读资产包（assets.AssetPack）
+        text:       上游整段文本（内部走 normalize_text 归一化）
+        rate_key:   语速档（默认 normal）
+
+    返回：
+        SequenceHitResult（命中时 entries 非空、miss_reason 为 None、uncovered 为空串；
+        未命中时 entries 为空元组、miss_reason 为 REASON_TEXT_NOT_PREBAKED、
+        uncovered 指向断点起——**永不抛错、永不返回裸 None**，与 find_hit 同族）
+
+    异常：
+        TypeError: text 不是 str（与 normalize_text 同口径：不把 None 静默当空串）
+    """
+    norm = normalize_text(text)      # 类型护栏在这里：非 str → TypeError
+    if not norm:
+        # 空回复没有可覆盖的内容，按未命中处理（不猜、不凑；uncovered 保持空串）
+        return SequenceHitResult(
+            entries=(), mode=MODE_TEXT, text=text,
+            miss_reason=REASON_TEXT_NOT_PREBAKED, uncovered="",
+        )
+
+    cands = _sequence_candidates(pack, rate_key)
+    entries = []
+    pos = 0
+    while pos < len(norm):
+        rest = norm[pos:]
+        best = None                  # (匹配文本, 条目)
+        for text_norm, entry in cands:
+            if not rest.startswith(text_norm):
+                continue
+            # 严格大于才替换 → 同长度时保留**索引内首条**（顺序稳定，与
+            # pick_by_text 的"退到索引里第一条"同源）；扫描继续到末尾，
+            # 保证"更长的完整句"不会被更早出现的较短候选挡住
+            if best is None or len(text_norm) > len(best[0]):
+                best = (text_norm, entry)
+        if best is None or not best[0]:
+            # 覆盖不上（或候选退化为空段——_sequence_candidates 已排除，这里是
+            # 第二道护栏：消费长度为 0 的匹配必须当场判未命中，不许空转）。
+            # 整体未命中，带断点起的剩余（归一化空间）。
+            return SequenceHitResult(
+                entries=(), mode=MODE_TEXT, text=text,
+                miss_reason=REASON_TEXT_NOT_PREBAKED, uncovered=rest,
+            )
+        entries.append(best[1])
+        pos += len(best[0])
+
+    return SequenceHitResult(
+        entries=tuple(entries), mode=MODE_TEXT, text=text,
+        miss_reason=None, uncovered="",
     )
