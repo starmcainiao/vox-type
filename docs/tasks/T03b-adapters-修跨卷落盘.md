@@ -9,7 +9,7 @@
 ## 背景
 
 `adapters/tts_macsay/adapter.py` 的 `synthesize()` 采用「先写到 `tempfile`，再移动到目标路径」的实现，移动用了 `Path.replace()`（即 `os.replace`）。
-`os.replace` **不能跨文件系统**。而本机：`tempfile.gettempdir()` = `/var/folders/...`（设备 `disk3s5`），仓库在 `/Volumes/macos`（设备 `disk7s1`）——**是两个设备**。
+`os.replace` **不能跨文件系统**。而本机：系统临时目录与仓库目录**分属两个文件系统**（跨卷）。
 
 后果：适配器**写不进仓库所在卷**。而 T03 卡的背景已写明这个适配器是「用于后续预铸流水线（T05）与执行器（T07）」用的，T05 正是要往仓内 `assets/` 或业务包目录写音频（`.gitignore` 里 `assets/audio/` 的存在也说明音频预期落在仓内）。**这条不修，T05 必崩。**
 

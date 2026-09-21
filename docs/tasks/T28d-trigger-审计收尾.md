@@ -23,7 +23,7 @@ T28/T28b/T28c 验收通过后，`blackiron-silent-failure-hunter` 对迁移做�
 ## 逐条修法（审计已给 file:line，不许扩大）
 
 1. **P1 · `trigger/ledger.py`**：`_repo_root()` 的 `.parent` 由 3 个减为 **2 个**（旧位置 adapters/state_trigger/ 需 3 层，
-   新位置 trigger/ 只需 2 层；现实测返回 `/Volumes/macos/newProject`，仓库上一层）；其上方 docstring 的路径链
+   新位置 trigger/ 只需 2 层；现实测返回仓库上一层目录）；其上方 docstring 的路径链
    「本文件 → state_trigger → adapters → 仓库根」改为「本文件 → trigger → 仓库根」。
    `_inside_repo()` **保留不删**（它是留痕红线的守卫口子，暂无调用方是有意留白），仅随 `_repo_root` 自动修正；
 2. **P2 · `trigger/__init__.py:3`**：`落点说明：本包在 adapters/（扩展区）` → `落点说明：本包是顶层扩展区 trigger/（2026-09-19 自 adapters/state_trigger/ 迁入）`；
