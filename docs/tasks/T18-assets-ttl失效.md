@@ -80,5 +80,22 @@ runtime/executor.py compiler/AGENTS.md assets/AGENTS.md runtime/AGENTS.md compil
 **首选**：`vox-card-executor`；**回落**：`opencode run -m sense-nova/sensenova-6.8-flash-lite`。
 数据分级 = 公开。非交互直接落地；只回事实与自测输出，不做达标判定；不提交 git；与卡冲突停下上报。
 
+## 验收记录（2026-09-21，验收方独立复核）
+
+**结论：验收通过**。
+
+- 白名单：7 个既有文件 + 3 个新测试文件；**既有测试文件零改动**（`git diff --name-only -- compiler/tests assets/tests runtime/tests core/tests` 空）。
+- 十一根 **1,398** 全绿（assets 90→**114**、compiler 168→**185**、runtime 170→**191**）。
+- **验收方抽验（自写探针，不经执行方的测试）**：`invalid_at=2020-01-01` 的包 →
+  `is_expired(now=2026)` = **True**；`pack.lookup(now=2026)` = **None**（**保险丝在资产层** ✓，
+  即 kefu 钩子等消费方自动受保护）；`Executor` 对 `allow_fallback=False` **与 `True`** 均抛
+  `RuntimeMissError`（消息含 `key='g1'` 与 `reason=asset_expired`）且**不写输出文件** ✓。
+- 执行方实测：`ttl=3600` 折算 `invalid_at`（容差 2s，独立复算）；互斥与非法值各报错含实际值；
+  注入验证（`is_expired` 改恒 False）→ **22 条判红**；新增测试零 `sleep`（全部显式注入 `now`）。
+- 五处执行方不确定项裁定**全部接受**：① `REASON_ASSET_EXPIRED` 真源在 `core/metrics_spec`（卡面如此；
+  T19 的 reason 留 runtime 是因它更局部，不构成不一致）；② 过期单元状态取 `MISS`（事实一致）；
+  ③ `invalid_at` 规范化 `Z`→`+00:00`（语义等价）；④ `Executor(now=)` 实例级注入（与 `duplex` 风格一致）；
+  ⑤ `validate_pack` 追加问题不抛错（沿用既有契约）。
+
 ## 卡状态
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（证据见上）

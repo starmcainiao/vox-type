@@ -181,3 +181,65 @@
 **历史引用标注**：本节及 report.json 中所有"T27 第一轮 / T27b / T27c"的数字与
 结论均为**历史留证**，不代表当前实现。当前实现的判据以「语义不变声明」+「只读契约」
 + report.json 的 `problems` 字段为准。
+
+---
+
+## ⑨ 实现变更记录（T18 · 2026-09-22）：TTL / invalid_at 失效判定
+
+**核心红线**：过期资产不得被播出。播报过期事实比不播更糟。
+
+### 字段只增，旧包行为完全不变
+
+| 改动 | 形态 | 旧包（无这两个字段） |
+|---|---|---|
+| `AssetEntry.invalid_at` | 新增，`Optional[datetime]`，默认 `None` | `None` = **永不过期**，`is_expired` 恒 `False` |
+| `AssetEntry.ttl` | 新增，`Optional[int]`，默认 `None` | `None`；**仅审计留痕**，判定不看它 |
+| manifest 资产条目 | 新增可选键 `invalid_at` / `ttl` | 不出现这两个键 → manifest 与既有产物**逐字节一致** |
+
+`load_pack` 对这两个字段做类型校验（非法 → `AssetPackError`，消息含实际值）：
+`invalid_at` 必须是可解析的 ISO 8601 字符串；`ttl` 必须是正整数（`0` / 负数 /
+字符串 `"3600"` / 布尔 `true` 全部拒绝——`bool` 是 `int` 子类，必须显式排除）。
+
+### 保险丝在资产层（本卡的关键决定）
+
+`AssetPack.lookup(..., now=None)` 对过期条目返回 `None`，与既有未命中**同形**
+（指纹不匹配 / 文件不存在）。**任何**消费方——`runtime` 的 `Executor` 与
+`adapters/framework_kefu` 的钩子都直接调 `pack.lookup`，不经 runtime——因此
+过期资产对**所有**调用方都不可能再被取出，调用方零改动即受保护。
+
+### 判据只有一份
+
+公开纯函数 `is_expired(entry, now)` 是**唯一**判据，`lookup` 与 `runtime` 共用，
+不得两处各写一份：
+
+- 语义（冻结）：`now >= invalid_at` → 过期（**恰好等于失效时刻也算过期**）；
+- 只看 `invalid_at`，不看 `ttl`（折算已在 compiler 预铸时刻完成）；
+- 无 `invalid_at` 恒 `False`（旧包唯一锚点）。
+
+### `lookup(now=)` 的默认语义与评测重放要求
+
+`now` 接受 `datetime` 或 ISO 8601 字符串（`Z` 结尾归一成 `+00:00`；naive 值按
+UTC 解释，与 manifest 的 `created_at` 同口径）。**`now=None` 才取当前 UTC 时间**。
+
+> **评测与测试必须显式注入 `now`**（`lookup(..., now=...)` /
+> `is_expired(entry, now=...)`），不得依赖 `sleep` 等真实时间流逝——否则评测不可
+> 重放。本层的失效相关测试（`assets/tests/test_ttl.py`）全部注入固定时刻，零 sleep。
+
+### 迁移说明
+
+- **旧包 / 旧源：零改动即可继续用**。无 `ttl` / `invalid_at` 的包永不过期，
+  `lookup()` 默认参数与显式 `now=` 都照常命中（见
+  `test_lookup_legacy_pack_lookup_unchanged_with_and_without_now`）。
+- **新包要加失效声明**：改 `phrases.json` 的单条话术，给 `ttl`（秒，正整数，相对
+  预铸时刻）或 `invalid_at`（ISO 8601 绝对时刻），两者**互斥**——同时给由 compiler
+  报 `SourceError`，不猜哪个优先。重新 `vox pack build` 即可，无需迁移脚本。
+- **消费方**：无需改动。过期条目返回 `None` 与未命中同形；需要区分原因时调
+  `is_expired(entry, now)`。
+
+### 判定与验收
+
+- `assets/tests/test_ttl.py`（24 条）：`is_expired` 纯函数（含边界 `==`）、
+  `load_pack` / `validate_pack` 的坏值拒绝（消息含实际值）、`lookup(now=)` 的
+  正反翻转、模块级与实例方法同形、**直接调 `pack.lookup` 不经 runtime 的保险丝**。
+- 反空转（把 `is_expired` 改成恒 `False` → 负例必须全红）：实测 assets 9 条判红、
+  runtime 13 条判红（共 22 条），见 `runtime/tests/test_executor_expiry.py`。

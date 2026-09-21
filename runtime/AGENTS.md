@@ -77,3 +77,67 @@
 **新增测试**：`runtime/tests/test_duplex_policy.py`（46 条，每条可观测行为至少一个
 可判红用例 + 负例 + 音频 sha256 不变性）、`core/tests/test_protocol_critical.py`
 （18 条，`critical` 正例/负例/常量钉住）。**既有测试文件一行未改**。
+
+---
+
+## ⑨ 实现变更记录（T18 · 2026-09-22）：过期资产拒播
+
+**核心红线**：过期资产**拒播**。`allow_fallback=True` **也不放行**——播报过期事实
+比不播更糟（与 T19 的 critical 超带同款理由）。
+
+### 新增原因常量
+
+`REASON_ASSET_EXPIRED = "asset_expired"`。**真源在 `core/metrics_spec.py`**
+（只增，不进 `METRIC_FIELDS` / `DUPLEX_FIELDS`），本模块的 `REASON_ASSET_EXPIRED`
+是从 `core` 引入的同名别名——取值只有一份，避免两层各写一份字面量。
+
+WHY 单独一个原因而不是复用 `key_not_prebaked`：那条语义是"整条 key 都没预铸"，
+这里是"预铸了但已失效"——修复动作完全不同（补铸 vs 刷新内容 / 延长有效期），
+共用原因码会让定位的人以为是"没铸"从而做错修复。
+
+### 判定位置与优先级
+
+判定插在**引擎一致性检查之后、包内查表之前**（`_decide_unit`）：
+
+- 排在 `engine_mismatch` 之后 —— 保持既有优先级语义不变（"引擎换了"优先）；
+- 排在 `key_not_prebaked` 之前 —— 过期不是"没预铸"，不得用那个原因冒充；
+- 状态取 `MISS` 而非 `FALLBACK` —— 过期内容**不允许**现场合成播出，若取
+  `FALLBACK` 会让事件语义与事实不符。
+
+`allow_fallback=True` 的独立硬门在 `execute()` 里（与 T19 的 critical 超带并列）：
+判定阶段先全部算完，`reason == REASON_ASSET_EXPIRED` 时**无条件抛
+`RuntimeMissError`**，不写输出文件、不调 TTS、不播其他话术。
+
+### 判据只有一份
+
+本模块**不重写**过期判据：`_expired_at()` 调 `assets.pack.is_expired(entry, now)`，
+与 `lookup` 共用同一个函数。runtime 之所以要自己判一次，是因为 `lookup` 只返回
+`None`、不告诉你原因，而**原因必须写进事件**（红线：本该命中却换了路径必须留痕）。
+
+### 时钟注入
+
+`Executor(..., now=None)`：`now=None` = 当前 UTC；显式传入（`datetime` 或 ISO 8601
+字符串）用于评测 / 测试**重放**。同一轮 `execute()` 内的所有失效判定都用这一个值。
+
+> **时间断言一律注入 `now`，不得用 `sleep`**——评测要能重放。本卡测试全部注入
+> 固定时刻，零 sleep。
+
+### 迁移说明（字段只增 + 旧包 / 旧源行为不变）
+
+- **旧包 / 旧源零改动**：无 `invalid_at` 的条目 `is_expired` 恒 `False`，
+  `lookup()` 与 `execute()` 行为**完全不变**（既有 170 条测试逐字节未改、全绿即为
+  判据）。
+- **新包**：`phrases.json` 加 `ttl` 或 `invalid_at`（互斥），重新 `vox pack build`；
+  无迁移脚本。
+- **事件流形状不变**：过期单元走 `miss` + `reason=asset_expired`，字段集与既有
+  miss 事件一致；`policy_stream` 默认仍为 `False`。
+
+### 判定与验收
+
+- `runtime/tests/test_executor_expiry.py`（21 条）：正例（未来 `invalid_at` →
+  正常播 / 零 TTS）、负例四件套（① `lookup` 返回 `None` ② reason = `asset_expired`
+  ③ 不写输出文件 ④ `allow_fallback=True` 也拒播）、混合包（只过期那条 miss）、
+  旧包在任意 `now=` 下不变、边界 `now == invalid_at` 算过期、常量位置与
+  `METRIC_FIELDS` 未被污染。
+- **反空转**：把 `assets.is_expired` 改成恒 `False` → 本文件 13 条判红 + assets 侧
+  9 条判红（共 22 条），证明负例真的在验过期判定而不是空转。

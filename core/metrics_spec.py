@@ -126,6 +126,16 @@ LISTEN_MS: str = "listen_ms"
 
 # 等待窗口事件自带上述标记键（值为 patience_ms），不引入额外的枚举字段
 
+# ---------------------------------------------------------------------------
+# reason 值常量（T18 只增，不进入 METRIC_FIELDS）
+# ---------------------------------------------------------------------------
+# WHY 收在 core 而不是留在 runtime：这些是"值"，不是字段名；runtime 与 assets 两侧
+#     共用同一 reason 码（runtime 的 REASON_* 只是从本处引入的同名别名），避免
+#     "asset_expired" 在两层各写一份字面量。METRIC_FIELDS 是 eval 报告的字段名集合
+#     （被 core/tests/test_metrics_spec.py 钉死为 15 个），reason 的**取值**不属于它。
+# 资产已过期——命中路径上的条目过了 invalid_at：拒播，且不写输出文件、不降级。
+REASON_ASSET_EXPIRED: str = "asset_expired"
+
 DUPLEX_FIELDS: frozenset = frozenset({
     BARGE_IN,
     REQUIRES_CONFIRM,

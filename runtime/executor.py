@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from core.metrics_spec import FALLBACK, HIT, MISS
+from core.metrics_spec import FALLBACK, HIT, MISS, REASON_ASSET_EXPIRED
 from core.protocol import CRITICAL_RATE, PlanUnit, parse_plan
 from assets.fingerprint import fingerprint
-from assets.pack import AssetEntry, AssetPackError
+from assets.pack import AssetEntry, AssetPackError, is_expired
 
 from .audio import SAMPLE_RATE, AudioError, concat_wavs, read_wav, silence
 from .duplex import DuplexParams, rate_distance
@@ -37,6 +37,11 @@ REASON_ENGINE_MISMATCH = "engine_mismatch"
 #     这里语义是"预铸了但没预铸 critical 要求的档位、且带内找不到可用档"，
 #     两件事的修复动作不同（补铸 slow 档 vs 补铸整条话术）。
 REASON_CRITICAL_RATE_OUT_OF_BAND = "critical_rate_out_of_band"
+# T18：命中路径上的资产已过 invalid_at → 拒播，且**不受 allow_fallback 影响**。
+# WHY 单独一个原因：key_not_prebaked 的语义是"整条 key 都没预铸"，而这里是
+#     "预铸了但已经失效"——修复动作完全不同（补铸 vs 刷新内容/延长有效期），
+#     共用原因码会让定位的人以为是"没铸"，从而做出错误的修复。
+REASON_ASSET_EXPIRED = REASON_ASSET_EXPIRED  # 真源在 core.metrics_spec（只增）
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +120,16 @@ class Executor:
     """
 
     def __init__(self, pack, adapter, *, duplex: Optional[DuplexParams] = None,
-                 allow_fallback: bool = False, policy_stream: bool = False):
+                 allow_fallback: bool = False, policy_stream: bool = False,
+                 now=None):
         """初始化执行器并校验依赖对象。
 
         参数：
             policy_stream: 是否在事件流里追加双工策略事件（等待窗口 + 策略字段）。
                            默认 False = 保持"一单元一事件"的旧形状。
+            now: 失效判定的时刻（T18）。None = 当前 UTC；显式传入（datetime 或
+                 ISO 8601 字符串）用于评测/测试**重放**——不得依赖 sleep 等真实
+                 时间流逝。判定与 assets 共用同一判据 `is_expired(entry, now)`。
 
         异常：
             TypeError: pack/adapter 缺必需成员、duplex 类型不对、
@@ -147,6 +156,8 @@ class Executor:
         self.adapter = adapter
         self.duplex = params
         self.allow_fallback = allow_fallback
+        # T18：时钟注入。execute() 内的所有失效判定都用这一个值（单轮内自洽）。
+        self.now = now
         # T19：双工策略事件（等待窗口 / backchannel_ok / barge_in / requires_confirm /
         # rate_fallback）是否进入事件流。
         # 为什么默认关闭（False）：既有事件流契约是"一个单元恰好一条事件"
@@ -221,6 +232,12 @@ class Executor:
         # 属于事后无法定位的静默降级。所以这里无条件抛错、不写输出文件。
         for decision in decisions:
             if decision.reason == REASON_CRITICAL_RATE_OUT_OF_BAND:
+                raise RuntimeMissError(self._abort_message(decision))
+
+        # 过期资产同样是"更硬的 fail-closed"（T18）：即使 allow_fallback=True 也
+        # 不允许把过期内容现场合成播出去——**播报过期事实比不播更糟**。
+        for decision in decisions:
+            if decision.reason == REASON_ASSET_EXPIRED:
                 raise RuntimeMissError(self._abort_message(decision))
 
         # ② 合成与拼接阶段
@@ -370,6 +387,9 @@ class Executor:
             3. 包内查表：无候选 → miss / key_not_prebaked；
                指纹不符 → fallback / fingerprint_mismatch；
                音频缺失 → fallback / audio_file_missing；否则 hit
+
+        T18 追加：过期判定插在**引擎检查之后、包内查表之前**——与引擎一致性并列
+        作为"命中路径不可用"的判据，但优先于 key_not_prebaked。
         """
         # 档位解析（T19）：critical 单元强制关键信息档；包内缺档时按收敛带判回落。
         # 非 critical 单元行为与既往完全一致——绝不顺手放宽。
@@ -411,6 +431,20 @@ class Executor:
                 reason=REASON_ENGINE_MISMATCH, variant=variant,
                 text=self._candidate_text(unit.key, 0, rate_key, variant) or unit.key,
                 requested_rate=requested_rate, rate_fallback=rate_fallback,
+            )
+
+        # ②b 过期判定（T18）：资产已过 invalid_at → 拒播，reason 明确为 asset_expired。
+        # 插在引擎检查之后：engine_mismatch 表示"引擎换了"，优先级语义不变；
+        # 插在查表之前：过期不是"没预铸"，不能用 key_not_prebaked 冒充。
+        # 状态取 MISS 而非 FALLBACK：过期内容**不允许**现场合成播出（见 execute 的
+        # 硬门），走 FALLBACK 会让事件语义与事实不符。
+        expired_at = self._expired_at(unit.key, rate_key, variant)
+        if expired_at is not None:
+            return _UnitDecision(
+                part=part, unit=unit, state=MISS,
+                reason=REASON_ASSET_EXPIRED, variant=variant,
+                text=expired_at, requested_rate=requested_rate,
+                rate_fallback=rate_fallback,
             )
 
         # ③ part_index 升序探测（0,1,2…；本轮包只产 0，但要对未来兼容）
@@ -518,6 +552,27 @@ class Executor:
         """取候选条目的文本，供降级时的现场合成使用；无候选返回 None。"""
         entry = self._find_candidate(key, part_index, rate_key, variant)
         return entry.text if entry is not None else None
+
+    def _expired_at(self, key: str, rate_key: str,
+                    variant: Optional[int]) -> Optional[str]:
+        """取 (key, rate_key, variant) 的过期条目文本；未过期 / 无候选返回 None。
+
+        判据**只有一份**：`assets.pack.is_expired(entry, now)`，与 `lookup` 共用。
+        runtime 这边要自己判一次，是因为 `lookup` 只返回 None、不告诉你原因——
+        而原因必须写进事件（红线：本该命中却换了路径必须留痕）。
+
+        注意这里遍历的是 `self.pack.assets`（不是 `lookup`），因为 `_resolve_rate`
+        已经按同一个身份把 rate / variant 解析好了；这里只补"它是否过期"这一维。
+        """
+        for entry in self.pack.assets:
+            if (
+                entry.key == key
+                and entry.rate_key == rate_key
+                and entry.variant == variant
+                and is_expired(entry, self.now)
+            ):
+                return entry.text
+        return None
 
     def _resolve_rate(self, unit: PlanUnit, part: int):
         """解析本单元的播报档位（T19：rate_band 的唯一消费点）。
@@ -652,6 +707,13 @@ class Executor:
                 f"rate_band={self.duplex.rate_band} 不足 → 中止整条 plan"
                 f"（fail-closed：不写输出文件、不用其它档位合成播放；"
                 f"该判定不受 allow_fallback={self.allow_fallback} 影响）"
+            )
+        if decision.reason == REASON_ASSET_EXPIRED:
+            return (
+                f"plan 单元 #{decision.part} 资产已过期（{ident}，"
+                f"reason={decision.reason}）→ 中止整条 plan"
+                f"（fail-closed：不写输出文件、不播其他话术；"
+                f"播报过期内容比不播更糟，该判定不受 allow_fallback={self.allow_fallback} 影响）"
             )
         return (
             f"plan 单元 #{decision.part} 未命中（{ident}，"

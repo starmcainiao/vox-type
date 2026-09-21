@@ -20,7 +20,7 @@ compiler.prebake — 预铸流水线：枚举 → 合成 → 质检 → 差量�
 import json
 import shutil
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -93,17 +93,26 @@ class _Item:
     text: str
     fingerprint: str
     index: int  # 枚举顺序（用于保持 manifest 条目顺序稳定）
+    ttl: Optional[int] = None                      # 源里的相对失效秒数（审计留痕）
+    invalid_at: Optional[datetime] = None          # 绝对失效时刻（UTC，判定唯一依据）
 
 
-def _enumerate_items(source: PackSource) -> List[_Item]:
+def _enumerate_items(source: PackSource, created_at: datetime) -> List[_Item]:
     """枚举全部待铸条目：每个 phrase 的每个 variant × 每个 rate。
 
     预期指纹**必须**调 assets.fingerprint（唯一实现）；这里不另写指纹算法。
     part_index 一律 0（多分片明确推迟，见 docs/06 §6.1.4）。
+
+    T18：`ttl` 在这里被**折算成 invalid_at**（`created_at + ttl 秒`），落进 manifest
+    的只有绝对时刻——资产层只看 `invalid_at`，不在运行期做二次折算。
     """
     items: List[_Item] = []
     idx = 0
     for phrase in source.phrases:
+        invalid_at = phrase.invalid_at
+        if invalid_at is None and phrase.ttl is not None:
+            # 从**预铸时刻**起算：created_at 是本包唯一的"预铸基准时刻"。
+            invalid_at = created_at + timedelta(seconds=phrase.ttl)
         # variant 序号 = 该 variant 在列表中的下标，从 0 起
         for vi, text in enumerate(phrase.variants):
             for rate_key in phrase.rates:
@@ -121,6 +130,8 @@ def _enumerate_items(source: PackSource) -> List[_Item]:
                         text=text,
                         fingerprint=fp,
                         index=idx,
+                        ttl=phrase.ttl,
+                        invalid_at=invalid_at,
                     )
                 )
                 idx += 1
@@ -187,6 +198,20 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _expiry_fields(item: _Item) -> Dict[str, Any]:
+    """构造 manifest 条目里的失效字段（T18）。
+
+    裁定：manifest 存 `invalid_at`（绝对时刻，判定唯一依据）+ 可选 `ttl` 原值（审计）。
+    两个都不给（旧源）→ 不写任何失效字段，manifest 与既有产物**逐字节一致**。
+    """
+    fields: Dict[str, Any] = {}
+    if item.ttl is not None:
+        fields["ttl"] = item.ttl
+    if item.invalid_at is not None:
+        fields["invalid_at"] = item.invalid_at.isoformat()
+    return fields
+
+
 # ---------------------------------------------------------------------------
 # 3. 主入口
 # ---------------------------------------------------------------------------
@@ -213,10 +238,13 @@ def prebake(
         PrebakeError: clean is False 且 allow_partial is False（异常对象带 report）
     """
     out_root = Path(out_root)
-    created_at = _iso_now()
+    created_at_str = _iso_now()
+    # 预铸基准时刻（T18）：`ttl` 从这里起算。与 manifest.created_at 同一个值，
+    # 所以「invalid_at == created_at + ttl」对验收方是可复算的（容差 ≤ 2 秒）。
+    created_at = datetime.fromisoformat(created_at_str)
 
     # 1. 枚举待铸条目
-    items = _enumerate_items(source)
+    items = _enumerate_items(source, created_at)
     total = len(items)
 
     # 2. 差量复用：尝试装载旧包
@@ -270,6 +298,7 @@ def prebake(
                 "path": audio_rel,
                 "duration_ms": int(old.duration_ms),
                 "_index": item.index,
+                **_expiry_fields(item),
             })
             continue
 
@@ -322,7 +351,7 @@ def prebake(
         ruleset_version=source.ruleset_version,
         voice=source.voice,
         model_version=source.model_version,
-        created_at=created_at,
+        created_at=created_at_str,
         total=total,
         synthesized=synthesized,
         reused=reused,
@@ -368,6 +397,7 @@ def prebake(
             "path": f"audio/{item.fingerprint}.wav",
             "duration_ms": int(duration_ms),
             "_index": item.index,
+            **_expiry_fields(item),
         })
 
     # 清理暂存目录（含未通过质检的残留文件）
@@ -385,7 +415,7 @@ def prebake(
         "ruleset_version": source.ruleset_version,
         "voice": source.voice,
         "model_version": source.model_version,
-        "created_at": created_at,
+        "created_at": created_at_str,
         "assets": entries,
     }
 

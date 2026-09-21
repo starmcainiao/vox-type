@@ -12,8 +12,9 @@ compiler.source — 源格式装载与校验
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from core.protocol import VALID_RATES
 
@@ -42,10 +43,14 @@ PACK_ALLOWED_FIELDS: Tuple[str, ...] = PACK_REQUIRED_FIELDS + (
 )
 
 # phrases.json 每项允许的字段全集；出现别的 → 未知字段报错
+# WHY 白名单只增不减：`ttl` / `invalid_at` 是业务侧的失效声明（T18），
+#      与 `duplex` 同类——写错一个字母必须响（未知字段报错），不许静默丢弃。
 PHRASE_ALLOWED_FIELDS: Tuple[str, ...] = (
     "key",
     "variants",
     "rates",
+    "ttl",
+    "invalid_at",
 )
 
 # 句末标点集合（中英双语）——用于「一句」判据
@@ -60,6 +65,62 @@ class SourceError(Exception):
     """
 
 
+def parse_iso8601(value: Any) -> datetime:
+    """解析并校验 ISO 8601 时间戳（**公开**），失败抛 SourceError 并带实际值。
+
+    `Z` 结尾归一成 `+00:00`（标准库 `fromisoformat` 不认 `Z`）；naive 值按 UTC
+    解释——与 assets 层 `parse_invalid_at` 的口径完全一致，保证两侧解析同形。
+
+    参数：
+        value: 原始字段值（通常为字符串）
+
+    返回：
+        带时区的 datetime
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise SourceError(
+            f"invalid_at 必须是非空 ISO 8601 字符串，实际值为 {value!r}"
+            f"（类型 {type(value).__name__}）"
+        )
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as e:
+        raise SourceError(
+            f"invalid_at 不是合法的 ISO 8601 时间戳: {value!r}（{e}）"
+        ) from e
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.timezone.utc)
+
+
+def _validate_ttl(ttl: Any, key: str, index: int) -> int:
+    """校验单条话术的 `ttl`：正整数秒（T18）。
+
+    `bool` 是 `int` 的子类，必须显式排除——`ttl=true` 会被静默当成 1 秒。
+    字符串（如 `"3600"`）同样拒绝：那是一次类型笔误，放行会让话术提前失效。
+
+    参数：
+        ttl:   ttl 字段值
+        key:   话术 key（错误信息定位）
+        index: phrases 下标（错误信息定位）
+
+    返回：
+        校验通过的秒数
+
+    异常：
+        SourceError: 非整数 / 布尔 / 非正（消息含 key 与实际值）
+    """
+    if isinstance(ttl, bool) or not isinstance(ttl, int):
+        raise SourceError(
+            f"key='{key}' 的 ttl 必须是正整数秒，实际值为 {ttl!r}"
+            f"（类型 {type(ttl).__name__}，位置 phrases[{index}]）"
+        )
+    if ttl <= 0:
+        raise SourceError(
+            f"key='{key}' 的 ttl 必须是正整数秒，实际值为 {ttl!r}"
+            f"（位置 phrases[{index}]）"
+        )
+    return ttl
+
+
 # ---------------------------------------------------------------------------
 # 2. 数据结构
 # ---------------------------------------------------------------------------
@@ -68,13 +129,17 @@ class PhraseSource:
     """单条话术：key + 变体列表 + 语速档列表。
 
     属性：
-        key:       话术唯一标识（同一源内唯一）
-        variants:  变体文本（元组，防复读机；每个元素必须是一句）
-        rates:     该 key 要预铸的语速档（缺省取 pack.json 的 rates）
+        key:        话术唯一标识（同一源内唯一）
+        variants:   变体文本（元组，防复读机；每个元素必须是一句）
+        rates:      该 key 要预铸的语速档（缺省取 pack.json 的 rates）
+        ttl:        相对失效时长（秒，T18）；预铸时折算成 invalid_at 落进 manifest
+        invalid_at: 绝对失效时刻（T18）；与 ttl 在源里**互斥**
     """
     key: str
     variants: Tuple[str, ...]
     rates: Tuple[str, ...]
+    ttl: Optional[int] = None
+    invalid_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -298,7 +363,26 @@ def load_source(root: Union[str, Path]) -> PackSource:
             else default_rates
         )
 
-        phrases.append(PhraseSource(key=key, variants=tuple(variants), rates=phrase_rates))
+        # ttl / invalid_at（T18）：两者在源里**互斥**——同时给一律报错，不猜哪个优先。
+        # WHY 不猜：两个口径（相对 vs 绝对）同时存在时谁赢都是一种静默选择，
+        #      会让作者以为写了一个、实际生效另一个，正是"本该命中却换了路径"的同族问题。
+        if "ttl" in raw and "invalid_at" in raw:
+            raise SourceError(
+                f"key='{key}' 的 'ttl' 与 'invalid_at' 互斥，不能同时出现"
+                f"（ttl={raw['ttl']!r}, invalid_at={raw['invalid_at']!r}，位置 phrases[{i}]）"
+            )
+
+        ttl: Optional[int] = None
+        invalid_at: Optional[datetime] = None
+        if "ttl" in raw:
+            ttl = _validate_ttl(raw["ttl"], key, i)
+        if "invalid_at" in raw:
+            invalid_at = parse_iso8601(raw["invalid_at"])
+
+        phrases.append(PhraseSource(
+            key=key, variants=tuple(variants), rates=phrase_rates,
+            ttl=ttl, invalid_at=invalid_at,
+        ))
 
     return PackSource(
         pack_id=pack["pack_id"],

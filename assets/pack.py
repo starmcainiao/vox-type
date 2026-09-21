@@ -32,13 +32,24 @@ T27（查找热路径索引化，**语义零变化**）+ T27d（O(1) 索引 + �
     本实现取代三者。
   包格式 / API 契约 / 失败条件 / 返回值一律未动（见 AGENTS.md「实现变更记录（T27）」
   与「T27d」小节）。
+
+T18（TTL / 失效，字段只增）：
+  - `AssetEntry` 增两个**可选**字段 `ttl` / `invalid_at`（默认 None）；**旧包无这两个
+    字段 = 永不过期**，既有行为零变化。
+  - 判定保险丝放在**本层**：`lookup(..., now=None)` 对过期条目返回 `None`（与既有
+    未命中同形）。这样**任何**消费方（含 adapters/framework_kefu 的钩子）不经 runtime
+    就直接调 `pack.lookup` 时也自动受保护——过期资产不会经任何路径被播出。
+  - 判据只有**一份**：公开纯函数 `is_expired(entry, now)`，`lookup` 与 runtime 共用。
+  - `now` 一律**注入**（`datetime` 或 ISO 8601 字符串）；`now=None` 才取当前 UTC。
+    评测与测试必须显式传 `now` 才能重放，不得依赖 sleep 等真实时间流逝。
 """
 
 import json
 import os
 from dataclasses import InitVar, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from assets.fingerprint import fingerprint
 
@@ -51,6 +62,121 @@ class AssetPackError(Exception):
 
     消息必须包含导致失败的具体值，以便上层定位问题。
     """
+
+
+# ---------------------------------------------------------------------------
+# 1b. 失效判定（T18：唯一判据，lookup 与 runtime 共用）
+# ---------------------------------------------------------------------------
+def _coerce_to_dt(value: Union[datetime, str]) -> datetime:
+    """把时间值归一成 **UTC** `datetime`（内部辅助，不参与任何判定语义）。
+
+    接受两种形态：`datetime` 实例（naive 一律视为 UTC）与 ISO 8601 字符串。
+    字符串一律走 `datetime.fromisoformat`（零第三方依赖；`Z` 结尾由本函数归一成
+    `+00:00`，因为标准库在该写法下不认 `Z`）。
+
+    为什么必须归一到 UTC：manifest 里 `created_at` 用 `+00:00`、测试与业务侧常见
+        `Z` 结尾，两者语义相同。不归一就会拿两个 aware datetime 相减时 TypeError，
+        或把 naive 与 aware 混着比——那是「本该过期却判成没过期」的静默降级。
+
+    参数：
+        value: datetime 或 ISO 8601 字符串
+
+    返回：
+        UTC 时区的 datetime
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+    text = value.strip().replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        # naive 字符串（如 "2026-09-22T00:00:00"）：与 manifest 的时间戳同口径按 UTC 处理。
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def parse_invalid_at(value: str) -> datetime:
+    """解析并校验 `invalid_at`（**公开**）：必须是合法 ISO 8601 时间戳。
+
+    与 `_coerce_to_dt` 的区别：这里是**装载期校验**——失败必须抛 `AssetPackError`
+    并带实际值（编译期就把坏包拦下），而 `_coerce_to_dt` 是运行期的归一化。
+
+    参数：
+        value: invalid_at 字段值
+
+    返回：
+        UTC 时区的 datetime
+
+    异常：
+        AssetPackError: 非字符串 / 无法解析 / 缺时区且无法按 UTC 解释
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise AssetPackError(
+            f"invalid_at 必须是非空 ISO 8601 字符串，实际值为 {value!r}"
+        )
+    try:
+        return _coerce_to_dt(value)
+    except ValueError as e:
+        raise AssetPackError(
+            f"invalid_at 不是合法的 ISO 8601 时间戳: {value!r}（{e}）"
+        ) from e
+
+
+def _ttl_seconds(ttl: Any) -> int:
+    """校验 `ttl` 的取值域（**公开**）：正整数秒，否则抛 AssetPackError。
+
+    注意 `bool` 是 `int` 的子类，必须显式排除——`ttl=true` 会被静默当成 1 秒，
+    那就是「本该永不过期却 1 秒后失效」的静默降级。
+
+    参数：
+        ttl: ttl 字段值
+
+    返回：
+        校验通过的秒数
+
+    异常：
+        AssetPackError: 非整数 / 布尔 / 非正
+    """
+    if isinstance(ttl, bool) or not isinstance(ttl, int):
+        raise AssetPackError(
+            f"ttl 必须是正整数秒，实际值为 {ttl!r}（类型 {type(ttl).__name__}）"
+        )
+    if ttl <= 0:
+        raise AssetPackError(
+            f"ttl 必须是正整数秒，实际值为 {ttl!r}"
+        )
+    return ttl
+
+
+def is_expired(entry: AssetEntry, now: Union[datetime, str, None] = None) -> bool:
+    """判定一个资产条目在 `now` 时刻是否已过期（**公开纯函数，T18 的唯一判据**）。
+
+    语义（冻结）：`now >= invalid_at` → 过期（**恰好等于失效时刻也算过期**）。
+
+    口径要点：
+      - **无 `invalid_at` 恒返回 False**（旧包 / 旧源永不过期）——向后兼容的唯一锚点。
+      - 判定**只看 `invalid_at`**，不看 `ttl`。`ttl` 是相对时长，已由 compiler 在预铸
+        时刻折算成 `invalid_at` 落进 manifest；这里不做二次折算，避免两处各算一份。
+      - `now` 支持**显式注入**（`datetime` 或 ISO 8601 字符串）；`now=None` 才取当前
+        UTC 时间。评测与测试必须注入 `now` 才能重放。
+      - 纯函数：不读时钟以外的任何状态、不改 `entry`、不查文件，可直接单测。
+
+    参数：
+        entry: 资产条目（AssetEntry）
+        now:   判定时刻，None = 当前 UTC 时间
+
+    返回：
+        True = 已过期（消费方必须拒播）
+    """
+    invalid_at = getattr(entry, "invalid_at", None)
+    if not isinstance(invalid_at, datetime):
+        return False
+
+    if now is None:
+        now_dt = datetime.now(timezone.utc)
+    else:
+        now_dt = _coerce_to_dt(now)
+    return now_dt >= invalid_at
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +195,9 @@ class AssetEntry:
         fingerprint:   16 位 hex 指纹（预铸时计算）
         path:          相对于包根目录的音频文件路径
         duration_ms:   音频时长（毫秒）
+        ttl:           原始相对失效时长（秒，int），**仅审计留痕**——
+                       预铸时已由 compiler 折算成 invalid_at；判定只看 invalid_at
+        invalid_at:    绝对失效时刻（UTC datetime）；None = 永不过期
     """
     key: str
     part_index: int
@@ -78,6 +207,8 @@ class AssetEntry:
     fingerprint: str
     path: str
     duration_ms: int
+    ttl: Optional[int] = None
+    invalid_at: Optional[datetime] = None
 
 
 @dataclass
@@ -351,11 +482,12 @@ class AssetPack:
         variant: int,
         expected_text: str,
         engine_meta: Optional[Dict[str, Any]] = None,
+        now: Union[datetime, str, None] = None,
     ) -> Optional[AssetEntry]:
         """在包中查找匹配的资产条目。
 
-        匹配条件：key + part_index + rate_key + variant + 指纹校验。
-        指纹不匹配 / 文件不存在 → 返回 None（由调用方决定降级；这里只做判定，不做降级）。
+        匹配条件：key + part_index + rate_key + variant + 指纹校验 + **未过期**。
+        指纹不匹配 / 文件不存在 / 已过期 → 返回 None（由调用方决定降级；这里只做判定，不做降级）。
 
         参数：
             key:           话术 key
@@ -364,9 +496,11 @@ class AssetPack:
             variant:       变体编号
             expected_text: 期望的话术文本（用于指纹校验）
             engine_meta:   引擎元数据（保留字段，暂不使用）
+            now:           失效判定时刻（T18）。None = 当前 UTC 时间；
+                           显式传入（datetime 或 ISO 8601 字符串）用于评测/测试重放
 
         返回：
-            匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在）
+            匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在/已过期）
         """
         # 1. 定位候选：身份索引（T27 惰性派生，值带构建时下标）。索引按包内顺序
         #    "首条优先"构建，与原线性遍历取首条完全一致。注意索引只**寻址**，不做
@@ -401,6 +535,17 @@ class AssetPack:
                 or not self._entry_still_at(idx, candidate)
             ):
                 return None                       # 重建后仍对不上 → fail-closed
+
+        # 1c. 失效判定（T18，保险丝放在本层）。
+        # WHY 在资产层而不是 runtime：本层是所有消费方的唯一入口——runtime 的
+        #       Executor 与 adapters/framework_kefu 的钩子都直接调 `pack.lookup`，
+        #       判定放在这里，过期条目对**任何**调用方都不可能再被取出。
+        #       返回值与既有未命中**同形**（None），所以调用方零改动即受保护。
+        # 判据只有 `is_expired` 一份（公开纯函数），runtime 复用同一个，
+        #       避免两处各写一份导致口径漂移。
+        # 放在指纹/文件校验之前：过期是"不该播"，优先级高于"包是否完好"。
+        if is_expired(candidate, now):
+            return None
 
         # 2. 指纹校验——用 expected_text 重算指纹并与条目指纹比对。
         # WHY：即使 key/part/rate/variant 全部匹配，文本内容变了也必须视为未命中，
@@ -649,6 +794,16 @@ def _validate_asset_entry(
             f"资产条目 #{index} (key={raw['key']!r}) 的音频文件不存在: {audio_path}"
         )
 
+    # 8. 失效字段（T18，可选——缺省 = 永不过期，旧包行为零变化）
+    # WHY 在此校验而不是等到 lookup：装载期放行坏值，运行期就会在热路径上抛
+    #     TypeError（字符串与 datetime 不可比），那是「本该报错却换了失败形态」。
+    invalid_at = None
+    if "invalid_at" in raw:
+        invalid_at = parse_invalid_at(raw["invalid_at"])
+    ttl = None
+    if "ttl" in raw:
+        ttl = _ttl_seconds(raw["ttl"])
+
     return AssetEntry(
         key=raw["key"],
         part_index=part_index,
@@ -658,6 +813,8 @@ def _validate_asset_entry(
         fingerprint=actual_fp,
         path=raw["path"],
         duration_ms=duration_ms,
+        ttl=ttl,
+        invalid_at=invalid_at,
     )
 
 
@@ -757,6 +914,7 @@ def lookup(
     variant: int,
     expected_text: str,
     engine_meta: Optional[Dict[str, Any]] = None,
+    now: Union[datetime, str, None] = None,
 ) -> Optional[AssetEntry]:
     """在包中查找匹配的资产条目（委托 AssetPack.lookup 方法）。
 
@@ -768,9 +926,10 @@ def lookup(
         variant:       变体编号
         expected_text: 期望的话术文本（用于指纹校验）
         engine_meta:   引擎元数据（保留字段，暂不使用）
+        now:           失效判定时刻（None = 当前 UTC；显式传入用于评测/测试重放）
 
     返回：
-        匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在）
+        匹配的 AssetEntry 或 None（未命中/指纹不匹配/文件不存在/已过期）
     """
     return pack.lookup(
         key=key,
@@ -779,6 +938,7 @@ def lookup(
         variant=variant,
         expected_text=expected_text,
         engine_meta=engine_meta,
+        now=now,
     )
 
 
@@ -922,5 +1082,17 @@ def validate_pack(root: Path) -> List[str]:
                 issues.append(
                     f"资产条目 #{i} (key={raw_entry['key']!r}) 的音频文件不存在: {audio_path}"
                 )
+
+        # 7h. 失效字段（T18，可选）——口径与 load_pack 完全一致（共用公开校验函数）
+        if "invalid_at" in raw_entry:
+            try:
+                parse_invalid_at(raw_entry["invalid_at"])
+            except AssetPackError as e:
+                issues.append(f"资产条目 #{i}: {e}")
+        if "ttl" in raw_entry:
+            try:
+                _ttl_seconds(raw_entry["ttl"])
+            except AssetPackError as e:
+                issues.append(f"资产条目 #{i}: {e}")
 
     return issues
