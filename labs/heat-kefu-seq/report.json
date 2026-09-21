@@ -8,10 +8,16 @@
     "built_dir": "packs/heat_kefu_build/heat-kefu-1"
   },
   "yaml_env": "KEFU_HEAT_YAML",
+  "provenance": {
+    "yaml_sha256": "a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44",
+    "manifest_sha256": "e35a639a8b43eb0cc027d700a43bd7d119801a024e60b38ef20dd5240d0193ef",
+    "git_commit": "8fa2e83898e49d27f7c3afa5a753f60f2b4a6e04"
+  },
   "env": {
     "python": "3.14.6",
     "repeat": 3,
-    "slow_arm_skipped": false
+    "slow_arm_skipped": false,
+    "git_error": null
   },
   "summary": {
     "n_multi_clause": 14,
@@ -21,17 +27,17 @@
     "segment_count_p50": 2.0,
     "segment_count_min": 2,
     "segment_count_max": 3,
-    "executor_wall_ms_p50": 4.911,
-    "executor_wall_ms_min": 2.016,
-    "executor_wall_ms_max": 7.433,
-    "executor_first_audio_ms_p50": 0.1585,
+    "executor_wall_ms_p50": 5.032,
+    "executor_wall_ms_min": 2.173,
+    "executor_wall_ms_max": 7.368,
+    "executor_first_audio_ms_p50": 0.176,
     "executor_total_duration_ms_p50": 10481.5,
     "tts_calls_sum": 0,
-    "slow_arm_say_ms_p50": 577.696,
-    "slow_arm_say_ms_min": 536.871,
-    "slow_arm_say_ms_max": 633.846,
-    "hit_vs_slow_delta_ms_p50": -572.7850000000001,
-    "repeat_wall_ms_p50": 5.0445,
+    "slow_arm_say_ms_p50": 568.956,
+    "slow_arm_say_ms_min": 542.736,
+    "slow_arm_say_ms_max": 605.895,
+    "hit_vs_slow_delta_ms_p50": -563.924,
+    "repeat_wall_ms_p50": 5.076,
     "n_repeat_samples": 42
   },
   "details": [
@@ -54,19 +60,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.221,
+        "first_audio_ms": 0.363,
         "total_duration_ms": 11021,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 5.39,
+        "wall_ms": 5.694,
         "out_bytes": 352730
       },
-      "slow_arm_say_ms": 584.605,
+      "slow_arm_say_ms": 574.777,
       "repeat_wall_ms": [
-        5.908,
-        4.982,
-        4.841
+        5.774,
+        5.1,
+        5.102
       ]
     },
     {
@@ -88,19 +94,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.141,
+        "first_audio_ms": 0.153,
         "total_duration_ms": 8445,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 4.657,
+        "wall_ms": 3.888,
         "out_bytes": 270280
       },
-      "slow_arm_say_ms": 570.328,
+      "slow_arm_say_ms": 560.64,
       "repeat_wall_ms": [
-        4.361,
-        3.876,
-        4.019
+        4.502,
+        4.121,
+        4.026
       ]
     },
     {
@@ -122,19 +128,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.177,
+        "first_audio_ms": 0.179,
         "total_duration_ms": 7066,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 3.355,
+        "wall_ms": 3.497,
         "out_bytes": 226170
       },
-      "slow_arm_say_ms": 550.784,
+      "slow_arm_say_ms": 554.19,
       "repeat_wall_ms": [
-        3.694,
-        3.304,
-        3.326
+        3.982,
+        3.657,
+        3.422
       ]
     },
     {
@@ -157,19 +163,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.152,
+        "first_audio_ms": 0.148,
         "total_duration_ms": 6856,
         "hit_count": 3,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 3.497,
+        "wall_ms": 3.323,
         "out_bytes": 219430
       },
-      "slow_arm_say_ms": 545.8,
+      "slow_arm_say_ms": 561.154,
       "repeat_wall_ms": [
-        4.162,
+        4.192,
         3.375,
-        3.319
+        3.278
       ]
     },
     {
@@ -191,19 +197,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.129,
+        "first_audio_ms": 0.133,
         "total_duration_ms": 11407,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 5.165,
+        "wall_ms": 5.703,
         "out_bytes": 365066
       },
-      "slow_arm_say_ms": 633.846,
+      "slow_arm_say_ms": 568.537,
       "repeat_wall_ms": [
-        5.647,
-        5.164,
-        5.161
+        5.784,
+        5.171,
+        5.366
       ]
     },
     {
@@ -225,19 +231,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.313,
+        "first_audio_ms": 0.189,
         "total_duration_ms": 11823,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 5.742,
+        "wall_ms": 5.846,
         "out_bytes": 378382
       },
-      "slow_arm_say_ms": 595.402,
+      "slow_arm_say_ms": 580.589,
       "repeat_wall_ms": [
-        5.986,
-        5.391,
-        5.737
+        6.675,
+        5.676,
+        5.393
       ]
     },
     {
@@ -259,19 +265,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.204,
+        "first_audio_ms": 0.181,
         "total_duration_ms": 16478,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 7.201,
+        "wall_ms": 7.368,
         "out_bytes": 527336
       },
-      "slow_arm_say_ms": 629.206,
+      "slow_arm_say_ms": 601.506,
       "repeat_wall_ms": [
-        7.849,
-        7.538,
-        7.221
+        8.136,
+        7.548,
+        7.385
       ]
     },
     {
@@ -293,19 +299,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.127,
+        "first_audio_ms": 0.169,
         "total_duration_ms": 4011,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 2.016,
+        "wall_ms": 2.173,
         "out_bytes": 128400
       },
-      "slow_arm_say_ms": 536.871,
+      "slow_arm_say_ms": 542.736,
       "repeat_wall_ms": [
-        2.645,
-        2.185,
-        2.11
+        2.524,
+        2.048,
+        2.024
       ]
     },
     {
@@ -327,19 +333,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.165,
+        "first_audio_ms": 0.172,
         "total_duration_ms": 14585,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 6.674,
+        "wall_ms": 6.84,
         "out_bytes": 466778
       },
-      "slow_arm_say_ms": 593.342,
+      "slow_arm_say_ms": 605.895,
       "repeat_wall_ms": [
-        6.874,
-        6.635,
-        6.442
+        7.2,
+        6.66,
+        6.426
       ]
     },
     {
@@ -361,19 +367,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.148,
+        "first_audio_ms": 0.173,
         "total_duration_ms": 9942,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 4.618,
+        "wall_ms": 4.534,
         "out_bytes": 318202
       },
-      "slow_arm_say_ms": 566.908,
+      "slow_arm_say_ms": 558.421,
       "repeat_wall_ms": [
-        5.343,
-        4.85,
-        4.732
+        5.171,
+        4.893,
+        4.628
       ]
     },
     {
@@ -395,19 +401,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.194,
+        "first_audio_ms": 0.197,
         "total_duration_ms": 11356,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 5.222,
+        "wall_ms": 5.53,
         "out_bytes": 363448
       },
-      "slow_arm_say_ms": 570.787,
+      "slow_arm_say_ms": 569.375,
       "repeat_wall_ms": [
-        5.584,
-        5.35,
-        5.107
+        6.052,
+        5.052,
+        5.291
       ]
     },
     {
@@ -429,19 +435,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.18,
+        "first_audio_ms": 0.195,
         "total_duration_ms": 16503,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 7.433,
+        "wall_ms": 7.311,
         "out_bytes": 528140
       },
-      "slow_arm_say_ms": 607.273,
+      "slow_arm_say_ms": 587.732,
       "repeat_wall_ms": [
-        7.737,
-        7.597,
-        7.256
+        8.488,
+        7.332,
+        7.383
       ]
     },
     {
@@ -463,19 +469,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.129,
+        "first_audio_ms": 0.158,
         "total_duration_ms": 7122,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 3.654,
+        "wall_ms": 3.628,
         "out_bytes": 227958
       },
-      "slow_arm_say_ms": 568.959,
+      "slow_arm_say_ms": 552.852,
       "repeat_wall_ms": [
-        3.889,
-        3.474,
-        3.38
+        3.974,
+        3.361,
+        3.708
       ]
     },
     {
@@ -497,19 +503,19 @@
       },
       "executor": {
         "tts_calls": 0,
-        "first_audio_ms": 0.126,
+        "first_audio_ms": 0.183,
         "total_duration_ms": 8123,
         "hit_count": 2,
         "miss_count": 0,
         "fallback_count": 0,
-        "wall_ms": 4.097,
+        "wall_ms": 3.849,
         "out_bytes": 259966
       },
-      "slow_arm_say_ms": 599.773,
+      "slow_arm_say_ms": 571.971,
       "repeat_wall_ms": [
-        4.557,
-        4.05,
-        5.397
+        4.859,
+        3.831,
+        3.75
       ]
     }
   ],
