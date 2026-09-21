@@ -7,7 +7,7 @@ T28b（`trigger.py` → `plan.py` 改名）已完成且有效，但暴露 T28「
 
 1. **测试的仓库根上溯层数**：`trigger/tests/` 下 4 个测试文件写死
    `_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent`（4 层，原 `adapters/state_trigger/tests/` 位置正确）；
-   迁到 `trigger/tests/` 只需 **3 层**——现解析到 `/Volumes/macos/newProject/`，导致 `discover -s trigger`
+   迁到 `trigger/tests/` 只需 **3 层**——现解析到 ``，导致 `discover -s trigger`
    159 条中 85 条 ERROR（找不到 `packs/demo-brief/pack.json` 等）。执行方已在临时目录实证改 3 层 → 159/OK；
 2. **labs 的旧模块路径残留**：`labs/ticket-source-2026-09-19/run_e2e.py:260`
    `from trigger.trigger import rule_matches`（T28 全域替换在 adapters 语境下合法、迁到顶层包后失效，

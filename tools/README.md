@@ -15,7 +15,7 @@
 两条边界必须记住：
 
 - **本目录的脚本不进任何层契约**（同 `labs/`），也不被 `core/ rules/ compiler/ assets/ runtime/ eval/ cli/` 依赖；
-- **语料本身永不入仓**（`docs/11` 裁定 2）——脚本只写 `/Volumes/macos/corpus/`，
+- **语料本身永不入仓**（`docs/11` 裁定 2）——脚本只写 `~/corpus/`，
   这个约束在代码里是**强制**的（`--out-root` 指向仓库内会直接抛错），不是靠自觉。
 
 ## 二、文件与职责
@@ -50,24 +50,24 @@
 三个脚本都是**纯标准库**（规避本机 pypi 吞吐极低：实测 12 s 只拉到 363 KB / 46 MB）。
 
 ```bash
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 
 # ① 只审计许可，不下载（先跑这个，别先跑下载）
 python3 tools/corpus_fetch/fetch.py --dry-run \
         --sources labs/corpus-harvest-2026-09-18/sources.json \
-        --lock    /Volumes/macos/corpus/corpus.lock.json
+        --lock    ~/corpus/corpus.lock.json
 
 # ② 下载 + 逐文件 sha256 交叉核对
 python3 tools/corpus_fetch/fetch.py \
         --sources labs/corpus-harvest-2026-09-18/sources.json \
-        --lock    /Volumes/macos/corpus/corpus.lock.json
+        --lock    ~/corpus/corpus.lock.json
 
 # ③ 事后巡检：重算 sha256 与台账比对
-python3 tools/corpus_fetch/fetch.py --recheck --lock /Volumes/macos/corpus/corpus.lock.json
+python3 tools/corpus_fetch/fetch.py --recheck --lock ~/corpus/corpus.lock.json
 
 # ④ 派生 golden set（换业务必须传 --strategy-map）
 python3 tools/corpus_fetch/derive_golden.py \
-        --corpus /Volumes/macos/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
+        --corpus ~/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
         --out    /tmp/golden_derived.jsonl
 
 # ⑤ 逐字档基线（复用 adapters.framework_kefu.normalize.normalize_text，不另写一份）
@@ -84,7 +84,7 @@ python3 -m unittest discover -s tools/tests -v
 |---|---|---|---|
 | `fetch.py` | `--sources` | 仓库根下的 `sources.json` | 来源声明。**本批的 `sources.json` 是数据，留在 `labs/`**，不搬 |
 | | `--lock` | `--out-root/corpus.lock.json` | 台账路径，必须仓外 |
-| | `--out-root` | `/Volumes/macos/corpus` | 语料落盘根。**指向仓库内直接抛错**（`docs/11` 裁定 2） |
+| | `--out-root` | `~/corpus` | 语料落盘根。**指向仓库内直接抛错**（`docs/11` 裁定 2） |
 | | `--repo-root` | 自推（`Path(__file__).parents[2]`） | 用于拒绝写仓库内路径 |
 | `derive_golden.py` | `--strategy-map` | 内置 DianJin-CSC 12 类映射 | **换业务必须传**——这张表是业务判断，不是语料自带的事实 |
 | `baseline_literal.py` | `--repo-root` | 从 `--pack` 向上推 | 用于 `importlib` 导入产品归一化函数 |

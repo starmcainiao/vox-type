@@ -53,8 +53,8 @@ T17c 把 `_rule_matches` 更名为公开 `rule_matches` 并删除了私名。活
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17d-adapters-清理旧私名引用.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17d-adapters-清理旧私名引用.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**。可派发。

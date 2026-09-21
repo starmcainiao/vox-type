@@ -105,7 +105,7 @@ sha256(`turn_id`\0`part`) 稳定散列（与 `runtime/executor.py` 的 `_resolve
 ## 复现命令
 
 ```sh
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 
 python3 -m unittest discover -s trigger
 

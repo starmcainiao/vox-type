@@ -28,8 +28,8 @@
 
 ```bash
 vox pack check packs/fin-cs                                   # 五类规则 + 四属性
-vox pack build packs/fin-cs --out /Volumes/macos/vox-build/fin-cs   # 102 条资产（产物落仓外）
-vox bench /Volumes/macos/vox-build/fin-cs \
+vox pack build packs/fin-cs --out ~/vox-build/fin-cs   # 102 条资产（产物落仓外）
+vox bench ~/vox-build/fin-cs \
           --corpus eval/corpus/fin_cs_keydrive.json --out /tmp/fin-cs-bench --repeats 20
 ```
 

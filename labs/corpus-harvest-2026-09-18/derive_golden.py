@@ -24,8 +24,8 @@ derive_golden.py — 从公开语料派生 golden set 对照集（docs/11 §11.5
   `expect_key` 回答的是「**这一轮系统该说哪个 key**」——由该轮客服话轮的功能策略映射而来。
 
 用法：
-  python3 derive_golden.py --corpus /Volumes/macos/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
-                           --out /Volumes/macos/newProject/vox-type/packs/fin-cs/golden/corpus_derived.jsonl
+  python3 derive_golden.py --corpus ~/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
+                           --out <仓库根>/packs/fin-cs/golden/corpus_derived.jsonl
 """
 
 from __future__ import annotations

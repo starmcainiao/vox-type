@@ -8,7 +8,7 @@ brain/PG/HTTP（8096）只会引入与结论无关的噪声与失败面。
 """
 import base64, json, os, pathlib, subprocess, sys, tempfile, time
 
-REPO = pathlib.Path("/Volumes/macos/kefu-agent")
+REPO = pathlib.Path("<kefu-agent 仓根>")
 CV = REPO / "organs" / "客服" / "channel-voice"
 VENV_PY = REPO / ".venv-voice" / "bin" / "python"
 WORKER = CV / "voice_worker.py"
@@ -17,7 +17,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 AUDIO = pathlib.Path(tempfile.mkdtemp(prefix="chain-probe-audio-"))  # 音频只放临时区，不进仓
 
 # packs/repair 的 12 条话术（每组取第一个 variant）
-PHRASES = json.load(open("/Volumes/macos/newProject/vox-type/packs/repair/phrases.json", encoding="utf-8"))["phrases"]
+PHRASES = json.load(open("<仓库根>/packs/repair/phrases.json", encoding="utf-8"))["phrases"]
 KEYS = ["greeting_welcome", "ask_fault_type", "ask_fault_detail", "ask_fault_urgency",
         "ask_address", "ask_contact", "ask_time_window", "confirm_summary",
         "confirm_again", "ticket_created", "promise_visit", "closing_thank_you"]

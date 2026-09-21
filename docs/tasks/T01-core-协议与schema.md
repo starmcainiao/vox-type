@@ -67,7 +67,7 @@
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T01-core-协议与schema.md)"
 ```
 

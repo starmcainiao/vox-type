@@ -6,7 +6,7 @@
 默认关闭、可随时摘除，不改它既有行为。依据 docs/10 裁定 2「命中率上限由上游表示形态决定」：
 不改上游，预铸永远停在 key 档演示；本钩子就是上游侧的接缝。
 
-**接缝（策划已勘察定死）**：kefu `/Volumes/macos/kefu-agent/organs/客服/channel-voice/blackiron_kefu_voice/cascade_local.py`
+**接缝（策划已勘察定死）**：kefu `<kefu-agent 仓根>/organs/客服/channel-voice/blackiron_kefu_voice/cascade_local.py`
 的 `LocalCascadeAdapter.synthesize(text)` 是 TTS 唯一入口（级联链路 ASR→brain→**TTS** 的最后一环）。
 vox-type 侧的查询 API 已就绪（T29 交付，基线 `29e5582`）：`adapters.framework_kefu.find_hit(pack, key=…|text=…, rate_key=…)`
 → `HitResult(entry, mode, key, text, miss_reason)`。
@@ -41,7 +41,7 @@ vox-type 侧的查询 API 已就绪（T29 交付，基线 `29e5582`）：`adapte
 3. 新测试 `organs/客服/channel-voice/tests/test_precast_hook.py`（kefu 仓既有测试风格；
    fixture 用法见硬要求 6）。
 
-## 允许修改的文件（白名单，kefu 仓 /Volumes/macos/kefu-agent）
+## 允许修改的文件（白名单，kefu 仓 <kefu-agent 仓根>）
 
 ```
 允许新增：organs/客服/channel-voice/blackiron_kefu_voice/precast_hook.py
@@ -69,7 +69,7 @@ vox-type 侧的查询 API 已就绪（T29 交付，基线 `29e5582`）：`adapte
    `key:不存在` → None 且 `key_not_prebaked`；
 4. **引擎不一致**：live 注入不同 voice → 返回 None、`engine_mismatch==1`、第二次调用直接 None（已永久禁用，query 不再增长）；
 5. **多 part 收窄**：构造含 `part_index=1` 条目的包 → 命中 key 但返回 None、`skipped_multi_part==1`；
-6. **fixture 构造**：测试内 `sys.path` 注入 vox-type 仓根（`/Volumes/macos/newProject/vox-type`），
+6. **fixture 构造**：测试内 `sys.path` 注入 vox-type 仓根（`（仓库根）`），
    **复用 vox-type `adapters/framework_kefu/tests/` 既有包工厂铸包**到 TemporaryDirectory（禁止手搓第二套
    包构造逻辑）；vox-type 仓只读；
 7. **key: 直通**：`"key:<包内key>"` 形态命中 key 档（mode 断言用 find_hit 的 HitResult.mode，钩子测 stats 即可）。
@@ -79,8 +79,8 @@ vox-type 侧的查询 API 已就绪（T29 交付，基线 `29e5582`）：`adapte
 1. kefu 仓既有测试原样全绿（执行方找出 kefu 语音通道的测试跑法——参照 `tests/test_cascade_local.py`
    的运行方式——并报告命令与计数）；
 2. 新测试全绿，覆盖硬要求 2–7 全部六条；
-3. `git -C /Volumes/macos/kefu-agent status --porcelain -uall` 改动全部在白名单内；
-   `git -C /Volumes/macos/kefu-agent diff -- organs/客服/channel-voice/blackiron_kefu_voice/cascade_local.py`
+3. `git -C <kefu-agent 仓根> status --porcelain -uall` 改动全部在白名单内；
+   `git -C <kefu-agent 仓根> diff -- organs/客服/channel-voice/blackiron_kefu_voice/cascade_local.py`
    的 diff 行数 ≤ 30 行（最小侵入的量化）；
 4. **默认关实证**：`env -u KEFU_PRECAST_REPO -u KEFU_PRECAST_PACK` 下跑既有 cascade 测试 → 全绿；
 5. 报告贴：两张仓的 git status 终态、测试命令与计数、cascade_local.py 的完整 diff。
@@ -93,8 +93,8 @@ vox-type 侧的查询 API 已就绪（T29 交付，基线 `29e5582`）：`adapte
 
 ## 回滚方式
 
-kefu 仓：`git -C /Volumes/macos/kefu-agent checkout -- organs/客服/channel-voice/` +
-`git -C /Volumes/macos/kefu-agent clean -fd organs/客服/channel-voice/`（动手前记录 HEAD 与 status）。
+kefu 仓：`git -C <kefu-agent 仓根> checkout -- organs/客服/channel-voice/` +
+`git -C <kefu-agent 仓根> clean -fd organs/客服/channel-voice/`（动手前记录 HEAD 与 status）。
 vox-type 仓零改动，无回滚面。
 
 ## 执行方式

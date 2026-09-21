@@ -101,7 +101,7 @@ python3 labs/kefu-bridge-2026-09-18/run_session.py --pack <已铸包> --turns <j
 允许修改：无
 禁止触碰：其余一切文件（含 core/**、rules/**、assets/**、compiler/**、runtime/**、eval/**、cli/**、
           packs/**、adapters/tts_macsay/**、docs/**、各层 AGENTS.md、根 AGENTS.md、README.md）；
-          **尤其禁止**：修改 `/Volumes/macos/kefu-agent` 下的任何文件（那是另一个仓库）
+          **尤其禁止**：修改 `<kefu-agent 仓根>` 下的任何文件（那是另一个仓库）
 ```
 
 ## 禁止事项
@@ -142,7 +142,7 @@ python3 labs/kefu-bridge-2026-09-18/run_session.py --pack <已铸包> --turns <j
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 rm -rf adapters/framework_kefu labs/kefu-bridge-2026-09-18
 ```
 
@@ -154,8 +154,8 @@ rm -rf adapters/framework_kefu labs/kefu-bridge-2026-09-18
 若它不可用，走回落：
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T11-adapters-接入真链路.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T11-adapters-接入真链路.md)" --dir （仓库根）
 ```
 
 这是**非交互环境**：请直接落地代码，不要先写计划再等确认，不要往仓库里写计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要新建或修改任何文件。

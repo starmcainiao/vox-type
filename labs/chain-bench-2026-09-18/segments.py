@@ -9,7 +9,7 @@ import json, pathlib, subprocess, sys, tempfile, time, urllib.request
 OUT = pathlib.Path(__file__).resolve().parent / "raw"
 OUT.mkdir(parents=True, exist_ok=True)
 AUDIO = pathlib.Path(tempfile.mkdtemp(prefix="chain-seg-audio-"))   # 音频只放临时区，不进仓
-PACK = pathlib.Path("/Volumes/macos/newProject/vox-type/packs/repair/phrases.json")
+PACK = pathlib.Path("<仓库根>/packs/repair/phrases.json")
 KEYS = ["greeting_welcome", "ask_fault_type", "ask_fault_detail", "ask_fault_urgency",
         "ask_address", "ask_contact", "ask_time_window", "confirm_summary",
         "confirm_again", "ticket_created", "promise_visit", "closing_thank_you"]

@@ -148,7 +148,7 @@ packs/repair/script.json      剧本（线性 plan，含终态声明与直播白
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git rm -r --cached packs/repair && rm -rf packs/repair          # 若要整体删除
 # 或只回滚剧本到某次提交：
 git checkout <commit> -- packs/repair/script.json
@@ -163,8 +163,8 @@ git checkout <commit> -- packs/repair/script.json
 **回落**：
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T09-packs-示例业务包报修登记.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T09-packs-示例业务包报修登记.md)" --dir （仓库根）
 ```
 
 这是**非交互环境**：请直接落地文件，不要先写计划再等确认，不要往仓库里写计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要新建或修改任何文件。

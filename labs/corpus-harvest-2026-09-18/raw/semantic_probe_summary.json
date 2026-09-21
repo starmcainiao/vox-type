@@ -1,7 +1,7 @@
 {
   "_schema": "vox-semantic-probe/1",
-  "golden": "/Volumes/macos/newProject/vox-type/packs/fin-cs/golden/corpus_derived.jsonl",
-  "pack": "/Volumes/macos/newProject/vox-type/packs/fin-cs",
+  "golden": "<仓库根>/packs/fin-cs/golden/corpus_derived.jsonl",
+  "pack": "<仓库根>/packs/fin-cs",
   "embed_model": "bge-m3-mlx-fp16",
   "n_cases": 2433,
   "n_evaluated": 2064,

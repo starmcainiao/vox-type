@@ -15,7 +15,7 @@ baseline_literal.py — 逐字档基线测量（docs/11 §11.5 的「实验①�
   - 同时报「若误用用户话术当输入」的对照值——证明那是范畴错误而非命中率问题
 
 用法：
-  python3 baseline_literal.py --pack /Volumes/macos/newProject/vox-type/packs/fin-cs \
+  python3 baseline_literal.py --pack <仓库根>/packs/fin-cs \
                               --out raw/literal_baseline.json
 """
 
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-REPO = Path("/Volumes/macos/newProject/vox-type")
+REPO = Path("<仓库根>")
 sys.path.insert(0, str(REPO))
 
 

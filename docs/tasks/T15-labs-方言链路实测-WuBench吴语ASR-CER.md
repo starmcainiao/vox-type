@@ -3,7 +3,7 @@
 ## 背景（只写必需）
 
 T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
-- 数据：`WenetSpeech-Wu-Bench` 的 `asr.parquet`（apache-2.0，sha256 已校验，落**仓外** `/Volumes/macos/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet`）；4851 行，列 `task / utt_id / audio / label`，`audio` 直接是 RIFF/WAV 字节，`label` 是吴语转写；
+- 数据：`WenetSpeech-Wu-Bench` 的 `asr.parquet`（apache-2.0，sha256 已校验，落**仓外** `~/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet`）；4851 行，列 `task / utt_id / audio / label`，`audio` 直接是 RIFF/WAV 字节，`label` 是吴语转写；
 - 解释器：`~/miniforge3/bin/python`（3.12.11 + pyarrow 25.0.1）实测可读（主解释器 3.14 无 pyarrow wheel）；
 - ASR：复用 T14 交付的 `adapters/asr_omlx`（oMLX `:10099`，`Qwen3-ASR-0.6B-8bit`，本机常驻服务，实测单条 0.7–1.3 秒）。
 
@@ -69,7 +69,7 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 
 ## 验收标准（逐条可判定，验收方会逐条核对）
 
-1. `cd /Volumes/macos/newProject/vox-type && ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py`
+1. `cd （仓库根） && ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py`
    → **rc 0**，产出 `raw/samples.jsonl` 与 `report.json`；
 2. `raw/samples.jsonl` 行数 == 100；每行必有 `utt_id` 与 `status` 三态之一（`ok` / `skipped_too_long` / `asr_error`）；
    `status=="ok"` 的行必有非空转写与 CER 数值；
@@ -101,8 +101,8 @@ T15 原被「音频源 + 解释器」双重阻塞，第九批已全部解除：
 **首选**：ZCode 子智能体 **`vox-card-executor`**（商汤 `sensenova-6.8-flash-lite`）。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T15-labs-方言链路实测-WuBench吴语ASR-CER.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T15-labs-方言链路实测-WuBench吴语ASR-CER.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——Wu-Bench 是 apache-2.0 公开语料；卡内只有路径与口径，不含语料原文与音频；

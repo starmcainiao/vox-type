@@ -6,7 +6,7 @@ labs/ticket-source-2026-09-19/run_e2e.py — 源 → state → plan → 留痕�
     summary.json      口径、命中分布、敏感值复核结果、可复现性自检结果
 
 用法：
-    cd /Volumes/macos/newProject/vox-type
+    cd <仓库根>
     python3 labs/ticket-source-2026-09-19/run_e2e.py
 
 退出码：0 = 全部断言通过；3 = 任一断言失败（含负例未如预期抛错）。

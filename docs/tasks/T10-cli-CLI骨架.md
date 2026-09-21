@@ -121,7 +121,7 @@ compiler/tests/test_source.py         补未知字段负例
    - **3 的路径存在且能打印异常类型名**（我看 `cli/tests/test_exit_codes.py` 里那条用例，并把它单独跑一遍）；
 4. **未知字段拒绝生效**（我手跑）：把 `packs/repair/pack.json` 复制到临时目录后插入 `"duplx": {}` → `compiler.load_source` 抛 `SourceError` 且消息含 `duplx`；`phrases[0]` 插 `"varient": []` → 同样报错含 `varient`；**`packs/repair/` 原样仍通过**；
 5. **`--out` 越界**（我手跑）：`pack build --out packs/repair/sub` → **2**；`run --out <包目录>/x.wav` → **2**；
-6. **`bin/vox` 可直接跑**：`cd /tmp && /Volumes/macos/newProject/vox-type/bin/vox pack check /Volumes/macos/newProject/vox-type/packs/repair` → 退出码 0（证明不依赖 cwd、不依赖安装）；`ls -l bin/vox` 可见可执行位；
+6. **`bin/vox` 可直接跑**：`cd /tmp && （仓库根）/bin/vox pack check （仓库根）/packs/repair` → 退出码 0（证明不依赖 cwd、不依赖安装）；`ls -l bin/vox` 可见可执行位；
 7. **没有重写判定**（我 grep 核对）：`cli/**` 里不出现 `orphan_branch`、`0.987`、`percentile`、`bootstrap` 这类判定/统计字样；`grep -nE "^from .* import .*_" cli/**/*.py` 无非法的私有符号导入；
 8. `git status --porcelain -uall` 仅白名单文件；`core/`、`runtime/`、`assets/`、`eval/`、`packs/` **零 diff**；
 9. 含方法级中文注释与关键步骤 WHY 注释（尤其：为何 `3` 要打印异常类型名、为何 CLI 不写判定、为何适配器只能动态解析）；
@@ -139,7 +139,7 @@ compiler/tests/test_source.py         补未知字段负例
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- compiler/source.py compiler/tests/test_source.py
 git clean -fd cli bin        # 本卡新增的目录（未跟踪）
 chmod -x bin/vox 2>/dev/null; rm -f bin/vox
@@ -152,8 +152,8 @@ chmod -x bin/vox 2>/dev/null; rm -f bin/vox
 **回落**：
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T10-cli-CLI骨架.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T10-cli-CLI骨架.md)" --dir （仓库根）
 ```
 
 这是**非交互环境**：请直接落地代码，不要先写计划再等确认，不要往仓库里写计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要新建或修改任何文件。

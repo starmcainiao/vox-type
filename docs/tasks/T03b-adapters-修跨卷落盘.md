@@ -16,16 +16,16 @@
 ## 问题复现（验收时实测，执行者必须先跑一遍确认）
 
 ```
-cd /Volumes/macos/newProject/vox-type && python3 -c "
+cd （仓库根） && python3 -c "
 from adapters.tts_macsay.adapter import MacSayTts
-MacSayTts().synthesize('跨卷测试', '/Volumes/macos/newProject/vox-type/.crossdev_probe.wav')
+MacSayTts().synthesize('跨卷测试', '（仓库根）/.crossdev_probe.wav')
 "
 ```
 
 实测输出（现状）：
 
 ```
-OSError: [Errno 18] Cross-device link: '/var/folders/gq/.../tmpXXXXXXXX.wav' -> '/Volumes/macos/newProject/vox-type/.crossdev_probe.wav'
+OSError: [Errno 18] Cross-device link: '/var/folders/gq/.../tmpXXXXXXXX.wav' -> '（仓库根）/.crossdev_probe.wav'
 ```
 
 注意两点：
@@ -78,7 +78,7 @@ OSError: [Errno 18] Cross-device link: '/var/folders/gq/.../tmpXXXXXXXX.wav' -> 
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- adapters/tts_macsay/adapter.py
 rm -f adapters/tests/test_crossvolume.py
 ```
@@ -88,8 +88,8 @@ rm -f adapters/tests/test_crossvolume.py
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03b-adapters-修跨卷落盘.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03b-adapters-修跨卷落盘.md)" --dir （仓库根）
 ```
 
 **非交互环境**：请直接落地代码，不要先写计划再等确认，不要写仓库外的计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要在仓库内新建任何文件。

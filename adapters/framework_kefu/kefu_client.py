@@ -28,12 +28,15 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
 
-# kefu-agent 的默认位置（与 labs/chain-bench-2026-09-18/probe.py 同一口径）
-DEFAULT_WORKER_PYTHON = "/Volumes/macos/kefu-agent/.venv-voice/bin/python"
-DEFAULT_WORKER_SCRIPT = (
-    "/Volumes/macos/kefu-agent/organs/客服/channel-voice/voice_worker.py"
+# kefu-agent 的位置：环境变量优先（KEFU_AGENT_ROOT = kefu-agent 仓根）；
+# 未设置时回退到「仓根同机邻居目录」的约定布局（kefu-agent 与本仓并列克隆）。
+# 开源说明：不内置任何人的本机绝对路径——用哪个 kefu，配哪个根。
+KEFU_AGENT_ROOT = Path(os.environ.get("KEFU_AGENT_ROOT", Path(__file__).resolve().parents[2].parent / "kefu-agent"))
+DEFAULT_WORKER_PYTHON = str(KEFU_AGENT_ROOT / ".venv-voice" / "bin" / "python")
+DEFAULT_WORKER_SCRIPT = str(
+    KEFU_AGENT_ROOT / "organs" / "客服" / "channel-voice" / "voice_worker.py"
 )
-DEFAULT_WORKER_CWD = "/Volumes/macos/kefu-agent/organs/客服/channel-voice"
+DEFAULT_WORKER_CWD = str(KEFU_AGENT_ROOT / "organs" / "客服" / "channel-voice")
 
 # brain 响应里可能出现"回复文本"的字段名（顺序即优先级）
 _REPLY_KEYS = ("reply", "replyText", "text", "content", "output", "message", "answer")
@@ -215,10 +218,13 @@ class KefuClient:
             return self._proc
 
         py, script = Path(self.worker_python), Path(self.worker_script)
-        if not py.is_file():
-            raise KefuWorkerError(f"voice worker 解释器不存在: {self.worker_python}")
+        # 校验顺序：脚本先于解释器——脚本是使用者意图的直接对象（覆盖最常见：
+        # 只传了 script 做测试/替换），且在未部署 kefu 的机器上缺省解释器必然不存在，
+        # 先报解释器会把「还没配 kefu」误报成「解释器坏了」。
         if not script.is_file():
             raise KefuWorkerError(f"voice worker 脚本不存在: {self.worker_script}")
+        if not py.is_file():
+            raise KefuWorkerError(f"voice worker 解释器不存在: {self.worker_python}")
         cwd = Path(self.worker_cwd)
         if not cwd.is_dir():
             raise KefuWorkerError(f"voice worker 工作目录不存在: {self.worker_cwd}")

@@ -120,7 +120,7 @@ eval/tests/test_report.py             补：值级篡改可见 / 老报告（无
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- cli/main.py eval/bench.py eval/report.py eval/tests/test_bench.py eval/tests/test_report.py
 rm -f cli/commands/bench.py cli/commands/verify.py cli/tests/test_bench.py cli/tests/test_verify.py
 ```
@@ -132,8 +132,8 @@ rm -f cli/commands/bench.py cli/commands/verify.py cli/tests/test_bench.py cli/t
 **回落**：
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T10b-cli-bench与verify.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T10b-cli-bench与verify.md)" --dir （仓库根）
 ```
 
 这是**非交互环境**：请直接落地代码，不要先写计划再等确认，不要往仓库里写计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要新建或修改任何文件。

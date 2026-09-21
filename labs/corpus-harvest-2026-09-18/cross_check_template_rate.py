@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import os
 import json
 import re
 from collections import Counter
@@ -26,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-CORPUS_ROOT = Path("/Volumes/macos/corpus")
+CORPUS_ROOT = Path(os.environ.get("CORPUS_ROOT", "~/corpus")).expanduser()
 REPEAT_MIN = 5
 
 

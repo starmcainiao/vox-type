@@ -1,7 +1,7 @@
 {
   "_schema": "vox-literal-baseline/1",
-  "pack": "/Volumes/macos/newProject/vox-type/packs/fin-cs",
-  "golden": "/Volumes/macos/newProject/vox-type/packs/fin-cs/golden/corpus_derived.jsonl",
+  "pack": "<仓库根>/packs/fin-cs",
+  "golden": "<仓库根>/packs/fin-cs/golden/corpus_derived.jsonl",
   "n_cases": 2433,
   "n_prebaked_variants": 34,
   "run_at": "2026-09-18T22:59:08+08:00",

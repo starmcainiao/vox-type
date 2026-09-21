@@ -10,7 +10,7 @@ fetch.py — 首批公开语料的可复现获取器（纯标准库，无第三�
      Apache-2.0、正文写「版权归数据堂所有，商用数据」；
   2. 判据不通过就**不下载**（fail-closed），不是下载后再补台账；
   3. 台账里的 size/sha256 必须来自**实测**并与平台声明交叉核对，不等即报错；
-  4. 语料一律落仓外（/Volumes/macos/corpus/），本脚本拒绝往仓库目录里写数据。
+  4. 语料一律落仓外（~/corpus/），本脚本拒绝往仓库目录里写数据。
 
 纯标准库的原因：本机 pypi 吞吐实测极低（12 s 只拉到 363 KB / 46 MB），装 modelscope/huggingface_hub
 的代价远高于直接用平台 HTTP API。两个平台的 API 形态都已实测确认（docs/11 §11.4）。
@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -47,8 +48,8 @@ SOURCES_PATH = HERE / "sources.json"
 LOCK_PATH = HERE / "corpus.lock.json"
 
 # 语料落盘根目录：**必须在仓库之外**（docs/11 裁定 2）
-CORPUS_ROOT = Path("/Volumes/macos/corpus")
-REPO_ROOT = Path("/Volumes/macos/newProject/vox-type")
+CORPUS_ROOT = Path(os.environ.get("CORPUS_ROOT", "~/corpus")).expanduser()
+REPO_ROOT = Path("<仓库根>")
 
 # 可接受的许可（SPDX 小写）。不在这个集合里的许可一律拒绝下载。
 ALLOWED_LICENSES = {"mit", "apache-2.0", "cc-by-4.0", "cc0-1.0", "bsd-3-clause"}

@@ -86,8 +86,8 @@ fingerprint(text, voice, rate_value, model_version) -> str
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T04-assets-包格式与校验器.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T04-assets-包格式与校验器.md)" --dir （仓库根）
 ```
 
 ## 卡状态

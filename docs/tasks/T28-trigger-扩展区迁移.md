@@ -86,8 +86,8 @@
 **首选**：ZCode 子智能体 **`vox-card-executor`**（商汤 `sensenova-6.8-flash-lite`）。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T28-trigger-扩展区迁移.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T28-trigger-扩展区迁移.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——纯代码迁移，无任何数据。可派发。

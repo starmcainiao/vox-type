@@ -95,8 +95,8 @@ T21c 把 `source_map.json#rule_reachability` 那段错陈述改对了，并加�
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21d-labs-文字陈述自校验扩面.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21d-labs-文字陈述自校验扩面.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**。可派发。

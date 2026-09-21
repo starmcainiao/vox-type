@@ -59,8 +59,8 @@
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T04d-assets-测试临时目录清理.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T04d-assets-测试临时目录清理.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**。可派发。

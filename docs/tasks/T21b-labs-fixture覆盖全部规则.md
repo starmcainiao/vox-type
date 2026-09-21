@@ -80,8 +80,8 @@ T21 把 `源 → state → plan → 留痕` 端到端跑通了（39 条断言、
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21b-labs-fixture覆盖全部规则.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21b-labs-fixture覆盖全部规则.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——fixture 是自造工单数据。可派发。

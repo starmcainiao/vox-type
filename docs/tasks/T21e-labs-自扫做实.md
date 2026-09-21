@@ -107,8 +107,8 @@ T21d 卡写了"不得在断言里硬编码这三组数字"，本意是**计数�
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21e-labs-自扫做实.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21e-labs-自扫做实.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**。可派发。

@@ -9,7 +9,7 @@
 
 | 项 | 值 |
 |---|---|
-| 源文件 | `/Volumes/macos/kefu-agent/organs/客服/brain/prompts/供热预设.yaml` |
+| 源文件 | `<kefu-agent 仓根>/organs/客服/brain/prompts/供热预设.yaml` |
 | sha256 | `a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44` |
 | 大小 | 19808 bytes / 287 行 |
 | mtime | 2026-09-10 09:47 |

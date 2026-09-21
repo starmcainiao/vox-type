@@ -76,8 +76,8 @@ T17 交付后我独立复核，发现**一处 T16 与 T17 之间的语义矛盾*
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17b-adapters-修兜底规则语义.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17b-adapters-修兜底规则语义.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——只用 `packs/demo-brief/` 的公开 demo 数据。可派发。

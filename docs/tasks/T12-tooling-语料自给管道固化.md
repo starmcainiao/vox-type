@@ -26,7 +26,7 @@
 - 产物 4：`tools/README.md`（口径、复现命令、与本批 `labs/` 的关系）
 
 **搬的时候要去掉的硬编码**（现有脚本里都有）：
-- `CORPUS_ROOT = Path("/Volumes/macos/corpus")` → 提为参数，缺省值可保留但必须可覆盖
+- `CORPUS_ROOT = Path("~/corpus")` → 提为参数，缺省值可保留但必须可覆盖
 - `derive_golden.py` 的 `STRATEGY_TO_KEY` → 提为**外部映射文件**（`--strategy-map <json>`），
   因为换业务时这张表一定不同；缺省值可内置，但必须能换
 - `baseline_literal.py` 的 `REPO` 路径 → 用 `importlib` 从 `--pack` 推仓库根，或提为参数
@@ -93,8 +93,8 @@
 **首选**：ZCode 子智能体 **`vox-card-executor`**（`~/.zcode/agents/vox-card-executor.md`）。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T12-tooling-语料自给管道固化.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T12-tooling-语料自给管道固化.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**——语料是公开渠道的（MIT / Apache-2.0），不含用户录音、真实会话、内网地址、token。可派发。

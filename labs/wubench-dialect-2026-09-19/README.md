@@ -49,7 +49,7 @@ Wu-Bench asr.parquet（吴语 RIFF/WAV 字节 + label 转写）
 ## 四、复现
 
 ```sh
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 
 # 1) 正式 100 条（约 1 分钟，受 oMLX 负载影响）
 PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect_probe.py
@@ -68,7 +68,7 @@ PYTHONPATH=. ~/miniforge3/bin/python labs/wubench-dialect-2026-09-19/run_dialect
   脚本开头有解释器守卫，版本不符直接 rc 2。
 - `PYTHONPATH=仓库根`，产品代码经 import 复用，不复制。
 - oMLX 本机常驻服务 `http://127.0.0.1:10099`，模型 `Qwen3-ASR-0.6B-8bit`（脚本只用不启停）。
-- 语料在**仓外**：`/Volumes/macos/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet`
+- 语料在**仓外**：`~/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet`
   （apache-2.0，sha256 `d053f15173548df0517200f7af94153ab4d0c53e18b484a9974510c7c0c4e041`）。
   换语料请设 `WUBENCH_PARQUET` 环境变量。
 

@@ -109,8 +109,8 @@
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T14-eval-回读CER闭环.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T14-eval-回读CER闭环.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**——探针话术是自造 demo 语，无用户录音/真实会话/内网地址（127.0.0.1

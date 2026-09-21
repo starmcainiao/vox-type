@@ -13,7 +13,7 @@
   },
   "env": {
     "python_version": "3.12.11",
-    "python_executable": "/Users/dingbingcang/miniforge3/bin/python",
+    "python_executable": "~/miniforge3/bin/python",
     "platform": "macOS-26.3.1-arm64-arm-64bit",
     "sample_seed": 20260919,
     "asr_model": "Qwen3-ASR-0.6B-8bit",
@@ -185,7 +185,7 @@
     "22332711905_zOeBX_117_6620"
   ],
   "source": {
-    "path": "/Volumes/macos/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet",
+    "path": "~/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet",
     "sha256": "d053f15173548df0517200f7af94153ab4d0c53e18b484a9974510c7c0c4e041",
     "n_rows": 4851,
     "columns": [

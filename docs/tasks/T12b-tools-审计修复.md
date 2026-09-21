@@ -89,8 +89,8 @@ T12 验收通过后按固定动作调 `blackiron-silent-failure-hunter` 扫 `too
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T12b-tools-审计修复.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T12b-tools-审计修复.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**。可派发。

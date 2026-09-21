@@ -21,7 +21,7 @@
 ## 二、拿到了什么语料（5 份，全部许可干净、可复现重下）
 
 台账：`corpus.lock.json`（`size_bytes` / `sha256` 全部**实测**并与平台声明**交叉核对**）。
-落盘位置：`/Volumes/macos/corpus/<ns>__<name>/`（**仓外**，`docs/11` 裁定 2）。
+落盘位置：`~/corpus/<ns>__<name>/`（**仓外**，`docs/11` 裁定 2）。
 
 | 来源 | 平台 | 许可 | 体量 | 内容 |
 |---|---|---|---|---|
@@ -194,7 +194,7 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 | `WenetSpeech-Yue` / `-Chuan` | ❌ CC-BY-NC 禁商用，且 TB 级 |
 
 **批 3（方言链路）的前置条件现在是**：
-1. **能读 parquet 的解释器**（`/Volumes/macos/blackiron-agent/organs/voice/.venv` 是 3.13.3，或 Miniforge 3.12）——**这是唯一的阻塞**；
+1. **能读 parquet 的解释器**（`<内部设计仓>/organs/voice/.venv` 是 3.13.3，或 Miniforge 3.12）——**这是唯一的阻塞**；
 2. （可选）补一个 **wav + txt 纯文件**的许可干净方言集，让链路不依赖 parquet 读取能力——本批搜到的不满足，需再找。
 
 **另有一条工具纪律**：Wu-Bench 在 `sources.json` 里是 `optional: true`，**缺省跑不会碰它**

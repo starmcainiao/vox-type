@@ -30,7 +30,7 @@
 | 平台 | ModelScope |
 | 许可 | **MIT**（README front-matter 与平台字段一致，审计记录见 `labs/corpus-harvest-2026-09-18/corpus.lock.json`） |
 | 许可证据 | `https://modelscope.cn/datasets/tongyi_dianjin/DianJin-CSC-Data/blob/master/README.md` |
-| 原始语料落盘 | `/Volumes/macos/corpus/tongyi_dianjin__DianJin-CSC-Data/`（**仓外**） |
+| 原始语料落盘 | `~/corpus/tongyi_dianjin__DianJin-CSC-Data/`（**仓外**） |
 | 派生脚本 | `labs/corpus-harvest-2026-09-18/derive_golden.py` |
 
 **仓库 License 决定时要考虑**：仓里现有派生自 MIT 语料的 `packs/fin-cs/phrases.json` 与
@@ -41,7 +41,7 @@
 ```bash
 cd labs/corpus-harvest-2026-09-18
 python3 fetch.py                                   # 重下语料（含 sha256 交叉核对）
-python3 derive_golden.py --corpus /Volumes/macos/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
+python3 derive_golden.py --corpus ~/corpus/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json \
                          --out ../../packs/fin-cs/golden/corpus_derived.jsonl
 python3 baseline_literal.py --pack ../../packs/fin-cs --out raw/literal_baseline.json
 ```

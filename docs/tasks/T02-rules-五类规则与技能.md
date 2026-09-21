@@ -84,8 +84,8 @@
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T02-rules-五类规则与技能.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T02-rules-五类规则与技能.md)" --dir （仓库根）
 ```
 
 ## 卡状态

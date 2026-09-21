@@ -75,8 +75,8 @@ labs 文件：`git checkout -- labs/ticket-source-2026-09-19/run_e2e.py`；
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17c-adapters-规则匹配公开API.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17c-adapters-规则匹配公开API.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**——demo 包与合成 fixture。可派发。

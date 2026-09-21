@@ -70,7 +70,7 @@ REPORT = HERE / "report.json"
 PARQUET_PATH = Path(
     os.environ.get(
         "WUBENCH_PARQUET",
-        "/Volumes/macos/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet",
+        "~/corpus/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet",
     )
 )
 

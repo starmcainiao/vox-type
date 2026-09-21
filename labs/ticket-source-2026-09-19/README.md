@@ -39,7 +39,7 @@ T21c 又补上了**事实陈述的自我校验**：`source_map.json#rule_reachab
 ## 复现命令
 
 ```sh
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 
 # 端到端（rc 0 = 全部断言通过；3 = 有断言失败）
 python3 labs/ticket-source-2026-09-19/run_e2e.py

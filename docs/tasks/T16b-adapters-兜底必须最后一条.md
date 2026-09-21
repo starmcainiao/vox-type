@@ -78,8 +78,8 @@ T16 交付的 `adapters/state_trigger/format.py::load_trigger` 已校验「**至
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16b-adapters-兜底必须最后一条.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16b-adapters-兜底必须最后一条.md)" --dir （仓库根）
 ```
 
 **数据分级：本卡为公开级**——只涉及合成 fixture 与 demo 包，不含用户录音、真实会话、内网地址、token。可派发。

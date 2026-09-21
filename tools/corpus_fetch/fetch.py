@@ -10,10 +10,10 @@ fetch.py — 公开语料的可复现获取器（纯标准库，无第三方依�
      Apache-2.0、正文写「版权归数据堂所有，商用数据」；
   2. 判据不通过就**不下载**（fail-closed），不是下载后再补台账；
   3. 台账里的 size/sha256 必须来自**实测**并与平台声明交叉核对，不等即报错；
-  4. 语料一律落仓外（缺省 /Volumes/macos/corpus/），本脚本拒绝往仓库目录里写数据。
+  4. 语料一律落仓外（缺省 ~/corpus/），本脚本拒绝往仓库目录里写数据。
 
 **由 labs/corpus-harvest-2026-09-18/fetch.py 提升（T12）时去掉的硬编码**：
-  - `CORPUS_ROOT`  → `--out-root`（缺省值保留为 /Volumes/macos/corpus，可覆盖）
+  - `CORPUS_ROOT`  → `--out-root`（缺省值保留为 ~/corpus/，可覆盖）
   - `REPO_ROOT`    → 缺省从 `__file__` 自推（仓库根 = 本文件往上两级），`--repo-root` 可覆盖
   - sources.json / corpus.lock.json **留在 labs/ 那批**（本批的数据），本工具用 `--sources` / `--lock` 指定
 
@@ -57,7 +57,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]  # tools/corpus_fetch/ → 仓库根
 
 # 语料落盘根目录：**必须在仓库之外**（docs/11 裁定 2）
-DEFAULT_CORPUS_ROOT = Path("/Volumes/macos/corpus")
+CORPUS_ROOT = Path(os.environ.get("CORPUS_ROOT", "~/corpus")).expanduser()
 LOCK_FILENAME = "corpus.lock.json"
 SOURCES_FILENAME = "sources.json"
 

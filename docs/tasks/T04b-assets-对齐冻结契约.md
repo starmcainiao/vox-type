@@ -82,7 +82,7 @@ False
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- assets/pack.py assets/__init__.py assets/tests/test_pack.py assets/tests/test_fingerprint.py
 ```
 
@@ -91,8 +91,8 @@ git checkout -- assets/pack.py assets/__init__.py assets/tests/test_pack.py asse
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T04b-assets-对齐冻结契约.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T04b-assets-对齐冻结契约.md)" --dir （仓库根）
 ```
 
 **非交互环境**：请直接改代码，不要先写计划再等确认，不要写仓库外的计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要修改或新建任何文件。

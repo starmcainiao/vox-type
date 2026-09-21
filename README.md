@@ -80,6 +80,41 @@ License: **Apache-2.0**（2026-09-19 拍板；与仓内 MIT/Apache-2.0 派生语
 - `docs/tasks/` — 全部任务卡与逐卡验收记录（`00-索引.md` / `01-接手指南-新会话入口.md`）
 - `labs/` — 一次性实验与外部对拍（不进任何层契约，产物自带口径与原始数据）
 
+
+## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
+
+```sh
+git clone <本仓库> vox-type && cd vox-type
+
+# 1) 全量测试（十一个测试根）
+for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do
+  python3 -m unittest discover -s $d 2>&1 | tail -1
+done
+
+# 2) 铸一个业务包（预铸成功率必须 100%）
+bin/vox pack build packs/heat_kefu --out ~/vox-build/heat-kefu --json
+
+# 3) 查包/对拍/质检
+bin/vox pack check packs/heat_kefu --json
+bin/vox bench ~/vox-build/heat-kefu --help   # 离线对拍（详见 docs/08）
+bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
+```
+
+可选评测组件（不装也能跑全量测试）：本机模型服务 oMLX（回读 CER 与 ASR 实测用，
+`eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
+`adapters/framework_kefu/`（环境变量 `KEFU_AGENT_ROOT` 指向其仓根）。
+
+## 第三方语料与归属
+
+- `packs/fin-cs/` 话术为**改写**（`docs/11 §11.7` 禁止逐字复制语料原文），源语料 MIT /
+  Apache-2.0，来源与 sha256 台账：`labs/corpus-harvest-2026-09-18/corpus.lock.json`；
+- `labs/corpus-harvest-2026-09-18/raw/`、`labs/corpus-harvest-2026-09-18/corpus.lock.json`
+  含第三方语料**逐字转写**（均为可再分发许可，本仓保留来源台账即 attribution）；
+- `packs/fin-cs/golden/`、`packs/heat_kefu/admission.md` 等验收资产随仓（无真人隐私；
+  真人标注（若未来出现）将按 `docs/11 §11.7` 排除出公开分发）；
+- 环境变量：`CORPUS_ROOT`（语料根，缺省 `~/corpus`）、`KEFU_AGENT_ROOT`（kefu 仓根）、
+  `KEFU_PRECAST_*`（预铸钩子开关，见 `adapters/framework_kefu/`）。
+
 ## 贡献与边界
 
 - 设计讨论期，欢迎提 issue 质疑协议；代码开工后按里程碑推进。

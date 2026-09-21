@@ -114,8 +114,8 @@ check_budget(plan, budget_chars) -> None   # 校验一份 plan 的总字数；�
 
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16-packs-前置包形态定稿.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T16-packs-前置包形态定稿.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——demo 包只用公开/自造场景话术，**不含任何用户录音、真实会话、内网地址、token**。可派发。

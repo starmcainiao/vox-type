@@ -91,8 +91,8 @@
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21-labs-状态来源与端到端演示.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T21-labs-状态来源与端到端演示.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——fixture 是**自造**的工单数据，不含任何用户录音、真实会话、内网地址、token。可派发。

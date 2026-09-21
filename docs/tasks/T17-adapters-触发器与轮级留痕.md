@@ -123,8 +123,8 @@ T16 定死了 `state` 快照格式与 `packs/<前置包>/trigger.json` 的映射
 **首选**：ZCode 子智能体 **`vox-card-executor`**。
 **回落**：
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17-adapters-触发器与轮级留痕.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T17-adapters-触发器与轮级留痕.md)" --dir （仓库根）
 ```
 
 **数据分级：公开级**——只用 `packs/demo-brief/` 的公开 demo 数据，不含任何用户录音、真实会话、内网地址、token。可派发。

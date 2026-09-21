@@ -28,7 +28,12 @@ if str(REPO_ROOT) not in sys.path:
 PACK_DIR = REPO_ROOT / "packs" / "heat_kefu"
 
 # yaml 原文绝对路径（数据分级：公开级，docs/15 §四 已拍板）
-YAML_PATH = Path("/Volumes/macos/kefu-agent/organs/客服/brain/prompts/供热预设.yaml")
+YAML_PATH = Path(  # kefu 预设原文；仅本机有 kefu 仓时做同源断言，否则按设计 skip
+    os.environ.get(
+        "KEFU_HEAT_YAML",
+        str(Path(__file__).resolve().parents[3].parent / "kefu-agent" / "organs" / "客服" / "brain" / "prompts" / "供热预设.yaml"),
+    )
+)
 # yaml 指纹：变更即钩子自动不命中（fail-closed），admission.md 文首有同一份记录
 YAML_SHA256 = "a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44"
 

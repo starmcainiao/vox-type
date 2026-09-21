@@ -15,7 +15,7 @@ T03 卡验收标准 1 原文：「`python3 -m unittest discover -s adapters -v` 
 实测（用 `PATH` 清空模拟无 `say`）：
 
 ```
-$ cd /Volumes/macos/newProject/vox-type && env PATH= /opt/homebrew/bin/python3 -m unittest discover -s adapters
+$ cd （仓库根） && env PATH= /opt/homebrew/bin/python3 -m unittest discover -s adapters
 FileNotFoundError: [Errno 2] No such file or directory: 'say'
 Ran 35 tests in 0.003s
 FAILED (errors=1, skipped=13)
@@ -118,7 +118,7 @@ adapter 的临时文件建在**系统临时目录根部**（实测 `/var/folders
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- adapters/tts_macsay/adapter.py adapters/tts_macsay/tests/test_adapter.py adapters/tests/test_crossvolume.py adapters/tests/test_conformance.py
 ```
 
@@ -127,8 +127,8 @@ git checkout -- adapters/tts_macsay/adapter.py adapters/tts_macsay/tests/test_ad
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03c-adapters-健壮性与空转测试.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T03c-adapters-健壮性与空转测试.md)" --dir （仓库根）
 ```
 
 **非交互环境**：请直接改代码，不要先写计划再等确认，不要写仓库外的计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要修改或新建任何文件。

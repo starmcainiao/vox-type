@@ -56,8 +56,8 @@ T01（首次派发）产物已回收，验收结论 **部分通过、两条退�
 ## 执行方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T01b-core-原语校验进产品代码.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m opencode/mimo-v2.5-free "$(cat docs/tasks/T01b-core-原语校验进产品代码.md)" --dir （仓库根）
 ```
 
 ## 卡状态

@@ -110,7 +110,7 @@ T08 已验收（提交 `ce5d2f1`，122 条测试全绿）。按项目纪律「�
 ## 回滚方式
 
 ```
-cd /Volumes/macos/newProject/vox-type
+cd （仓库根）
 git checkout -- eval/bench.py eval/report.py eval/tests/test_bench.py eval/tests/test_report.py eval/tests/test_stats.py
 rm -f eval/tests/test_offline_tts.py
 ```
@@ -124,8 +124,8 @@ rm -f eval/tests/test_offline_tts.py
 **回落**：
 
 ```
-cd /Volumes/macos/newProject/vox-type
-opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T08b-eval-审计修复.md)" --dir /Volumes/macos/newProject/vox-type
+cd （仓库根）
+opencode run -m sense-nova/sensenova-6.8-flash-lite "$(cat docs/tasks/T08b-eval-审计修复.md)" --dir （仓库根）
 ```
 
 这是**非交互环境**：请直接落地代码，不要先写计划再等确认，不要往仓库里写计划文件（如 `.hermes/plans/*.md`），除白名单文件外不要新建或修改任何文件。

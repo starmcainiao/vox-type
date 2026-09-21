@@ -49,7 +49,7 @@
 5. **已铸产物**：`vox pack check` rc 0 → `vox pack build` rc 0（预铸成功率 100%，say 真合成）；
    产物随包入仓（assets 是包的组成部分）；
 6. 离线全命中测试 `packs/heat-kefu/tests/test_source_of_truth.py`（packs 层测试根）：
-   - 读 yaml 原文（绝对路径 `/Volumes/macos/kefu-agent/organs/客服/brain/prompts/供热预设.yaml`）+
+   - 读 yaml 原文（绝对路径 `<kefu-agent 仓根>/organs/客服/brain/prompts/供热预设.yaml`）+
      `phrases.json`，断言 54 条 variant 与 yaml 值**逐字相等**（这是「同源」的机器证明；
      yaml 不在本仓时 skip 而非 fail——公开 CI 无 kefu 仓）；
    - `find_hit`（T29 API）对 54 条 yaml 原文逐条查询 → 全部 `entry is not None`（100% 命中）；
