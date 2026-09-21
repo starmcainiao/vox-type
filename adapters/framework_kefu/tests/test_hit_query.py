@@ -16,6 +16,7 @@ import shutil
 import signal
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from core.metrics_spec import KEY, MISS, REASON
@@ -108,11 +109,12 @@ class TestKeyModePositive(HitQueryBase):
             [("only_part1", ASK, 0)],
         )
         # 手工把条目的 part_index 改成 1（身份唯一，指纹/路径不动）
-        pack.assets[0] = AssetEntry(
+        # 契约内写法（T27d）：新建包实例，不改既有包——包是只读产物。
+        pack = replace(pack, assets=[AssetEntry(
             key=pack.assets[0].key, part_index=1, rate_key="normal",
             variant=0, text=pack.assets[0].text, fingerprint=pack.assets[0].fingerprint,
             path=pack.assets[0].path, duration_ms=pack.assets[0].duration_ms,
-        )
+        )])
         res = find_hit(pack, key="only_part1")
         self.assertIsNone(res.entry)
         self.assertEqual(res.miss_reason, REASON_KEY_NOT_PREBAKED)
@@ -770,26 +772,32 @@ class TestSequenceEdgeCases(SequenceHitBase):
         # text = SEG_A_1 + ASK + ASK，位置 0 只能用 seg_a_1 覆盖 → 把它挡掉即整体 miss
         i = next(k for k, a in enumerate(self.pack.assets) if a.key == "seg_a_1")
         e = self.pack.assets[i]
-        pack = self.pack
-        pack.assets = list(self.pack.assets)
+        base_assets = list(self.pack.assets)
 
         # ① part_index != 0 → 不是候选
-        pack.assets[i] = AssetEntry(key=e.key, part_index=1, rate_key=e.rate_key,
-                                    variant=e.variant, text=e.text, fingerprint=e.fingerprint,
-                                    path=e.path, duration_ms=e.duration_ms)
+        # 契约内写法（T27d）：每步新建包实例，不改既有包——包是只读产物。
+        pack = replace(self.pack, assets=[
+            AssetEntry(key=e.key, part_index=1, rate_key=e.rate_key,
+                       variant=e.variant, text=e.text, fingerprint=e.fingerprint,
+                       path=e.path, duration_ms=e.duration_ms) if k == i else a
+            for k, a in enumerate(base_assets)
+        ])
         res = find_hit_sequence(pack, self.text)
         self.assertEqual(res.entries, (), "part_index!=0 的条目不得参与序列覆盖")
 
         # ② rate 不匹配 → 不是候选
-        pack.assets[i] = AssetEntry(key=e.key, part_index=0, rate_key="slow",
-                                    variant=e.variant, text=e.text,
-                                    fingerprint=e.fingerprint, path=e.path,
-                                    duration_ms=e.duration_ms)
+        pack = replace(self.pack, assets=[
+            AssetEntry(key=e.key, part_index=0, rate_key="slow",
+                       variant=e.variant, text=e.text,
+                       fingerprint=e.fingerprint, path=e.path,
+                       duration_ms=e.duration_ms) if k == i else a
+            for k, a in enumerate(base_assets)
+        ])
         res2 = find_hit_sequence(pack, self.text, rate_key="normal")
         self.assertEqual(res2.entries, (), "rate 不匹配的条目不得参与序列覆盖")
 
         # ③ 对照：恢复 part_index=0 + normal 档 → 又命中 3 段
-        pack.assets[i] = e
+        pack = self.pack
         res3 = find_hit_sequence(pack, self.text)
         self.assertEqual(len(res3.entries), 3)
 

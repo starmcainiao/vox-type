@@ -43,29 +43,60 @@
 
 ---
 
-## ⑧ 实现变更记录（T27 · 2026-09-21）：查找热路径索引化
+## ⑧ 实现变更记录（T27 · T27d · 2026-09-21）：查找热路径索引化 + 只读契约收口
 
-> 冻结区开批第一张卡（`docs/tasks/T27-assets-热路径索引化.md`）。
+> 开批第一张卡（`docs/tasks/T27-assets-热路径索引化.md`），三轮试错后由
+> `docs/tasks/T27d-assets-只读契约收口.md` 收口。
 > **语义零变化**是硬判据：包格式、API 契约、失败条件、返回值一律不动。
+
+### 只读契约（本节的总前提）
+
+**本包是只读产物。** `pack.assets` 只在装载期（`load_pack`）被赋值一次，之后**只读**。
+全仓产品代码里运行期改 `pack.assets` 的地方是 **0 处**；历史上只有测试与 bench 脚本
+改过它，那属于**契约外行为**。
+
+因此下面两道防线是**容忍度**（让测试/工具的意外改动不会立刻变成静默错误），
+**不是"运行期可改 assets"的授权**：
+
+| 运行期改了 `assets` | 两道防线能发现吗 | 正确姿势 |
+|---|---|---|
+| 整体换列表（`pack.assets = [...]`） | 能（自动重建） | 推荐改为**新建 `AssetPack` 实例** |
+| 增删条目（`append` / `pop` / `del`） | 能（自动重建） | 同上 |
+| 同下标换对象（`assets[i] = x`，身份键不变） | 能（自动重建） | 同上 |
+| **身份键迁移**（`assets[i] = x`，`key`/`part_index`/`rate_key` 变了） | **不能** | 改后调 `invalidate_lookup_caches()` |
+| **原地改字段值**（`entry.text = ...`） | **不能** | 改后调 `invalidate_lookup_caches()` |
+
+- **`invalidate_lookup_caches()` 是公开的显式失效入口**，语义未变：把两个派生缓存清空、
+  令牌归零，下一次 `lookup` 按**当前** `assets` 重建。
+- **契约外不保证**：不调它就直接改 `assets`（且改动落在上表最后两类），缓存**可能陈旧**
+  ——调用方会看到"未命中"而不是正确结果。这是**如实的**后果，不粉饰也不掩盖。
+- 生产路径不该改 `pack.assets`。要"换一个包"，新建实例（`dataclasses.replace(pack, assets=…)`
+  或重新 `load_pack`）；`replace` 会重跑 `__post_init__`，缓存自然重置。
 
 ### 变更内容
 
 `assets/pack.py::AssetPack.lookup` 的两处成本被消除：
 
 1. **候选定位：线性遍历 → 惰性身份索引**
-   - 新增私有派生属性 `_identity_index`：`(key, part_index, rate_key, variant) → AssetEntry`。
-   - 首次 lookup 时按包内顺序构建一次（O(n)），之后是 O(1) 查表；但**每次**查表前
-     都要核对一次内容签名（见下）——那一步本身是 O(n)。
+   - 新增私有派生属性 `_identity_index`：`(key, part_index, rate_key, variant) → (index, AssetEntry)`。
+     值带**构建时的下标**——这是第二道防线（见下）的依据。
+   - 首次 lookup 时按包内顺序构建一次（O(n)），之后是 **O(1)** 查表 + **O(1)** 守卫。
    - 确定性：**首条优先**（`setdefault`），与"线性遍历取首条"完全一致；
      索引**不过滤**任何条目（指纹不符 / 文件已删的条目照样在索引里，
      由后续步骤按原判据返回 None）——索引只做寻址，不做判定。
-   - 一致性守卫（`_ensure_lookup_caches` + `_assets_signature`）：索引是只增缓存，
-     而 lookup 靠 `get` 查表命中，缓存挂一条 `assets` 中已不存在的条目时
-     `None` 永远不会出现。守卫用 `assets` 的**内容签名**（每条目一个 `id()`）
-     判定是否需要整表重建，因此能发现**原地改列表**
-     （`assets[i] = x` / `append` / `pop`）与整体换列表两类改动。
-     已知盲区：原地改**字段值**（`entry.text = ...`）不改变 `id()`，检测不到；
-     需要那种粒度时请显式调 `invalidate_lookup_caches()`。
+   - **两道防线（热路径都是 O(1)）**：
+     1. 一致性守卫（`_ensure_lookup_caches` + `_assets_signature`）：
+        签名是 `(id(assets), len(assets))`——**O(1)**，拦"整体换列表 / 增删条目"。
+     2. 索引身份校验（`_entry_still_at`）：命中后校验
+        `0 <= index < len(assets) and assets[index] is entry`——**O(1)**，
+        拦"同下标换对象"（第 1 道签名看不见的类）。
+        失配 → `invalidate_lookup_caches()` + 重建 + **只重试一次**；
+        仍失配 → 返回 `None`（fail-closed，不猜、不无限重试）。
+   - **明确不做**"索引 miss 时兜底重建"：那会把未命中路径变成 O(n)——正是 T27 第一
+     轮的教训（见下）。契约外行为不该由产品付这个代价。
+   - 已知盲区（诚实记录）：**身份键迁移**与**字段级原地修改**两道防线都看不见。
+     前者会让 `lookup` 拿到 `candidate is None` 直接返回（校验无项可校）；后者
+     不改变 `id()`、`len()`、对象同一性。都需要显式调 `invalidate_lookup_caches()`。
 2. **指纹重算 → 预计算缓存**
    - 新增私有派生属性 `_text_fingerprints`：按身份键预计算 `fingerprint(entry.text, …)`，
      一次 O(n)。
@@ -73,13 +104,14 @@
      时**仍走原路径重算**（语义最严格，不做任何推测）。
    - 快路径只省去这次 sha256：`fingerprint` 是纯函数，预计算值与重算值逐字同参，
      比对对象与判据都没变。
+   - 该缓存与身份索引**同批**重建，因此不会因陈旧指纹导致误判。
 
 ### 语义不变声明
 
 | 项 | 状态 |
 |---|---|
 | 包格式（manifest / audio / 指纹算法） | **未动**——一个字没改 |
-| API 契约（`load_pack` / `lookup` / `validate_pack` / `AssetPack` 构造签名与字段清单 / `AssetEntry`） | **未动**——公开字段仍是 `pack_id … root` 九个；四个私有派生属性用 `InitVar` 接入 `__post_init__`，**不进** dataclass 字段清单、不进 `__init__` 参数、不进 `repr` 与比较 |
+| API 契约（`load_pack` / `lookup` / `validate_pack` / `AssetPack` 构造签名与字段清单 / `AssetEntry`） | **未动**——公开字段仍是 `pack_id … root` 九个；私有派生属性用 `InitVar` 接入 `__post_init__`，**不进** dataclass 字段清单、不进 `__init__` 参数、不进 `repr` 与比较 |
 | `load_pack` 的校验强度 | **只增不减**——所有既有校验原样保留 |
 | lookup 的失败条件 | **未动**——身份不匹配 / 指纹不匹配 / 文件不存在三种情形仍各自返回 None；**没有**因为"load_pack 已校验过指纹"就直接返回候选（那会把校验变成对装载期的隐式依赖） |
 | 返回值 | **未动**——仍返回包内那条 `AssetEntry` 对象本身（不是副本、不是新造对象） |
@@ -90,6 +122,7 @@
   从"未命中"变成"命中"——语义就变了，本卡不许可。索引化后每次 lookup 的 stat 次数
   已从 O(n) 降到 O(1)，收益已足够。
 - **不把音频内容 / stat 结果缓存进产物**。
+- **不做"索引 miss 兜底重建"**：见上「两道防线」。
 
 ### 迁移说明
 
@@ -102,7 +135,8 @@
 `lookup_key` 原先「线性遍历找候选 → 逐候选 `pack.lookup`」，而 `pack.lookup` 内部
 又是一次 O(n) 线性遍历 → 消费侧最坏 **O(n²)**。T27 保留候选筛选的线性遍历（顺序
 语义必须跟着包内顺序走），把 `pack.lookup` 的内部定位换成索引后，消费侧最坏情形降到
-**O(n·k)**（k = 候选数；每次 `pack.lookup` 内部是 1 次 O(n) 守卫 + 1 次 O(1) 查表）。
+**O(n·k)**（k = 候选数；每次 `pack.lookup` 内部是 1 次 O(1) 守卫 + 1 次 O(1) 查表
++ 1 次 O(1) 身份校验，**稳态全部 O(1)**）。
 **候选的筛选条件与顺序一律不动**（仍按 `pack.assets` 包内顺序逐条判定
 `key` / `part_index == 0` / `rate_key`），`find_hit` / `find_hit_sequence`
 （含 `miss_reason` / `uncovered` / `blocked_by`）对外行为一字未变。
@@ -112,18 +146,38 @@
 数字一律以落盘报告为准：`labs/pack-index-bench/report.json`（口径与复现步骤见
 `labs/pack-index-bench/README.md`）。
 
-**诚实结论（不粉饰）**：保留内容签名守卫的前提下，索引化**并没有让 `lookup` 变快**——
-守卫本身是 O(n) 的比对，成本高于「改前」的纯线性遍历（逐量级拆分见 report.json 的
-`cost_breakdown_no_stat`）。本卡的收益是**语义正确性**（原地改 `assets` 不留静默错误）
-与 **stat 次数 O(n) → O(1)**，不是大包上的 CPU 时间。
+**结论（T27d，不粉饰）**：热路径 **O(1)**——守卫是 `(id, len)` 签名、查表 O(1)、
+命中时再加一次 O(1) 的 `is` 校验。`problems == []`，逐量级倍数见 report.json
+（n=10k 时 1.14×–294×，n=200k 时 1.14×–10¹⁴×）。
 
-之所以仍然保留守卫：把它换成常数开销的判断会让 `lookup` 在原地改动后返回一条已不在
-`assets` 里的条目，`None` 永远不会出现——那是 fail-closed 的破口，本卡不接受。
-可复现反例见 `python3 labs/pack-index-bench/run_bench.py --selfcheck`。
+**代价（必须一起看）**：
+1. **冷启动**：首次 `lookup` 付一次 O(n) 的建索引 + 全表预计算指纹（n=10k ≈ 7ms、
+   n=200k ≈ 187ms）。旧实现在此几乎为零。这是**摊销**口径，不是热路径口径。
+2. **契约**：只读产物。运行期改 `assets` 落在「身份键迁移 / 字段级原地修改」这两类时，
+   必须显式调 `invalidate_lookup_caches()`；不调则缓存可能陈旧。
+
+### 三轮试错的历史（留证，不是当前实现）
+
+| 轮次 | 守卫形态 | 结论 |
+|---|---|---|
+| T27 第一轮 | 逐条目 `id()` 的**内容签名**（O(n)） | 语义正确但**性能净失败**：n=10k 时守卫单独 233.8µs > 线性遍历 60.7µs，把索引的节省抵消掉了 |
+| T27b | O(1) 签名、**放弃原地检测** | 既有测试红（`test_part_index_nonzero_and_wrong_rate_are_excluded` 0 != 3）——已有实现被回滚 |
+| T27c | O(1) 签名 + 索引带 index + `is` 校验，但把"运行期改 assets"当**能力** | 仍然红：该既有测试是"三段轮换"，①`part_index` 0→1、②`rate` normal→slow、③恢复——①②把**身份键本身换掉**，旧索引里已无正确键，`is` 校验**无项可校** |
+| **T27d（当前）** | 同 T27c 的实现 + **把"运行期改 assets"判为契约外**，测试/bench 改契约内写法 | 十一根全绿，`problems == []` |
+
+关键认识：T27c 的失败**不是实现 bug**——它证明了"O(1) 且完全覆盖三类改动"做不到
+（身份键迁移一旦让 `lookup` 拿不到候选，任何判断都无从触发）。所以正确的收口不是
+"再找一种守卫"，而是**承认包是只读的**：产品不为契约外行为付 O(n)。
 
 ### 判定与验收
 
-等价性、指纹快路径不弱化、stat 不缓存、索引确定性、公开契约未动、以及
-「等价性断言不是空转」的注入验证，全部在 `assets/tests/test_lookup_index.py`；
-消费侧等价性与顺序灵敏度在
-`adapters/framework_kefu/tests/test_hit_query_index.py`。
+- 语义等价性、指纹快路径不弱化、stat 不缓存、索引确定性、公开契约未动、
+  「等价性断言不是空转」的注入验证、以及**只读契约的三类语义**（换列表/长度变化
+  自动重建、同下标换对象自愈、身份键迁移如实陈旧）：全部在
+  `assets/tests/test_lookup_index.py`。
+- 消费侧等价性与顺序灵敏度：`adapters/framework_kefu/tests/test_hit_query_index.py`。
+- 反空转（摘掉 `is` 校验 → 必须判红）：`python3 labs/pack-index-bench/run_bench.py --selfcheck`。
+
+**历史引用标注**：本节及 report.json 中所有"T27 第一轮 / T27b / T27c"的数字与
+结论均为**历史留证**，不代表当前实现。当前实现的判据以「语义不变声明」+「只读契约」
++ report.json 的 `problems` 字段为准。

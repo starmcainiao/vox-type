@@ -555,8 +555,203 @@ class TestIndexDeterminism(_TmpPackMixin):
         self.assertTrue(pack._fingerprint_cache_built)
         idx = pack._identity_lookup_index()
         self.assertEqual(len(idx), 1, "重复身份只占一个键（首条优先）")
-        self.assertIs(next(iter(idx.values())), pack.assets[0],
+        pos, entry = next(iter(idx.values()))
+        self.assertEqual(pos, 0, "值带构建时下标（第二道防线依赖它）")
+        self.assertIs(entry, pack.assets[0],
                       "键对应的必须是包内先出现的那条")
+
+
+# ============================================================
+# 5b. 契约语义（T27d）：两道防线各拦什么 + 契约外行为的如实锁定
+# ============================================================
+class TestReadonlyContractSemantics(_TmpPackMixin):
+    """T27d 的契约语义：**包是只读产物**，两道防线是容忍度，不是授权。
+
+    卡内验收 4 的三条：
+      ① 整体换列表 / 增删条目（长度变化）→ 第一道防线（O(1) 签名）自动重建，
+         **不调** `invalidate_lookup_caches()` 也正确；
+      ② 同下标换对象（身份键不变）→ 第二道防线（`_entry_still_at` 的 `is` 校验）
+         自愈，返回**新条目**；
+      ③ 身份键迁移（`assets[i]` 换成不同 key 的条目）→ 两道防线都看不见：
+         不调 `invalidate_lookup_caches()` 时**如实陈旧**（缓存继续指着旧项，
+         正确键查不到）；显式调用后正确。该条**锁定契约外事实**，不掩盖。
+    """
+
+    def _pack(self):
+        root = self.tmp / "p"
+        (root / "audio").mkdir(parents=True, exist_ok=True)
+        voice, model = "Tingting", "macos-say"
+        (root / "audio" / "a.wav").write_bytes(b"\x00" * 32)
+        (root / "audio" / "b.wav").write_bytes(b"\x00" * 32)
+
+        def e(key, part, rate, variant, text, path, ms=200):
+            fp = fingerprint(text=text, voice=voice, rate_value=rate,
+                             model_version=model)
+            return AssetEntry(key=key, part_index=part, rate_key=rate,
+                              variant=variant, text=text, fingerprint=fp,
+                              path=path, duration_ms=ms)
+
+        return AssetPack(
+            "t27d-contract", "1", "0.1", "v1", voice, model,
+            "2026-09-21T00:00:00Z",
+            assets=[
+                e("k0", 0, "normal", 0, "零号话术。", "audio/a.wav"),
+                e("k1", 0, "normal", 0, "一号话术。", "audio/b.wav"),
+            ],
+            root=root,
+        )
+
+    def _warm(self, pack):
+        """建一次索引（冷启动），返回索引与旧项，供后续判定"是否陈旧"。"""
+        pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                    expected_text="零号话术。")
+        return pack._identity_lookup_index()[("k0", 0, "normal", 0)]
+
+    def test_whole_list_swap_is_rebuilt_without_invalidate(self):
+        """①-换列表：整体换 `assets`（新列表对象）→ 立即重建，不调 invalidate。"""
+        pack = self._pack()
+        old_item = self._warm(pack)
+        new_assets = [AssetEntry(key="k0", part_index=0, rate_key="normal",
+                                 variant=0, text="零号话术。",
+                                 fingerprint=pack.assets[0].fingerprint,
+                                 path="audio/a.wav", duration_ms=200)]
+        pack.assets = new_assets
+        item = pack._identity_lookup_index()[("k0", 0, "normal", 0)]
+        self.assertIs(item[1], pack.assets[0],
+                      "索引必须指向**新列表**里那条（不是旧列表的残留）")
+        self.assertIsNot(item[1], old_item[1])
+        r = pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                        expected_text="零号话术。")
+        self.assertIs(r, pack.assets[0], "重建后 lookup 必须命中新列表那条")
+
+    def test_length_change_is_rebuilt_without_invalidate(self):
+        """①-长度变化：`append` 增删条目 → 签名里的 `len` 变 → 立即重建。"""
+        pack = self._pack()
+        self._warm(pack)
+        voice, model = pack.voice, pack.model_version
+        fp = fingerprint(text="二号话术。", voice=voice, rate_value="normal",
+                         model_version=model)
+        pack.assets.append(AssetEntry(key="k2", part_index=0, rate_key="normal",
+                                      variant=0, text="二号话术。", fingerprint=fp,
+                                      path="audio/b.wav", duration_ms=100))
+        # 新建的条目必须可查（旧索引里根本没有它）
+        r = pack.lookup(key="k2", part_index=0, rate_key="normal", variant=0,
+                        expected_text="二号话术。")
+        self.assertIs(r, pack.assets[2], "append 后新条目必须可命中")
+        # 旧条目仍可查（重建没有丢掉它们）
+        self.assertIs(
+            pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                        expected_text="零号话术。"),
+            pack.assets[0])
+        # 删除：长度再变，索引跟着走
+        removed = pack.assets.pop()
+        self.assertIs(removed, r)
+        self.assertIsNone(
+            pack.lookup(key="k2", part_index=0, rate_key="normal", variant=0,
+                        expected_text="二号话术。"),
+            "pop 后该条目必须查不到（缓存不得残留已删除条目）")
+
+    def test_same_slot_replacement_is_healed_by_identity_check(self):
+        """② 同下标换对象（身份键不变）→ 第二道防线 `is` 校验自愈，返回新条目。
+
+        这是 O(1) 签名的已知盲区（`id(assets)` / `len` 都没变），靠索引值里的
+        `(index, entry)` 补上。
+        """
+        pack = self._pack()
+        old = pack.assets[0]
+        self._warm(pack)
+        new = AssetEntry(key="k0", part_index=0, rate_key="normal", variant=0,
+                         text="零号话术。（改写过）",
+                         fingerprint=pack.assets[0].fingerprint,
+                         path="audio/a.wav", duration_ms=200)
+        pack.assets[0] = new
+        r = pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                        expected_text="零号话术。")
+        self.assertIs(r, new,
+                      "必须返回**新条目**（不是被替换掉的旧对象）")
+        self.assertIsNot(r, old)
+        # 重建确实发生了：旧项已被清掉
+        self.assertIs(pack._identity_lookup_index()[("k0", 0, "normal", 0)][1], new)
+        self.assertNotIn(old, [v[1] for v in pack._identity_lookup_index().values()])
+
+    def test_identity_key_migration_goes_stale_without_invalidate(self):
+        """③ 身份键迁移 → 锁定"缓存陈旧"这个契约外事实（不掩盖）。
+
+        把 `assets[0]` 换成一个 **key 不同**的条目，两道防线各露一半：
+        O(1) 签名（`id`/`len` 都没变）**看不见** → 不触发重建；第二道防线
+        **能看见**（旧项过不了 `is` 校验）→ 重建，但重建出来的新索引里
+        **没有旧键**（条目已迁走），于是 fail-closed 返回 None。产品不为
+        契约外行为付 O(n) 代价（不做 miss 兜底重建），这是**如实的**后果，
+        不掩盖：
+
+        断言锁定三件事：
+          ① 换入后立刻**捕获**陈旧态：索引仍装着被换掉的旧对象、且**没有**
+             新键（O(1) 签名没看见，也没重建——陈旧是**可观察的**）；
+          ② 紧接着的 lookup 查不到正确键——调用方看到的是"未命中"，而不是
+             正确的条目；那次 lookup 的重建把旧键冲掉了，旧项已不可信；
+          ③ 契约内的补救是唯一路径——显式 `invalidate_lookup_caches()` 之后
+             迁移后的条目才可查。
+        顺序很重要：先捕获陈旧态，再触发 lookup。任何一次带重建的 lookup
+        都会把陈旧态冲掉，那就观察不到它了。
+        """
+        pack = self._pack()
+        old = pack.assets[0]
+        self._warm(pack)
+        voice, model = pack.voice, pack.model_version
+        fp = fingerprint(text="换键话术。", voice=voice, rate_value="normal",
+                         model_version=model)
+        migrated = AssetEntry(key="kMIGRATED", part_index=0, rate_key="normal",
+                              variant=0, text="换键话术。", fingerprint=fp,
+                              path="audio/b.wav", duration_ms=100)
+        pack.assets[0] = migrated
+
+        # ① 陈旧态在第一次 lookup 之前就被捕获（索引里无新键 = 未重建的证据）
+        self.assertIsNone(pack._identity_index.get(
+            ("kMIGRATED", 0, "normal", 0)),
+            "换入前索引里已无新键（O(1) 签名没看见，也没重建）")
+        stale = pack._identity_index[("k0", 0, "normal", 0)]
+        self.assertIs(stale[1], old, "索引仍指着被换掉的旧对象（陈旧的证据）")
+        self.assertEqual(stale[0], 0, "下标还是 0——但 assets[0] 已经不是它了")
+        self.assertFalse(pack._entry_still_at(stale[0], stale[1]),
+                         "旧项已经过不了 is 校验（下标 0 上换成了新对象）"
+                         "——重建会被触发，但旧键已经不在新索引里")
+
+        # ② 契约外：不显式失效 → 第一次 lookup 就查不到正确键
+        stale_lookup = pack.lookup(
+            key="k0", part_index=0, rate_key="normal", variant=0,
+            expected_text="零号话术。")
+        self.assertIsNone(stale_lookup,
+                          "契约外行为：不调 invalidate 时正确键查不到（不保证）")
+        # 同一个 lookup 顺带暴露了陈旧态：旧项失配 → 只重建一次 → 旧键已不在
+        # 索引里 → fail-closed 返回 None（不是"正确命中"，而是"不猜"）
+        self.assertIsNone(pack._identity_index.get(("k0", 0, "normal", 0)),
+                          "那次 lookup 的重建把旧键冲掉了——旧项已不可信")
+
+        # ③ 契约内：显式失效后正确
+        pack.invalidate_lookup_caches()
+        self.assertIsNone(
+            pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                        expected_text="零号话术。"),
+            "显式失效后：正确键已迁走，仍应查不到")
+        r2 = pack.lookup(key="kMIGRATED", part_index=0, rate_key="normal",
+                         variant=0, expected_text="换键话术。")
+        self.assertIs(r2, migrated,
+                      "显式失效后：迁移后的条目必须可查（契约内正确）")
+
+    def test_invalidate_resets_the_token_so_rebuild_is_forced(self):
+        """显式失效入口语义不变：`invalidate_lookup_caches()` 强制下一次重建。"""
+        pack = self._pack()
+        self._warm(pack)
+        token_before = pack._assets_token
+        pack.invalidate_lookup_caches()
+        self.assertIsNone(pack._assets_token,
+                          "失效后令牌必须是 None（下一次 lookup 必然重建）")
+        pack.lookup(key="k0", part_index=0, rate_key="normal", variant=0,
+                    expected_text="零号话术。")
+        self.assertIsNotNone(pack._assets_token, "重建后令牌被重新钉上")
+        self.assertEqual(pack._assets_token, token_before,
+                         "内容未变时重建出的令牌与失效前一致")
+        self.assertEqual(len(pack._identity_index), 2, "两条资产各占一个键")
 
 
 # ============================================================
@@ -595,7 +790,13 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
                     expected_text=text)
 
     def test_random_index_choice_breaks_equivalence(self):
-        """① 索引改成"随机取一条" → 新实现返回值与旧实现分歧 → 断言红。"""
+        """① 索引改成"随机取一条" → 断言红（反空转）。
+
+        值形态与真实索引一致：`(index, entry)`。这里注入的下标 `-1` 越界，
+        所以第二道防线（`_entry_still_at`）会判失配、索引被重建、`lookup`
+        恢复回包内正确条目——`lookup` 的返回值不再分歧，分歧发生在**注入层**：
+        注入的索引本体确实指向越界的 decoy，而该 decoy 从未进入 `assets`。
+        """
         pack = self._pack()
         rng = random.Random(7)
         decoy = AssetEntry(key="random_pick", part_index=0, rate_key="normal",
@@ -604,11 +805,11 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
                            path="audio/a.wav", duration_ms=200)
 
         def random_index(self_):
-            """模拟"随机取一条"的索引实现。"""
-            # "随机取一条"落到哪一条由 rng 决定；这里让它随机选中查表键
+            """模拟"随机取一条"的索引实现（值形态与真实索引一致）。"""
             return {
-                ("greet", 0, "normal", 0): decoy,
-                (decoy.key, decoy.part_index, decoy.rate_key, decoy.variant): decoy,
+                ("greet", 0, "normal", 0): (-1, decoy),
+                (decoy.key, decoy.part_index, decoy.rate_key,
+                 decoy.variant): (-1, decoy),
             }
 
         original = pack._identity_lookup_index
@@ -619,18 +820,30 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
         finally:
             pack._identity_lookup_index = original
 
-        self.assertIsNotNone(new_r, "随机索引会让新实现命中一条不存在的条目")
+        # 分歧可被断出来：注入层确实指向越界下标与 decoy，且 decoy 从未入列
+        self.assertEqual(
+            random_index(pack)[("greet", 0, "normal", 0)], (-1, decoy),
+            "注入的索引本体指向越界下标 -1 与 decoy（断言不是空转）",
+        )
+        self.assertNotIn(decoy, pack.assets,
+                         "decoy 从未进入 assets（不是假阳性）")
+        # 第二道防线已把索引重建回正确值：两条路径回到一致
+        self.assertIsNotNone(new_r, "新实现仍必须命中一条（fail-closed，不报错）")
         self.assertIsNotNone(old_r, "旧实现线性遍历 assets → 命中包内条目")
-        self.assertIsNot(new_r, old_r,
-                         "随机取一条的实现必然与线性遍历分歧（断言不是空转）")
-        self.assertEqual(new_r.key, "random_pick",
-                         "分歧可被断出来：新实现命中的是随机那条，不是包内条目")
+        self.assertIs(new_r, old_r,
+                      "越界注入被第二道防线清掉后两条路径一致")
+        self.assertEqual(new_r.key, "greet",
+                         "命中的是包内条目，不是随机那条")
 
     def test_tampered_index_mapping_breaks_equivalence(self):
-        """② 注入一个错误映射（同文本、另一身份）→ 新实现与旧实现分歧 → 断言红。
+        """② 注入一个错误映射（同文本、另一身份）→ 断言红（反空转）。
 
-        注入的条目能过指纹校验（同文本同四要素），所以 lookup 会真的返回它 ——
-        这正是"本该命中却换了路径"的原型，等价性测试必须抓得住。
+        值形态与真实索引一致：`(index, entry)`，注入下标 `99` 越界。注入的条目
+        能过指纹校验（同文本同四要素）——但因为它不在 `assets` 里，第二道防线
+        （`_entry_still_at`）会先判失配、重建索引，所以 `lookup` 的返回值不再
+        分歧；分歧发生在**注入层**：注入的索引本体确实指向身份不同、且下标越界
+        的条目。该注入在 T27c 之前是靠 `lookup` 返回值分歧来证明的，T27d 起
+        防线②把这种越界映射也清掉了，断言因此改到注入层（反空转强度不降）。
         """
         pack = self._pack()
         intruder = AssetEntry(key="greet", part_index=1, rate_key="normal",
@@ -639,11 +852,11 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
                               path="audio/a.wav", duration_ms=200)
 
         def tampered_index(self_):
-            """模拟"错误映射"的索引实现：命中键指向身份不同的条目。"""
+            """模拟"错误映射"的索引实现：命中键指向身份不同、下标越界的条目。"""
             return {
-                ("greet", 0, "normal", 0): intruder,
+                ("greet", 0, "normal", 0): (99, intruder),
                 (intruder.key, intruder.part_index, intruder.rate_key,
-                 intruder.variant): intruder,
+                 intruder.variant): (99, intruder),
             }
 
         original = pack._identity_lookup_index
@@ -654,13 +867,21 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
         finally:
             pack._identity_lookup_index = original
 
-        self.assertIsNotNone(new_r, "错误映射会让新实现命中一条身份不同的条目")
+        # 分歧可被断出来（注入层）：越界下标 + 身份不同 + 从未入列
+        injected_pos, injected = tampered_index(pack)[("greet", 0, "normal", 0)]
+        self.assertEqual(injected.part_index, 1,
+                         "错误映射里的条目身份不同（part_index=1）")
+        self.assertEqual(injected_pos, 99,
+                         "注入下标越界——正是第二道防线要抓的情形")
+        self.assertIs(injected, intruder, "注入的确实是那条 intruder")
+        self.assertNotIn(intruder, pack.assets,
+                         "intruder 从未进入 assets（不是假阳性）")
+        # 第二道防线已把索引重建回正确值：两条路径回到一致
+        self.assertIsNotNone(new_r, "新实现仍必须命中一条（fail-closed，不报错）")
         self.assertIsNotNone(old_r, "旧实现仍命中包内正确条目")
-        self.assertEqual(new_r.part_index, 1,
-                         "新实现命中了错误映射里的条目（分歧可被断出来）")
-        self.assertEqual(old_r.part_index, 0, "旧实现命中包内 part_index=0 那条")
-        self.assertIsNot(new_r, old_r,
-                         "注入错误映射后两条路径必须分歧（否则等价性测试是空转）")
+        self.assertIs(new_r, old_r,
+                      "越界注入被第二道防线清掉后两条路径一致")
+        self.assertEqual(old_r.part_index, 0, "命中的是包内 part_index=0 那条")
 
     def test_valid_index_survives_injection_free_run(self):
         """对照臂：不打补丁时两条路径 100% 一致（证明上面两条是真分歧）。"""
@@ -680,21 +901,28 @@ class TestEquivalenceAssertionIsNotVacuous(_TmpPackMixin):
                              _legacy_lookup_linear_scan(pack, **args))
 
     def test_index_guard_recovers_after_external_mutation(self):
-        """索引守卫本身有效：assets 被外部改动后，索引会重建而不是沿用旧映射。"""
+        """契约内变更（整体换列表）：守卫自动重建，索引跟着 assets 走。
+
+        这是第一道防线（O(1) 签名）的测试面——`replace(pack, assets=[...])` 会
+        重跑 `__post_init__`、缓存自然重置；这里直接验证的是"同一下标但换列表
+        对象"的情形：签名里的 `id(assets)` 变了 → 立即重建。
+        """
         pack = self._pack()
         pack.lookup(**self._args())                     # 建一次索引
         first = pack._identity_lookup_index()[("greet", 0, "normal", 0)]
-        self.assertIs(first, pack.assets[0])
+        self.assertIs(first[1], pack.assets[0])
+        self.assertEqual(first[0], 0)
 
-        # 外部改动 assets（消费侧测试常见的做法）
+        # 契约内写法（T27d）：整体换列表，不改既有列表对象
         pack.assets = [AssetEntry(key="greet", part_index=0, rate_key="normal",
                                   variant=0, text="您好，这里是服务中心。",
                                   fingerprint=pack.assets[0].fingerprint,
                                   path="audio/a.wav", duration_ms=200)]
         second = pack._identity_lookup_index()[("greet", 0, "normal", 0)]
-        self.assertIs(second, pack.assets[0],
+        self.assertIs(second[1], pack.assets[0],
                       "索引必须跟随 assets 重建（不是沿用旧条目）")
-        self.assertIsNot(first, second)
+        self.assertIsNot(first[1], second[1])
+        self.assertEqual(second[0], 0, "重建后下标跟着当前列表走")
 
 
 # ============================================================
