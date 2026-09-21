@@ -43,3 +43,37 @@
 ## ⑦ 冻结状态
 
 **[冻] 冻结区**。执行器内部实现可换（同步/异步、不同播放后端），但**判定语义与事件字段不变**。
+
+## ⑧ 实现变更记录（T19，2026-09-22）
+
+四参数从「只校验」到「被消费」，各至少一个可观测行为：
+
+| 参数 | 被消费的行为 | 事件字段 |
+|---|---|---|
+| `patience_ms` | 事件流末尾追加等待窗口事件（语义 = 播报完成后麦克风打开时长）；**音频不变** | `LISTEN_MS` |
+| `backchannel` | `on` 时累计播报时长 ≥ `patience_ms` 的单元带标记；`off` 恒 `False` | `BACKCHANNEL_OK`（+ `SPOKEN_MS` 判据输入） |
+| `barge_in` | 每条单元事件带值；`confirm` 时终态单元（`terminal_keys` 命中或 plan 最后一个）额外带「需确认」 | `BARGE_IN` / `REQUIRES_CONFIRM` |
+| `rate_band` | `critical` 单元强制 `CRITICAL_RATE`（slow）；包内缺档时带内回落留痕、带外 fail-closed | `RATE_FALLBACK` / `REQUESTED_RATE` |
+
+**音频与事件分离**（判据要显式区分）：`patience_ms` / `backchannel` / `barge_in`
+三个参数在任意取值下**不改变输出 WAV 字节**（sha256 相同，见
+`runtime/tests/test_duplex_policy.py::TestAudioImmutability`，含 8 种组合对照）；
+只有 `rate_band`（档位选择 → 选到不同档的资产）会改变音频。
+
+**策略流是显式 opt-in**：`Executor(..., policy_stream=True)` 才写双工策略字段并追加
+等待窗口事件。默认 `False` = 保持"一个单元恰好一条事件"的旧形状（字段集合逐字节
+不变，走 `build_event`）。WHY：`eval/bench.py` 用 `len(events) == units` 做完整性
+闸门、既有下游按位置读 `events[0]`，默认开启会让它们静默读到等待窗口事件——
+那是"本该命中却换了路径"，属于静默降级。
+
+**新增原因常量**：`REASON_CRITICAL_RATE_OUT_OF_BAND = "critical_rate_out_of_band"`
+（`critical` 单元缺关键信息档且带外 → `miss` 并 fail-closed；即使
+`allow_fallback=True` 也不放行，因为那是"本该关键信息慢说却跑成常速"）。
+
+**档位差口径**：`duplex.rate_distance()` 按相邻档差 0.20 计（跨两档 0.40）。
+故默认 `rate_band=0.15` < 0.20 → 关键信息缺 slow 档判"超带"，fail-closed；
+业务把 `rate_band` 放宽到 ≥0.20 → 允许回落并留痕。
+
+**新增测试**：`runtime/tests/test_duplex_policy.py`（46 条，每条可观测行为至少一个
+可判红用例 + 负例 + 音频 sha256 不变性）、`core/tests/test_protocol_critical.py`
+（18 条，`critical` 正例/负例/常量钉住）。**既有测试文件一行未改**。

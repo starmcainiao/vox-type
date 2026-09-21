@@ -38,6 +38,43 @@
 
 改原语集合/schema = **破坏性变更** → 必须：升级大版本、在 `docs/` 记录迁移说明、同步改 `rules/`（规则文档）与 `compiler/checks/`（校验器）。
 
+## ⑧ 变更记录与迁移说明（T19，2026-09-22）
+
+**本次改动（只增字段）**
+
+1. `metrics_spec` 新增 8 个双工策略字段常量：`BARGE_IN` / `REQUIRES_CONFIRM` /
+   `BACKCHANNEL_OK` / `PATIENCE_MS` / `SPOKEN_MS` / `REQUESTED_RATE` /
+   `RATE_FALLBACK` / `LISTEN_MS`。
+2. `PlanUnit` 新增可选字段 `critical: bool = False`（关键信息标记）；`parse_plan`
+   对 `critical` 做类型校验（非 bool → `ProtocolError`，消息含单元序号与实际类型）。
+3. 新增常量 `CRITICAL_RATE = "slow"`（关键信息档位的唯一出处）。
+
+**为什么不升 `protocol_version`**
+
+`core` 既有口径没有针对"只增可选字段"的升版条款；本次只增、不改、不删任何既有
+字段与语义（旧 plan 无 `critical` → 默认 `False`；`METRIC_FIELDS` 仍是 15 个，
+既有断言逐字节不变）。故 `protocol_version` 保持不动，按"只增字段、向后兼容"
+处理，迁移说明写在此处。
+
+**迁移说明（旧 plan / 旧事件如何被消费）**
+
+- **旧 plan（无 `critical`）**：解析通过，`critical` 取 `False`，runtime 侧
+  档位解析与既往完全一致（不强制 slow、不回落、不留痕）。
+- **新 plan（带 `critical: true`）**：runtime 强制 `CRITICAL_RATE`（slow）档；
+  包内缺 slow 档时按 `rate_band` 判回落（带内 → 用最近可用档 + 事件留痕
+  `rate_fallback` + `requested_rate`；带外 → `miss` 原因 `critical_rate_out_of_band`
+  并 fail-closed 中止，**即使 `allow_fallback=True` 也不得用别的档合出音频**）。
+- **新事件字段只出现在策略流**：`runtime.Executor(policy_stream=True)` 才会在单元
+  事件上写双工策略字段、并在末尾追加等待窗口事件（`LISTEN_MS`）。默认
+  `policy_stream=False` 时事件流形状与既往逐字节一致（一个单元恰好一条事件、
+  字段集合不变）——这是"不静默降级"的落点：既有下游（`eval/bench.py` 的
+  `len(events) == units` 完整性闸门、`cli` 的逐事件打印、`adapters` 的
+  `events[0]` 读取）不会因为新事件形态被静默改路径。
+- **字段集合分家**：`METRIC_FIELDS`（15 个，eval 报告口径）保持冻结不变；
+  双工策略字段单独收集在 `DUPLEX_FIELDS`，二者并集为 `ALL_EVENT_FIELDS`。
+  新增常量**不得**并入 `METRIC_FIELDS`（`core/tests/test_metrics_spec.py`
+  逐字节钉死 15 个）。
+
 ## ⑦ 冻结状态
 
 **[冻] 冻结区**。插件适配器与本内核的版本对应关系：适配器声明 `requires_core: ^x.y`，内核只允许**加能力不改语义**。

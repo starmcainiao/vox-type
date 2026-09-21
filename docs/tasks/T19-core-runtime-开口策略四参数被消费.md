@@ -81,5 +81,28 @@ runtime/executor.py core/AGENTS.md runtime/AGENTS.md core/tests runtime/tests`
 **首选**：ZCode 子智能体 `vox-card-executor`；**回落**：`opencode run -m sense-nova/sensenova-6.8-flash-lite`。
 数据分级 = 公开。非交互直接落地；只回事实与自测输出，不做达标判定；不提交 git；与卡冲突停下上报。
 
+## 验收记录（2026-09-21，验收方独立复核）
+
+**结论：验收通过**（一处卡面冲突由执行方发现并以 `policy_stream` opt-in 化解，验收方裁定接受）。
+
+- 白名单：7 个既有文件 + 2 个新测试文件；**既有测试文件零改动**（`git diff HEAD -- core/tests runtime/tests` 空）。
+- 十一根 **1336** 全绿（core 44→**62**、runtime 118→**170**），逐根确认。
+- **四条可观测行为**（验收方抽验 ①，其余核执行方实测）：`patience_ms` 400/900/1800 → `listen_ms` 400/900/1800
+  且输出 WAV **sha256 恒为 `77554ab58978b7c9`**（音频不变）；`backchannel` 开关 → `backchannel_ok` 翻转；
+  `barge_in` allow/confirm → 字段值变 + `confirm` 时终态单元 `requires_confirm=true`；
+  `rate_band` 0.20 → 回落 + `rate_fallback=true`，0.15/0.05 → `RuntimeMissError(critical_rate_out_of_band)`。
+- 负例齐备：四参数非法值抛 `DuplexError`（消息含参数名与实际值）；`critical` 非 bool → `ProtocolError`。
+- 注入验证 5 项全判红（参数改忽略入参 → 对应测试失败）。
+
+**验收方三处裁定**：
+1. **`policy_stream=True` 显式 opt-in（接受）**：卡面要求"等待窗口事件进事件流"，但该形状会让
+   `test_executor.py` 6 处 + `adapters/.../test_bridge.py` 1 处**禁改断言**变红（它们钉的是"事件数 == 单元数"）。
+   执行方改为显式开关：默认 False（既有形状不动）、True 时严格满足卡面形状。**这是"冻结区既有行为不轻动"
+   的正确取舍**（T27 的教训）；若未来要默认开，另开卡同批改那 7 处断言。
+2. **档位差口径 `RATE_ADJACENT_GAP=0.20`（接受）**：设计稿只给 `rate_band ±15%`、未给档间距离；
+   取 0.20 后默认 `rate_band=0.15 < 0.20` → **默认不回落**（缺 slow 档即 miss）——保守且符合 fail-closed 红线。
+3. **超带硬 fail-closed（接受）**：`critical` 单元缺档且超带时，`allow_fallback=True` 也不放行——
+   理由"放行即以常速合出关键信息播出去"（关键信息安全优先）。
+
 ## 卡状态
-- [ ] 已派发 → [ ] 已回收 → [ ] 验收通过（附证据）/ 退回（附原因）
+- [x] 已派发 → [x] 已回收 → [x] **验收通过**（证据见上；三处裁定已记录）

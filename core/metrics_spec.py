@@ -90,3 +90,52 @@ METRIC_FIELDS: frozenset = frozenset({
     HIT_RATE,
     PRECAST_RATIO,
 })
+
+# ---------------------------------------------------------------------------
+# 双工策略字段（T19 只增，不进入 METRIC_FIELDS）
+# ---------------------------------------------------------------------------
+# WHY 单列一个集合而不并入 METRIC_FIELDS：
+#     METRIC_FIELDS 是"eval 报告口径"的冻结集合，被 core/tests/test_metrics_spec.py
+#     逐字节钉死（恰好 15 个）；双工策略字段只出现在 runtime 的逐单元事件流与
+#     plan 尾部的等待窗口事件里，不进 eval 汇总口径。并入会破坏既有断言。
+#     本模块纪律仍是"运行时不写字面量键"——只是钉住的集合分两个。
+
+# 打断策略取值——单元事件里的 barge_in 值（allow / confirm），docs/06 §6.2.4
+BARGE_IN: str = "barge_in"
+
+# 需确认才可打断——barge_in=confirm 时挂在终态单元上的布尔标记
+REQUIRES_CONFIRM: str = "requires_confirm"
+
+# 可发背景回应——backchannel=on 且累计播报时长已达耐心窗后，挂在单元事件上的布尔标记
+BACKCHANNEL_OK: str = "backchannel_ok"
+
+# 耐心窗时长（毫秒）——单元事件里冗余一份本 plan 生效的 patience_ms，便于按事件聚合
+PATIENCE_MS: str = "patience_ms"
+
+# 已播累计时长（毫秒）——该单元播完后的累计时长，backchannel 判据的输入
+SPOKEN_MS: str = "spoken_ms"
+
+# 计划中的语速档位——critical 单元本应使用的档位（slow），与实际播放档区分开留痕
+REQUESTED_RATE: str = "requested_rate"
+
+# 档位回落留痕——critical 单元缺 slow 档、且回落档在收敛带内时写 True
+RATE_FALLBACK: str = "rate_fallback"
+
+# 等待窗口事件类型标记——plan 末尾追加的"播报完成后麦克风打开时长"事件
+LISTEN_MS: str = "listen_ms"
+
+# 等待窗口事件自带上述标记键（值为 patience_ms），不引入额外的枚举字段
+
+DUPLEX_FIELDS: frozenset = frozenset({
+    BARGE_IN,
+    REQUIRES_CONFIRM,
+    BACKCHANNEL_OK,
+    PATIENCE_MS,
+    SPOKEN_MS,
+    REQUESTED_RATE,
+    RATE_FALLBACK,
+    LISTEN_MS,
+})
+
+# 事件合法键全集 = 报告口径字段 + 双工策略字段
+ALL_EVENT_FIELDS: frozenset = METRIC_FIELDS | DUPLEX_FIELDS

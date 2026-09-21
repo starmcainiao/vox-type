@@ -26,6 +26,11 @@ PRIMITIVES: frozenset = frozenset({
 # rate 取值范围（枚举）
 VALID_RATES: frozenset = frozenset({"slow", "normal", "fast"})
 
+# 关键信息档位——标为 critical 的 plan 单元必须用该档位播报（T19 只增）
+# WHY 单列常量而不是复用字符串：critical 的档位选择是 runtime 的判定输入，
+#     写在这里保证 core 与 runtime 对"关键信息=slow"只有一个出处。
+CRITICAL_RATE: str = "slow"
+
 
 # ---------------------------------------------------------------------------
 # 2. 异常定义
@@ -72,6 +77,8 @@ class PlanUnit:
         rate:    语速，仅允许 slow / normal / fast
         variant: 变体编号（整数）或 "auto"（自动选择）
         slots:   槽位键值对（仅 key 模式下有效）
+        critical: 关键信息标记（T19 只增，默认 False）——为 True 时该单元
+                  必须按 CRITICAL_RATE（slow）档播报，且缺档时按语速收敛带判回落
     """
     action: str = "SAY"
     key: Optional[str] = None
@@ -79,6 +86,7 @@ class PlanUnit:
     rate: str = "normal"
     variant: Union[int, str] = "auto"
     slots: Dict[str, str] = field(default_factory=dict)
+    critical: bool = False
 
 
 Plan = List[PlanUnit]
@@ -150,6 +158,17 @@ def _validate_unit(raw: Any, index: int) -> PlanUnit:
         # 按结构推断：有 key → SAY，有 text → SAY_LIVE
         action = "SAY" if has_key else "SAY_LIVE"
 
+    # critical 校验（T19 只增）：必须是真正的 bool。
+    # WHY 显式排除 bool 之外的"看起来像真值"的写法（"true" / 1 / "yes"）：
+    #     关键信息标记一旦放宽，runtime 就无法区分"策划漏标"与"脚本写错"——
+    #     而漏标会让关键信息按 normal 档播出去，属于静默降级。
+    critical = raw.get("critical", False)
+    if not isinstance(critical, bool):
+        raise ProtocolError(
+            f"plan 单元 #{index} 的 critical 必须是 bool，"
+            f"实际类型为 {type(critical).__name__}（值 {critical!r}）"
+        )
+
     return PlanUnit(
         action=action,
         key=raw.get("key"),
@@ -157,6 +176,7 @@ def _validate_unit(raw: Any, index: int) -> PlanUnit:
         rate=rate,
         variant=variant,
         slots=slots,
+        critical=critical,
     )
 
 

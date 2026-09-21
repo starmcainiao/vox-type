@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import List, Optional
 
 from core.metrics_spec import FALLBACK, HIT, MISS
-from core.protocol import PlanUnit, parse_plan
+from core.protocol import CRITICAL_RATE, PlanUnit, parse_plan
 from assets.fingerprint import fingerprint
 from assets.pack import AssetEntry, AssetPackError
 
 from .audio import SAMPLE_RATE, AudioError, concat_wavs, read_wav, silence
-from .duplex import DuplexParams
-from .events import build_event
+from .duplex import DuplexParams, rate_distance
+from .events import build_event, build_listen_event, build_unit_event
 
 # 未命中/降级原因（取值照 docs/06 §6.2.7 ② 的表；这些是"值"，不是事件字段名）
 REASON_KEY_NOT_PREBAKED = "key_not_prebaked"
@@ -32,6 +32,11 @@ REASON_SAY_LIVE_TEXT = "say_live_text"
 REASON_FINGERPRINT_MISMATCH = "fingerprint_mismatch"
 REASON_AUDIO_FILE_MISSING = "audio_file_missing"
 REASON_ENGINE_MISMATCH = "engine_mismatch"
+# T19：critical 单元缺关键信息档位，且回落档超出语速收敛带 → 不回落，按未命中处理。
+# WHY 单独一个原因而不是复用 key_not_prebaked：那条语义是"整条 key 都没预铸"，
+#     这里语义是"预铸了但没预铸 critical 要求的档位、且带内找不到可用档"，
+#     两件事的修复动作不同（补铸 slow 档 vs 补铸整条话术）。
+REASON_CRITICAL_RATE_OUT_OF_BAND = "critical_rate_out_of_band"
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +93,12 @@ class _UnitDecision:
     variant: Optional[int]
     entries: List[AssetEntry] = field(default_factory=list)
     text: Optional[str] = None
+    # 该单元实际使用的语速档（critical 回落时与 unit.rate 不同）
+    rate_used: str = ""
+    # 关键信息计划档位（非 critical 单元为空）
+    requested_rate: str = ""
+    # 是否发生了档位回落
+    rate_fallback: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -104,17 +115,26 @@ class Executor:
     """
 
     def __init__(self, pack, adapter, *, duplex: Optional[DuplexParams] = None,
-                 allow_fallback: bool = False):
+                 allow_fallback: bool = False, policy_stream: bool = False):
         """初始化执行器并校验依赖对象。
 
+        参数：
+            policy_stream: 是否在事件流里追加双工策略事件（等待窗口 + 策略字段）。
+                           默认 False = 保持"一单元一事件"的旧形状。
+
         异常：
-            TypeError: pack/adapter 缺必需成员、duplex 类型不对、allow_fallback 非 bool
+            TypeError: pack/adapter 缺必需成员、duplex 类型不对、
+                       allow_fallback / policy_stream 非 bool
         """
         self._check_pack(pack)
         self._check_adapter(adapter)
         if not isinstance(allow_fallback, bool):
             raise TypeError(
                 f"allow_fallback 必须是 bool，实际为 {allow_fallback!r}"
+            )
+        if not isinstance(policy_stream, bool):
+            raise TypeError(
+                f"policy_stream 必须是 bool，实际为 {policy_stream!r}"
             )
 
         params = DuplexParams.default() if duplex is None else duplex
@@ -127,6 +147,15 @@ class Executor:
         self.adapter = adapter
         self.duplex = params
         self.allow_fallback = allow_fallback
+        # T19：双工策略事件（等待窗口 / backchannel_ok / barge_in / requires_confirm /
+        # rate_fallback）是否进入事件流。
+        # 为什么默认关闭（False）：既有事件流契约是"一个单元恰好一条事件"
+        #     （eval/bench.py 用 len(events) == units 做完整性闸门，runtime/eval 的
+        #     既有断言逐字节钉死这一形状）。默认开启会让既有下游按位置读取时
+        #     读到等待窗口事件——那是"本该命中却换了路径"，属于静默降级。
+        #     所以默认保持旧形状（只增字段 + 旧消费者零变化），新消费者显式 opt in。
+        #     这是"不静默降级"的落点，不是偷懒。
+        self.policy_stream = policy_stream
 
     @staticmethod
     def _check_pack(pack) -> None:
@@ -187,6 +216,13 @@ class Executor:
                 if decision.state != HIT:
                     raise RuntimeMissError(self._abort_message(decision))
 
+        # critical 超带是"更硬的 fail-closed"：即使 allow_fallback=True 也不允许
+        # 用另一个档位现场合成播出去——那正是"本该关键信息慢说却跑成了常速"，
+        # 属于事后无法定位的静默降级。所以这里无条件抛错、不写输出文件。
+        for decision in decisions:
+            if decision.reason == REASON_CRITICAL_RATE_OUT_OF_BAND:
+                raise RuntimeMissError(self._abort_message(decision))
+
         # ② 合成与拼接阶段
         segments: List = []
         tts_calls = 0
@@ -206,7 +242,7 @@ class Executor:
             tmpdir = Path(tmp)
 
             for idx, decision in enumerate(decisions):
-                rate_key = decision.unit.rate
+                rate_key = decision.rate_used or decision.unit.rate
 
                 if decision.entries:
                     # 命中：直接读包内音频（part_index 升序），零 TTS 调用
@@ -246,22 +282,63 @@ class Executor:
         )
         total_duration_ms = int(round(total_samples * 1000 / SAMPLE_RATE))
 
-        # ③ 事件流：每个单元恰好一条，含未命中/降级
-        events = [
-            build_event(
+        # ③ 事件流：每个单元恰好一条（含未命中/降级），末尾追加等待窗口事件。
+        # 单元时长用包内 manifest 的 duration_ms（离线可复现，不吃 wall-clock）。
+        events: List[dict] = []
+        cumulative_ms = 0
+        if self.policy_stream:
+            # 策略流形态：每单元事件带双工策略字段，末尾追加等待窗口事件。
+            for idx, decision in enumerate(decisions):
+                cumulative_ms += self._unit_duration_ms(decision)
+                events.append(build_unit_event(
+                    turn_id=turn_id,
+                    plan_id=plan_id,
+                    part=decision.part,
+                    state=decision.state,
+                    key=decision.unit.key,
+                    rate=decision.rate_used or decision.unit.rate,
+                    variant=decision.variant,
+                    reason=decision.reason,
+                    pack_version=self.pack.pack_version,
+                    first_audio_ms=first_audio_ms,
+                    patience_ms=self.duplex.patience_ms,
+                    spoken_ms=cumulative_ms,
+                    backchannel_ok=self._backchannel_ok(idx, cumulative_ms),
+                    barge_in=self.duplex.barge_in,
+                    requires_confirm=self._requires_confirm(
+                        idx, decision, len(decisions)
+                    ),
+                    requested_rate=decision.requested_rate,
+                    rate_fallback=decision.rate_fallback,
+                ))
+
+            # 等待窗口事件：播报完成后麦克风打开的时长（语义 = patience_ms）。
+            # 只在事件流里体现，不产生任何音频。
+            events.append(build_listen_event(
                 turn_id=turn_id,
                 plan_id=plan_id,
-                part=decision.part,
-                state=decision.state,
-                key=decision.unit.key,
-                rate=decision.unit.rate,
-                variant=decision.variant,
-                reason=decision.reason,
+                listen_ms=self.duplex.patience_ms,
                 pack_version=self.pack.pack_version,
-                first_audio_ms=first_audio_ms,
-            )
-            for decision in decisions
-        ]
+            ))
+        else:
+            # 旧形状：一个单元恰好一条事件，字段集与既往逐字节一致。
+            # WHY 仍走 build_event 而不是 build_unit_event：后者总会写入
+            #     backchannel_ok / requires_confirm / rate_fallback（False）与
+            #     requested_rate（""），旧消费者的字段集合断言会被判红——
+            #     那正是"本该是旧形状却换了形状"的静默变化。
+            for decision in decisions:
+                events.append(build_event(
+                    turn_id=turn_id,
+                    plan_id=plan_id,
+                    part=decision.part,
+                    state=decision.state,
+                    key=decision.unit.key,
+                    rate=decision.rate_used or decision.unit.rate,
+                    variant=decision.variant,
+                    reason=decision.reason,
+                    pack_version=self.pack.pack_version,
+                    first_audio_ms=first_audio_ms,
+                ))
 
         return ExecutionResult(
             events=events,
@@ -294,18 +371,32 @@ class Executor:
                指纹不符 → fallback / fingerprint_mismatch；
                音频缺失 → fallback / audio_file_missing；否则 hit
         """
-        rate_key = unit.rate
+        # 档位解析（T19）：critical 单元强制关键信息档；包内缺档时按收敛带判回落。
+        # 非 critical 单元行为与既往完全一致——绝不顺手放宽。
+        rate_key, requested_rate, rate_fallback, forced_miss_reason = (
+            self._resolve_rate(unit, part)
+        )
 
         # 变体解析（auto → 按 (turn_id, part) 稳定散列）
         variant = self._resolve_variant(
             unit.key, rate_key, turn_id, part, unit.variant
         )
 
-        # ① SAY_LIVE：设计上就没有资产
+        # ① SAY_LIVE：设计上就没有资产（critical 对自由文本无意义，直接沿用现状）
         if unit.key is None:
             return _UnitDecision(
                 part=part, unit=unit, state=MISS,
                 reason=REASON_SAY_LIVE_TEXT, variant=variant, text=unit.text,
+                requested_rate=requested_rate, rate_fallback=rate_fallback,
+            )
+
+        # critical 单元缺档且带内无可回落档：按未命中处理，不静默换路。
+        # 放在引擎检查之后，保证既有 engine_mismatch 优先级不变。
+        if forced_miss_reason:
+            return _UnitDecision(
+                part=part, unit=unit, state=MISS,
+                reason=forced_miss_reason, variant=variant, text=unit.key,
+                requested_rate=requested_rate, rate_fallback=rate_fallback,
             )
 
         # ② 引擎一致性前置检查（docs/06 §6.2.3）
@@ -319,6 +410,7 @@ class Executor:
                 part=part, unit=unit, state=FALLBACK,
                 reason=REASON_ENGINE_MISMATCH, variant=variant,
                 text=self._candidate_text(unit.key, 0, rate_key, variant) or unit.key,
+                requested_rate=requested_rate, rate_fallback=rate_fallback,
             )
 
         # ③ part_index 升序探测（0,1,2…；本轮包只产 0，但要对未来兼容）
@@ -333,7 +425,8 @@ class Executor:
                 return _UnitDecision(
                     part=part, unit=unit, state=MISS,
                     reason=REASON_KEY_NOT_PREBAKED, variant=variant,
-                    text=unit.key,
+                    text=unit.key, requested_rate=requested_rate,
+                    rate_fallback=rate_fallback,
                 )
             if state != HIT:
                 # 包内有条目但不可用：降级时用它自己的文本现场合成
@@ -343,6 +436,7 @@ class Executor:
                     text=self._candidate_text(
                         unit.key, part_index, rate_key, variant
                     ) or unit.key,
+                    requested_rate=requested_rate, rate_fallback=rate_fallback,
                 )
             entries.append(entry)
             part_index += 1
@@ -357,7 +451,8 @@ class Executor:
 
         return _UnitDecision(
             part=part, unit=unit, state=HIT, reason="", variant=variant,
-            entries=entries,
+            entries=entries, rate_used=rate_key, requested_rate=requested_rate,
+            rate_fallback=rate_fallback,
         )
 
     def _diagnose(self, key: str, part_index: int, rate_key: str,
@@ -424,6 +519,53 @@ class Executor:
         entry = self._find_candidate(key, part_index, rate_key, variant)
         return entry.text if entry is not None else None
 
+    def _resolve_rate(self, unit: PlanUnit, part: int):
+        """解析本单元的播报档位（T19：rate_band 的唯一消费点）。
+
+        非 critical 单元：一律返回 unit.rate，行为与既往完全一致（不顺手放宽）。
+
+        critical 单元（关键信息）：
+            1. 包内有关键信息档（slow）资产 → 用它，零改动；
+            2. 缺档但包内该 key 有其它档、且与目标档之差 ≤ rate_band
+               → 用最近可用档（带内回落），事件留痕 rate_fallback；
+            3. 缺档且带内无可回落档 → 返回一个"强制未命中原因"，
+               由调用方按 miss 处理（fail-closed，绝不静默用别的档播出去）。
+
+        返回：
+            (rate_key, requested_rate, rate_fallback, forced_miss_reason)
+            forced_miss_reason 为空字符串 = 无需强制未命中。
+        """
+        if not unit.critical or unit.key is None:
+            return unit.rate, "", False, ""
+
+        target = CRITICAL_RATE
+        # 关键信息档可用 → 直接选它（此时单元计划档与计划档一致，无留痕需求）
+        if self._has_assets(unit.key, target):
+            return target, "", False, ""
+
+        # 缺档：在该 key 可用档里找带内最近的
+        available = self._available_rates(unit.key)
+        in_band = [
+            rate for rate in available
+            if rate_distance(rate, target) <= self.duplex.rate_band
+        ]
+        if not in_band:
+            # 带内无可用档 → 不回落（超出收敛带），按未命中 fail-closed
+            return unit.rate, target, False, REASON_CRITICAL_RATE_OUT_OF_BAND
+
+        best = min(in_band, key=lambda rate: rate_distance(rate, target))
+        return best, target, True, ""
+
+    def _has_assets(self, key: str, rate_key: str) -> bool:
+        """包内是否存在 (key, rate_key) 的任意条目（不校验指纹/文件，仅判存在）。"""
+        return any(entry.key == key and entry.rate_key == rate_key
+                   for entry in self.pack.assets)
+
+    def _available_rates(self, key: str):
+        """该 key 在包内出现过的全部语速档（升序，去重）。"""
+        return sorted({entry.rate_key for entry in self.pack.assets
+                       if entry.key == key})
+
     def _resolve_variant(self, key: Optional[str], rate_key: str, turn_id,
                          part: int, requested) -> Optional[int]:
         """解析 variant：'auto' 按 (turn_id, part) 稳定散列在包内可用变体里选。
@@ -458,15 +600,61 @@ class Executor:
         ).hexdigest()
         return available[int(digest[:16], 16) % len(available)]
 
-    @staticmethod
-    def _abort_message(decision: _UnitDecision) -> str:
-        """生成 fail-closed 中止消息：必须含单元序号、key（或自由文本）与原因。"""
+    def _unit_duration_ms(self, decision: _UnitDecision) -> int:
+        """单个单元（含槽位）的累计时长，取包内 duration_ms 求和。
+
+        口径：用 manifest 里的 duration_ms（预铸时长），不吃 wall-clock——
+            离线产物生成器要可复现，backchannel 的判据输入必须是稳定值。
+        """
+        total = sum(entry.duration_ms for entry in decision.entries)
+        # 槽位音频一律现场合成，manifest 里没有其时长；只记框架段时长。
+        # WHY 不做估计：编造时长会让 backchannel 判据不可复现（比缺一项更糟）。
+        return total
+
+    def _backchannel_ok(self, index: int, cumulative_ms: int) -> bool:
+        """判据：backchannel=on 且累计播报时长 ≥ patience_ms。
+
+        挂在"累计已达耐心窗"的那条单元事件上（即卡内裁定的"之后"标记）；
+        开关关闭时恒 False，不看时长。
+        """
+        if self.duplex.backchannel != "on":
+            return False
+        return cumulative_ms >= self.duplex.patience_ms
+
+    def _requires_confirm(self, index: int, decision: _UnitDecision,
+                          total: int) -> bool:
+        """判据：barge_in=confirm 且本单元为终态。
+
+        终态语义（卡内裁定）：命中 duplex.terminal_keys 的 key，或 plan 最后一个单元。
+        barge_in=allow 时恒 False——allow 下任何单元都可被打断。
+        """
+        if self.duplex.barge_in != "confirm":
+            return False
+        key = decision.unit.key
+        if key is not None and key in self.duplex.terminal_keys:
+            return True
+        return index == total - 1
+
+    def _abort_message(self, decision: _UnitDecision) -> str:
+        """生成 fail-closed 中止消息：必须含单元序号、key（或自由文本）与原因。
+
+        消息里如实写出 allow_fallback 的实际取值——写错会让定位的人误以为
+        "开了降级但没生效"，那比没报更糟。
+        """
         if decision.unit.key is not None:
             ident = f"key={decision.unit.key!r}"
         else:
             ident = f"text={decision.unit.text!r}"
+        if decision.reason == REASON_CRITICAL_RATE_OUT_OF_BAND:
+            return (
+                f"plan 单元 #{decision.part} 关键信息档位缺失（{ident}，"
+                f"reason={decision.reason}，计划档=slow，实际可用档无带内可选）："
+                f"rate_band={self.duplex.rate_band} 不足 → 中止整条 plan"
+                f"（fail-closed：不写输出文件、不用其它档位合成播放；"
+                f"该判定不受 allow_fallback={self.allow_fallback} 影响）"
+            )
         return (
             f"plan 单元 #{decision.part} 未命中（{ident}，"
-            f"reason={decision.reason}）：allow_fallback=False → "
+            f"reason={decision.reason}）：allow_fallback={self.allow_fallback} → "
             f"中止整条 plan（fail-closed：不写输出文件、不播其他话术）"
         )

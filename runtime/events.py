@@ -15,16 +15,24 @@ runtime.events — 事件构造（事件字段名一律取自 core.metrics_spec�
 from datetime import datetime, timezone
 
 from core.metrics_spec import (
+    BACKCHANNEL_OK,
+    BARGE_IN,
     FALLBACK,
     FIRST_AUDIO_MS,
     HIT,
     KEY,
+    LISTEN_MS,
     MISS,
     PACK_VERSION,
     PART,
+    PATIENCE_MS,
     PLAN_ID,
     RATE,
+    RATE_FALLBACK,
     REASON,
+    REQUIRES_CONFIRM,
+    REQUESTED_RATE,
+    SPOKEN_MS,
     TS,
     TURN_ID,
     VARIANT,
@@ -125,6 +133,124 @@ def build_event(
     # 三态占独立一位：键就是 metrics_spec 的 HIT / MISS / FALLBACK 常量
     event[state] = True
     return event
+
+
+def build_unit_event(
+    *,
+    turn_id,
+    plan_id,
+    part,
+    state,
+    key=None,
+    rate=None,
+    variant=None,
+    reason="",
+    pack_version=None,
+    first_audio_ms=None,
+    ts=None,
+    # ---- 双工策略字段（T19 只增，全部可选，缺省即"旧事件形态"）----
+    patience_ms=None,
+    spoken_ms=None,
+    backchannel_ok=False,
+    barge_in=None,
+    requires_confirm=False,
+    requested_rate=None,
+    rate_fallback=False,
+) -> dict:
+    """构造一条带双工策略字段的单元事件。
+
+    参数（在 build_event 之外新增，全部可选）：
+        patience_ms:    本 plan 生效的耐心窗（毫秒）
+        spoken_ms:      该单元播完后的累计播报时长（毫秒）
+        backchannel_ok: 是否已可发背景回应（backchannel=on 且累计 ≥ patience_ms）
+        barge_in:       打断策略值（allow / confirm）
+        requires_confirm: 是否需确认才可打断（barge_in=confirm 且本单元为终态）
+        requested_rate: 计划档位（critical 单元为 slow），与实际播放档区分
+        rate_fallback:  是否发生了档位回落（critical 单元缺档 + 带内回落）
+
+    返回：
+        事件字典；键全部来自 core.metrics_spec。
+
+    异常：
+        EventError: 同 build_event，另加双工字段类型非法
+    """
+    event = build_event(
+        turn_id=turn_id, plan_id=plan_id, part=part, state=state, key=key,
+        rate=rate, variant=variant, reason=reason, pack_version=pack_version,
+        first_audio_ms=first_audio_ms, ts=ts,
+    )
+    _put_ms(event, PATIENCE_MS, patience_ms)
+    _put_ms(event, SPOKEN_MS, spoken_ms)
+    _put_bool(event, BACKCHANNEL_OK, backchannel_ok)
+    if barge_in is not None:
+        if barge_in not in frozenset({"allow", "confirm"}):
+            raise EventError(
+                f"{BARGE_IN} 必须是 'allow'/'confirm' 之一，实际值为 {barge_in!r}"
+            )
+        event[BARGE_IN] = barge_in
+    _put_bool(event, REQUIRES_CONFIRM, requires_confirm)
+    if requested_rate is not None and requested_rate != rate:
+        event[REQUESTED_RATE] = requested_rate
+    _put_bool(event, RATE_FALLBACK, rate_fallback)
+    return event
+
+
+def build_listen_event(
+    *,
+    turn_id,
+    plan_id,
+    listen_ms,
+    pack_version=None,
+    ts=None,
+) -> dict:
+    """构造 plan 末尾的"等待窗口"事件。
+
+    语义：播报完成后麦克风打开的时长（毫秒）。这是事件流形态，不产生音频。
+
+    形态自描述：不带三态键、不带 PART——它不是"第 N 个 plan 单元的产物"，
+        是整条 plan 结束后的一个窗口。这样消费方可按形态分流（是否含 LISTEN_MS），
+        而不必按位置假设"最后一条"。
+
+    参数：
+        listen_ms: 等待窗口时长（毫秒），必须是非负真整数
+
+    返回：
+        带 LISTEN_MS 标记键的事件字典（该键即事件类型标记，值为时长）。
+
+    异常：
+        EventError: listen_ms 类型非法
+    """
+    if not isinstance(listen_ms, int) or isinstance(listen_ms, bool) or listen_ms < 0:
+        raise EventError(
+            f"{LISTEN_MS} 必须是非负整数（毫秒），实际值为 {listen_ms!r}"
+        )
+    return {
+        TS: ts if ts is not None else _utc_now_iso(),
+        TURN_ID: turn_id,
+        PLAN_ID: plan_id,
+        PACK_VERSION: pack_version,
+        LISTEN_MS: listen_ms,
+    }
+
+
+def _put_bool(event: dict, name: str, value) -> None:
+    """写入布尔型策略字段；非 bool 一律拒绝（bool 是 int 子类，需排除）。"""
+    if not isinstance(value, bool):
+        raise EventError(
+            f"{name} 必须是 bool，实际类型为 {type(value).__name__}（值 {value!r}）"
+        )
+    event[name] = value
+
+
+def _put_ms(event: dict, name: str, value) -> None:
+    """写入时长字段；None 表示旧事件形态（不写键），否则必须是非负真整数。"""
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise EventError(
+            f"{name} 必须是非负整数（毫秒）或 None，实际值为 {value!r}"
+        )
+    event[name] = value
 
 
 def _utc_now_iso() -> str:
