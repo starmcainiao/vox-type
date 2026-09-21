@@ -34,7 +34,7 @@
          core/tests/**、runtime/tests/**（新增测试；**既有断言一行不得改**）
          core/AGENTS.md、runtime/AGENTS.md（实现变更记录 + 迁移说明）
 禁止触碰：其他一切（docs/**、assets/**、adapters/**、packs/**、compiler/**、eval/**、cli/**、
-         /Volumes/macos/kefu-agent/**）
+         <kefu 仓根>/**）
 ```
 
 ## 规格要点

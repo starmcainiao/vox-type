@@ -44,7 +44,7 @@
 禁止触碰：docs/**（规格由策划写；docs/10 §10.7 已更新，本卡不得再改）、
          compiler/** runtime/** core/** assets/** eval/** cli/**、
          packs/heat_kefu/{phrases.json,script.json,admission.md}（命中数据与申报不动）、
-         packs/ 下其他包、/Volumes/macos/kefu-agent/**（另一仓）
+         packs/ 下其他包、<kefu 仓根>/**（另一仓）
 ```
 
 ## 实现规格
@@ -172,7 +172,7 @@ labs/heat-kefu-seq/report.json .github/workflows/tests.yml .gitignore`
 **跑 packs 真断言的前置**（本机）：
 ```
 sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
-KEFU_HEAT_YAML="/Volumes/macos/kefu-agent/organs/客服/brain/prompts/供热预设.yaml" python3 -m unittest discover -s packs
+KEFU_HEAT_YAML="<kefu 仓根>/organs/客服/brain/prompts/供热预设.yaml" python3 -m unittest discover -s packs
 ```
 
 **执行方纪律**：非交互环境直接落地，不先出计划等确认；只回事实与自测输出，不做达标判定；

@@ -45,7 +45,7 @@
          labs/duplex-quality/（可选的跑批脚本 + report.json + README，口径与复现命令）
 允许修改：eval/__init__.py（仅在需要导出时；只增）
 禁止触碰：其他一切（docs/**、core/**、runtime/**、assets/**、compiler/**、adapters/**、packs/**、
-         cli/**、trigger/**、/Volumes/macos/kefu-agent/**）
+         cli/**、trigger/**、<kefu 仓根>/**）
 ```
 
 ## 验收标准（逐条可判定，验收方独立复跑）

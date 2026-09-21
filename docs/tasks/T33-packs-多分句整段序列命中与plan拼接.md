@@ -44,7 +44,7 @@
 允许新增：labs/heat-kefu-seq/**（新目录，含 run_seq_bench.py / README.md / report.json）
 禁止触碰：其他一切文件。特别是：docs/**（规格由策划写）、compiler/**、runtime/**、core/**、
          assets/**、eval/**、cli/**、packs/heat_kefu/pack.json 以外的其他包、
-         /Volumes/macos/kefu-agent/**（另一仓，本卡不许动）
+         <kefu 仓根>/**（另一仓，本卡不许动）
 ```
 
 ## 实现规格（照做；判据冲突时以 `docs/10 §10.7` 为准）

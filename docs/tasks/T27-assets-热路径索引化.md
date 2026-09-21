@@ -33,7 +33,7 @@
          assets/tests/**、adapters/framework_kefu/tests/**（新增测试；既有断言不得改）
 允许新增：labs/pack-index-bench/**（脚本 + README.md + report.json）
 禁止触碰：其他一切。特别是 core/** rules/** compiler/** runtime/** eval/** cli/** packs/**
-         docs/**（评审/验收记录是策划的活）、/Volumes/macos/kefu-agent/**
+         docs/**（评审/验收记录是策划的活）、<kefu 仓根>/**
 ```
 
 ## 实现规格（语义零变化是硬判据）
