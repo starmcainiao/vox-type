@@ -148,7 +148,9 @@ def _ttl_seconds(ttl: Any) -> int:
     return ttl
 
 
-def is_expired(entry: AssetEntry, now: Union[datetime, str, None] = None) -> bool:
+def is_expired(entry: "AssetEntry", now: Union[datetime, str, None] = None) -> bool:
+    # WHY 字符串注解：AssetEntry 定义在本函数之后；Python < 3.14 会在模块导入时**立即求值**注解
+    #     （3.14 起 PEP 649 延迟求值，故本机 3.14 掩盖了这个 NameError，CI 的 3.12/3.13 直接炸）。
     """判定一个资产条目在 `now` 时刻是否已过期（**公开纯函数，T18 的唯一判据**）。
 
     语义（冻结）：`now >= invalid_at` → 过期（**恰好等于失效时刻也算过期**）。
