@@ -1,0 +1,70 @@
+{
+  "probe": "cloud-bench-dashscope",
+  "generated_at_utc": "2026-09-21T02:54:27+00:00",
+  "caliber": {
+    "llm": "qwen-turbo stream，TTFT=首个 delta chunk；total=全部 chunk（含 [DONE]）",
+    "tts": "qwen-tts REST 两段口径：gen（服务端合成响应）+ download（OSS 音频拉取）；总 TTFA=gen+download，生产流式 WS 会更早，本口径为上界",
+    "miss_chain": "未命中轮生产口径 ≈ 臂A.total + 臂B.total（不含 ASR；ASR 为独立流式段）",
+    "hit_chain": "命中轮 = find_hit 读包（微秒级）；含磁盘/索引缓存的进程内口径",
+    "credentials": "Key 从 gitignored .env.local 读取；本报告不含任何凭据内容"
+  },
+  "armA_llm": {
+    "ttft_s": {
+      "n": 10,
+      "mean": 0.2204,
+      "P50": 0.226,
+      "min": 0.1762,
+      "max": 0.2668
+    },
+    "total_s": {
+      "n": 10,
+      "mean": 0.391,
+      "P50": 0.4189,
+      "min": 0.3028,
+      "max": 0.4669
+    }
+  },
+  "armB1_gen_tts": {
+    "total_s": {
+      "n": 10,
+      "mean": 3.1763,
+      "P50": 3.2526,
+      "min": 1.4976,
+      "max": 4.6596
+    },
+    "errors": 0
+  },
+  "armB2_prebaked_tts": {
+    "total_s": {
+      "n": 38,
+      "mean": 2.7592,
+      "P50": 2.4535,
+      "min": 1.1599,
+      "max": 6.3284
+    },
+    "errors": 2
+  },
+  "armC_precast": {
+    "query_s": {
+      "n": 40,
+      "mean": 0.0001,
+      "P50": 0.0001,
+      "min": 0.0001,
+      "max": 0.0001
+    },
+    "hits": 40,
+    "n": 40
+  },
+  "chain_compare": {
+    "miss_chain_P50_s": 2.8724,
+    "hit_chain_P50_s": 0.0001,
+    "ratio": 28724.0,
+    "note": "P50 口径相加（近似；分布之和的 P50 ≤ 各自 P50 之和，此处为保守上界）"
+  },
+  "env": {
+    "llm_model": "qwen-turbo",
+    "tts_model": "qwen-tts",
+    "tts_voice": "Cherry",
+    "n_llm_turns": 10
+  }
+}
