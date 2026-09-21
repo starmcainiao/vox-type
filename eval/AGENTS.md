@@ -41,3 +41,85 @@
 ## ⑦ 冻结状态
 
 **[冻] 冻结区**。指标口径不能随便改；新增指标只能追加，不能覆盖既有定义。
+
+---
+
+## ⑧ 双工质量指标（T20 追加；只增不覆盖）
+
+**实现**：`eval/duplex_quality.py`（harness + CLI）+ `eval/tests/test_duplex_quality.py`。
+产物：`labs/duplex-quality/`（跑批脚本 + `report.json` + README）。
+
+### 边界声明（docs/12 原话落点）
+
+**只测「系统主动开口」这一侧**——发起方是我们、场景可自造。客服场景的双工是「用户打断我」
+（别人的行为，本仓测不了）；前置包场景是「我什么时候该开口」（我们自己的行为，可自造可测）。
+因此：
+
+- 用户行为脚本**全部由固定种子生成**（`generate_scenario`），**不读任何真实用户数据、录音、会话**；
+- 三指标**全部从 `runtime.Executor(policy_stream=True)` 的事件流算**——本仓 runtime 是
+  离线产物生成器（plan → WAV + 事件流），不需要真实音频、不依赖实时播放、不碰麦克风；
+- 场景时长轴取**包内 manifest 的 `duration_ms`**（不吃挂钟时间），这是可复现的前提。
+
+### 三指标口径（冻结；改口径 = 大版本）
+
+| 指标 | 定义 |
+|---|---|
+| **打断准确率** `barge_in_accuracy` | 对脚本里每个 `barge_in` 动作，判定来自事件流：该单元 `requires_confirm=True` → `blocked`（应拦下等确认）；`False` → `allowed`（应允许打断）。脚本期望（`want_blocked`）由**生成规则**在生成时刻记录（终态单元 = 本条 plan 最后一个单元 → 期望拦；否则期望允许），与事件流判定独立比对。准确率 = 一致数 / 打断动作总数。 |
+| **假阳性** `false_positive_rate` | 脚本里 `speak` / `silence`（**非打断**）落在 `requires_confirm=True` 单元上的数量 / 非打断动作总数（0 为理想）。只有 `barge_in=confirm` 且命中终态（`terminal_keys` 或最后一个单元）时该值才可能 > 0；`allow` 预设下恒 0，报告如实写出、不隐藏。 |
+| **轮转延迟** `turnover_latency_ms` | = `listen_ms`（等待窗口事件，最后一个单元播完 → 窗口结束，语义 = `patience_ms`）+ `silence_pad_ms` × (单元数-1)（单元间切换耗时）。单位 ms，报 **P50 / P99**——分位数**直接调用 `eval.stats.percentile`**（linear，位置=(n-1)q，与 bench 同口径）；本模块不自造分位数算法，否则两处口径会悄悄漂移。空样本由 stats 层报错后转成 `DuplexQualityError`，不写 0.0 冒充零延迟。 |
+
+**与 bench 时序指标的区别**：`turnover_latency_ms` 是**设计量**（只由参数与包内预铸时长推得），
+所以同输入跑两次必逐值相等；bench 的 `first_audio_ms` 是真机实测值，只承诺分布口径与 CI 方法一致，
+不承诺数值相等。报告里如实标注，不得混称。
+
+**`barge_in` 模式与判据的关系（口径裁定）**：卡面把「`barge_in=allow` → 应允许」与
+「`requires_confirm=true` → 应拦」并列为两条判据；在本仓 runtime 实现里两者**等价**
+（`barge_in=allow` 时 `_requires_confirm` 恒 `False`），所以一律以事件流布尔值
+`requires_confirm` 为准，`barge_in` 模式值不进判定——事件流是唯一事实来源，
+同一事实不被算两遍，且指标可被验收方从事件流独立复算。
+
+### 复现命令
+
+```sh
+# 前置：先 build 包（与 eval 其它 harness 同一前置）
+sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
+
+# 跑批（默认三预设：baseline-allow / confirm-patience400 / backchannel-off）
+python3 -m eval.duplex_quality --pack packs/heat_kefu_build/heat-kefu-1 --out labs/duplex-quality --seed 20260920
+
+# 可复现校验：同一 (参数集, 种子, 包) 跑两次，除 generated_at 外逐字节一致
+python3 -m eval.duplex_quality --pack packs/heat_kefu_build/heat-kefu-1 --out /tmp/dq-a --seed 20260920
+python3 -m eval.duplex_quality --pack packs/heat_kefu_build/heat-kefu-1 --out /tmp/dq-b --seed 20260920
+diff <(grep -v '"generated_at"' /tmp/dq-a/report.json) <(grep -v '"generated_at"' /tmp/dq-b/report.json)   # 无输出 = 一致
+# 换种子必须变
+python3 -m eval.duplex_quality --pack packs/heat_kefu_build/heat-kefu-1 --out /tmp/dq-c --seed 111
+diff <(grep -v '"generated_at"' /tmp/dq-a/report.json) <(grep -v '"generated_at"' /tmp/dq-c/report.json)   # 有差异 = 种子起作用
+```
+
+`provenance` 必带：包 manifest sha256 + 参数集 + 种子 + 本仓 commit。
+
+### 负例纪律（不产半份报告）
+
+空脚本 / 非法 duplex 参数 / 包不存在 → 抛错（消息含字段名与实际值，非法参数引 `DuplexError` 语义）
+且**退出码非 0、不建目录、不落 `report.json`**。执行期失败（`RuntimeMissError` 等）不同：
+报告如实标 `incomplete` 并写出，退出码仍非 0（可复查，不得美化）。
+
+### 反空转验证（已内置于 `eval/tests/test_duplex_quality.py`）
+
+- `TestInjectionCatchesConstantMetric`：把指标算成常数 → 断言必须判红；
+- `TestInjectionCatchesConstantSeed`：把种子改成固定常数（忽略入参）→ 「换种子必变」断言必须判红；
+- 全部走产品 API（`run_duplex_quality` / `run_duplex_quality_cli` / `Executor(policy_stream=True)`），
+  测试内不自造事件流、不重实现指标算法。
+
+**注入实测记录（2026-09-22，基线 cac6b57，改产品代码 → 跑全量 → 还原）**：
+
+| 注入点 | 注入内容 | 判红用例 |
+|---|---|---|
+| `compute_metrics` | `barge_in_accuracy` 写死 `1.0` | `test_accuracy_assertion_fails_on_constant_metric`、`test_accuracy_recomputes_from_event_stream` |
+| `_quantile` | 恒返回 `4242.0` | `test_p50_p99_differs_when_varied`、`test_turnover_assertion_fails_on_constant_metric`、`test_turnover_latency_recomputes_from_params` |
+| `generate_scenario` | `Random(seed)` → `Random(20260920)` | `test_seed_change_assertion_fails_on_constant_seed`、`test_different_seed_changes_report`、`test_scenario_generator_deterministic_and_seed_sensitive` |
+
+还原后 31 用例全绿。种子注入用例**真跑产品 API 两次**（不同 seed）再把「换种子必变」抽成独立
+断言函数执行——不靠测试内自造的替身函数空转，判红能力是实测出来的。
+
+

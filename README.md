@@ -60,7 +60,7 @@ traced). Zero third-party dependencies.
 
 ## Status（全部实测，口径见 `docs/09` / `docs/13`）
 
-- **十一个测试根 1,398 条测试全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
+- **十一个测试根 1,429 条测试全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
   命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
@@ -68,7 +68,9 @@ traced). Zero third-party dependencies.
   14 条多分句预设话术 **14/14** 序列命中、命中臂拼接 **P50 ≈ 5 ms**（冷缓存首跑 ~22 ms）vs 慢路合成
   **≈ 575 ms**、零 TTS 调用（数字以 `labs/heat-kefu-seq/report.json` 为准）；
 - 回读 CER 基准可复现（本地 ASR 回读，真机闭环 CER 0.0）；方言域 ASR 边界已实测
-  （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）。
+  （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）；
+- **双工与失效已落地**：四参数各有可观测行为（T19）+ 双工质量三指标可复现（T20，`labs/duplex-quality/`）
+  + 资产 TTL 过期拒播（T18）；预铸查找热路径索引化（T27，10k 条下 0.5–0.8 µs，旧 61–2115 µs）。
 
 ## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
 
@@ -112,8 +114,14 @@ bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
 - [x] M2.5 · 话术同源包（`packs/heat_kefu`，yaml 指纹门禁）+ 方言域 ASR 边界实测
 - [x] **整段 → plan 拼接匹配**：多分句话术的序列命中（T33：`packs/heat_kefu` 拆句铸入 40→69 key +
   `find_hit_sequence` 逐字覆盖；口径 [`docs/10 §10.7`](docs/10-接入取景与命中口径.md)）
-- [ ] **双工行为控制器**：四参数（耐心窗/背景回应/打断/语速档）从校验走向消费（T19/T20）
-- [ ] **key 约束解码**：用 Trie/FSM 把 LLM 输出空间物理约束到合法 key 集合（业界正解，见 [`docs/17`](docs/17-业界坐标与改造预测.md)）
+- [x] **双工行为控制器**：四参数（耐心窗/背景回应/打断/语速档）从校验走向消费（T19：`policy_stream`
+  事件流带等待窗口/背景回应/可打断标记/关键信息强制 slow；T20：双工质量三指标 harness——打断准确率/
+  假阳性/轮转延迟，固定种子可复现）
+- [x] **资产 TTL / 失效**（T18：`invalid_at` 绝对失效 + `ttl` 预铸折算 + assets 层保险丝，
+  过期拒播且 `allow_fallback` 也不放行——「播报过期事实比不播更糟」）
+- [ ] **key 约束解码**：用 Trie/FSM 把 LLM 输出空间物理约束到合法 key 集合——
+  **已勘察（`labs/guided-decoding/`）：当前运行时不可行**（`json_schema` 400 拒绝、`guided_json` 被静默忽略），
+  需换 vLLM + XGrammar / SGLang / Outlines 类运行时
 - [ ] 回流闭环：日志挖掘 → 话术建议（M3）
 
 ## Third-party data & attribution
