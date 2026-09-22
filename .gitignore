@@ -24,7 +24,10 @@ assets/audio/
 .vscode/
 
 # 工具链会话/计划产物（不进仓：ZCode 会话计划、OpenCode 计划目录）
-.zcode/
+.zcode/*
+# 例外：项目工作流是可复用资产（corpus-intake-analysis 等）——
+# 注意 gitignore 不支持行尾注释，注释必须独立成行（本次踩过）
+!.zcode/workflows/
 .hermes/
 
 # 云端评测凭据（本地专有，永不入库）
