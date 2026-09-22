@@ -47,25 +47,37 @@ MAX_EXAMPLES = 5
 def state_signatures(msg: Dict[str, Any]) -> List[str]:
     """把一个系统话轮的 dialog_act 拆成状态签名列表。
 
-    签名格式 `域/槽=值`。CrossWOZ 的 dialog_act 条目是 **4 元组** `[类别, intent, 域, 槽值]`
-    （不是 5 元组——第 3 位是槽名，第 4 位是值）。只取「值非空且不是 none」的槽：
-    值空的槽表示系统在这轮**没有**传达该槽的信息，拿它当状态会造出大量伪状态。
+    签名格式 `槽名/域=值`。CrossWOZ 的 dialog_act 条目实测是 **4 元组**
+    `[类别, 域, 槽名, 值]`（字段 0 = "Inform"/"Request"/"General"/"Recommend"/"NoOffer"/"Select"，
+    字段 1 = 域，字段 2 = 槽名，字段 3 = 槽值；train/test 全分区长度均为 4，无 5 元组）。
+    只取「类别为 Inform 且值非空」的槽：值空的槽表示系统在这轮**没有**传达该槽的信息，
+    拿它当状态会造出大量伪状态。
+
+    历史教训（本次修复的根因）：旧版写 `if intent != "Inform": continue`，而解包顺序是
+    `kind, intent, domain, value = da`——**「intent」这个变量名实际拿的是字段 1（域）**，
+    于是「餐馆/酒店/景点/出租」全被拒收，每个话轮产出空签名 → 0 状态签名、0 候选，
+    但 determinism_check 仍为 True、退出码 0（空列表也逐字一致）。这是一次
+    **静默零结果失败**：不报错、自检通过，只是什么都没挖到。
+    已改为按位名解包并直接比 `kind`；下方 main() 另加零结果告警，让这类失败下次不再静默。
     """
     out: List[str] = []
     for da in msg.get("dialog_act") or []:
         if len(da) != 4:
             continue
-        kind, intent, domain, value = da
-        if intent != "Inform":
+        kind, domain, slot, value = da
+        if kind != "Inform":
+            continue
+        slot = (slot or "").strip()
+        if not slot:
             continue
         v = (value or "").strip()
         if not v or v.lower() in ("none", "null", "-"):
             continue
-        out.append(f"{domain}/{v}")
+        out.append(f"{slot}/{domain}={v}")
     return out
 
 
-def load_turns() -> List[Dict[str, Any]]:
+def load_turns() -> Tuple[List[Dict[str, Any]], int]:
     turns: List[Dict[str, Any]] = []
     n_dialogues = 0
     for split in ("train", "val", "test"):
@@ -92,7 +104,7 @@ def load_turns() -> List[Dict[str, Any]]:
                     "signatures": state_signatures(msg),
                     "n_da": len(msg.get("dialog_act") or []),
                 })
-    return turns
+    return turns, n_dialogues
 
 
 def mine(turns: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -153,7 +165,7 @@ def mine(turns: List[Dict[str, Any]]) -> Dict[str, Any]:
     sample_ids = [c["id"] for c in candidates[:8]]
 
     return {
-        "n_dialogues": None,  # 调用方填
+        "n_dialogues": None,  # main() 回填
         "n_sys_turns": n_sys_turns,
         "n_sys_turns_with_state_signature": n_turns_with_sig,
         "n_sys_turns_without_state_signature": n_turns_no_sig,
@@ -185,8 +197,9 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=SEED, help=f"固定种子（默认 {SEED}）")
     args = ap.parse_args()
 
-    turns = load_turns()
+    turns, n_dialogues = load_turns()
     res = mine(turns)
+    res["n_dialogues"] = n_dialogues
     # 重新跑一遍以确认种子决定样例（两次同种子必须逐字一致）
     res2 = mine(turns)
     reproducible = (
@@ -194,13 +207,23 @@ def main() -> int:
         == json.dumps([c["examples"] for c in res2["sample_candidates"]], ensure_ascii=False, sort_keys=True)
     )
 
+    # 零结果告警：这是本脚本修过一次的真事故（旧版 n_candidates=0 却 exit 0）。
+    # 只告警不中止——n_candidates=0 在「语料本身没有可复现的固定话术」时是合法答案，
+    # 但必须显式说出来，不能靠 determinism_check=True 掩盖（空列表也逐字一致）。
+    zero_hit = (res["n_candidates"] == 0 or res["n_sys_turns_with_state_signature"] == 0)
+    if zero_hit:
+        print("!! 零结果告警：候选为 0 或无任何话轮带状态签名——先怀疑解析错位，"
+              "不要把它当「该语料没有固定话术」的结论（参见本脚本 state_signatures 的注释）。")
+    if not reproducible:
+        print("!! 零结果告警：同种子两次跑样例不一致，结果不可复现。")
+
     report = {
         "_schema": "vox-backflow-mining/1",
         "run_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "seed": args.seed,
         "corpus": "thu-coai/CrossWOZ（train+val+test，系统侧）",
         "method": {
-            "state_signature": "系统话轮 dialog_act 里 Inform 且值非空的 (域, 槽, 值) 三元组",
+            "state_signature": "系统话轮 dialog_act 里类别为 Inform 且值非空的 (槽名, 域, 值) 三元组；dialog_act 实测为 4 元组 [类别, 域, 槽名, 值]，签名格式 `槽名/域=值`",
             "skeleton": "common.skeleton —— 与 labs/corpus-harvest/cross_check_template_rate.py 同源",
             "candidate_rule": f"同一状态签名下同一骨架出现 ≥ {MIN_GROUP_HITS} 次",
             "significance_floor": f"状态签名自身出现 ≥ {MIN_SIGN_STATE_TURNS} 轮",

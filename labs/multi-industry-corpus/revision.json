@@ -1,0 +1,102 @@
+{
+  "_schema": "vox-multi-industry-corpus-revision/1",
+  "revised_at": "2026-09-22",
+  "task_card": "docs/tasks/T22-多行业语料收集与适用性验证.md",
+  "basis": "verify.json.discrepancies（6 条）+ 任务卡；本轮逐项收口，处置写在各 items[].evidence。",
+  "discipline": "只改 labs/multi-industry-corpus/ 内文件；仓内产物不含语料本体、不含绝对路径（语料路径一律相对 ~/corpus/ 或写仓外 /tmp，均不入库）。",
+  "items": [
+    {
+      "id": "1-ledger-massive-s3-downloadable",
+      "status": "closed",
+      "evidence": [
+        "定位：verify.json.discrepancies[4](a) 指出「report.json boundaries 第 9 点称 amazon-massive-dataset-1.1.tar.gz 实测可下载（HTTP 200、40251390 bytes），而 corpus_ledger.json 的 rejected_sources 仍称『本体取不到』，报告自认 ledger 已过期未同步」。",
+        "改动 corpus_ledger.json（rejected_sources 中 id='AmazonScience/massive 的音频与文本本体' 一条）：reason 首句改为「S3 直链**实测可下载**（HTTP 200，40251390 bytes，50.37s；tar 内 58 项含 52 个语种 jsonl，zh-CN 实测 16521 条），**不是取不到**」；拒收理由改写为「本管道三个平台适配器（modelscope / hf-mirror / github-archive）都不覆盖 S3 直链 → 未取本体」，即把「取不到」与「管道不覆盖」区分开。",
+        "同条新增 revision 字段，留痕说明上一版写「本体取不到」与实测不符、已更正。",
+        "改动 corpus_ledger.json entries 的 AmazonScience/massive 一条 notes：写「语料本体实测可下载（HTTP 200，40251390 bytes，50.37s），但本管道三个平台适配器都不覆盖 S3 直链 → 未取本体入 ~/corpus」。",
+        "改动 corpus_ledger.json.honest_boundaries[0]：同步为「实测可下载…但本管道三个平台适配器都不覆盖 S3 直链 → 未取本体入库」。",
+        "改动 report.json.boundaries[8]（原第 9 条）：从「已过期，未同步更正」改为「修订版已更正（revision.json items[0]）」。",
+        "如实边界：本轮**未**重新联网下载 tar.gz 复测，HTTP 200 / 40251390 bytes / 50.37s 与 tar 内 58 项、zh-CN 16521 条沿用 report.json.provenance.commands_run 里已跑过的实测记录（curl -sS -L … -w 'http=%{http_code} bytes=%{size_download} time=%{time_total}s' → http=200 bytes=40251390 time=50.37s；tar tzf | wc -l → 58）。台账里那 40251390 bytes 是下载体积，**不是**落盘语料字节数——本体仍未入 ~/corpus，entries[].n_rows_or_size.bytes 仍是 34420（README.md 元数据），已加 unit 字段 'metadata_bytes(README.md)' 标明。"
+      ]
+    },
+    {
+      "id": "2-ledger-massive-zhcn-count",
+      "status": "closed",
+      "evidence": [
+        "定位：verify.json.discrepancies[4](b) 指出「报告实测 MASSIVE zh-CN 16521 条，与 corpus_ledger.json 的『zh-CN 11514 条』不符（报告解释 16521 = 11514+2033+2974，11514 疑似只计 train）」。",
+        "改动 corpus_ledger.json entries 的 AmazonScience/massive 一条：notes 里的「zh-CN 11514 条」改为「zh-CN 共 16521 条 = train 11514 + dev 2033 + test 2974；台账上一版记的 11514 只计了 train 分区，已更正」。",
+        "同一条新增 n_rows_detail 字段：{unit: utterances, zh_CN_total: 16521, zh_CN_by_partition: {train:11514, dev:2033, test:2974}, zh_CN_by_partition_check: '11514 + 2033 + 2974 = 16521（逐位相加一致）'}，并注「来自 tar.gz 实测，非本管道落盘」。",
+        "已亲跑校验（python3 求和）：11514 + 2033 + 2974 = 16521，逐位一致；与 report.json rows 里 MASSIVE zh-CN 两行 n=16521、以及 provenance.secondary_indicator_method.user_side_sets 的 per_partition {train:[11514,0.0106], dev:[2033,0.0], test:[2974,0.0024]} 完全对齐。",
+        "改动 report.json.boundaries[7]（原第 8 条）：从「ledger 未同步更正」改为「修订版已更正（revision.json items[1]）」。"
+      ]
+    },
+    {
+      "id": "3-ledger-sha256-semantics-and-recompute",
+      "status": "closed",
+      "evidence": [
+        "定位：verify.json.discrepancies[2]——「直接 shasum -a 256 <archive.zip> 得 CrossWOZ=035a55de…、ABCD=c436f239…，与台账 779ca2d5…/46528e82… 不一致；按 manifest_digest() 公式复算两份均逐字一致…属可复核性缺陷，不是篡改」。",
+        "改动 corpus_ledger.json：_note 改为指向新增的 sha256_semantics 节；新增顶层 sha256_semantics 字段，含 kind=\"manifest_digest\"、meaning（不是任何单个文件的哈希，照字面跑 shasum 必然不符、不是被改动）、formula（对 files 按 path 字典序排序，逐条把 path\\tsize_bytes\\tsha256\\n 追加进 sha256 累加器，真源实现 tools/corpus_fetch/fetch.py 的 manifest_digest()）、formula_note（明确它是「对 (path,size_bytes,sha256) 三元组再哈希一次」，输入是文件的哈希与大小、不是文件内容本身，因此 manifest 永远不等于文件哈希）、recompute_commands（可直接照抄的 5 行 shell）、self_check、platform_crosscheck、do_not（不要把台账 sha256 与 shasum 输出直接比对来判定语料是否被改动）。",
+        "改动 corpus_ledger.json.honest_boundaries[3]：从「github-archive 来源的 sha256 为实测值…」改为「所有 sha256 为 manifest 指纹（kind=\"manifest_digest\"，对 (path,size,sha256) 再哈希），不是文件哈希…复算命令见 sha256_semantics」（原句只说 github-archive 来源，实际全部 7 条 entries 都是 manifest 口径，已纠正这个范围偏差）。",
+        "改动 report.json.boundaries[10]（原第 11 条）：从「照字面跑 shasum 会误判」的单纯警告改为「修订版已同步（revision.json items[2]）」。",
+        "已亲跑校验复算命令（不是照抄 verify.json 的结论，是本轮重跑）：对 thu-coai/CrossWOZ 的 archive.zip 跑 shasum -a 256 → 035a55de1b52e552ec01fb498e5665118f45d1cfc6048d871b534c0d499e87ef；wc -c → 20666888；printf 'archive.zip\\t20666888\\t035a55de…\\n' | sha256sum 等价计算 → 779ca2d5e5a26f05ccc873428d208147dc3e2a3af829a65a4c59ab659d7e729a，与台账 entries[0].sha256 逐字一致，且字节数与台账 n_rows_or_size.bytes=20666888 逐位一致。",
+        "未重算 ASAPPresearch/ABCD 那条：其复算过程与结果（c436f239…/39075698 → 46528e82…）在 verify.json.checked[1] 已有本轮之前的完整记录，本轮只实测了 CrossWOZ 一条以验证「写进台账的命令本身是真的能复算出台账值的」——命令形态对两份是同一个模板，只换文件名与数值。"
+      ]
+    },
+    {
+      "id": "4-report-rows-side-precision",
+      "status": "closed",
+      "evidence": [
+        "定位：verify.json.discrepancies[1]——「rows 表体本身不给出 agent-only 的 0.4240，读者只看表体会以为 58.37% 是『系统/agent 侧话轮占比』」。",
+        "改动 report.json rows：ABCD flow_decided_rate 行（dataset 以 'ASAPPresearch/ABCD（agent 侧，英文电商客服）' 开头）side 由 'system(agent) + action' 细化为 'system(agent) + action(36482 turns)'；新增 side_detail 写明「分母 n=131611 = agent 话轮 95129 + action 话轮 36482；action 是业务动作埋点、直接计为流程决定，占分母 36482/131611 = 27.7%；即 0.5837 里约 27.7pp 来自埋点轮、只有约 0.4240 来自 agent 文本形态命中（agent-only = 40334/95129；含 action 后 = 76816/131611）；只看 side 粗写法的读者会误以为 58.37% 全是 agent 侧话轮占比」；method 同步写明埋点 36482 轮占 27.7%、agent 命中 40334 轮、合计 flow_decided_turns=76816、agent-only 值在 out/occ_a.json 的 agent_flow_rate_text_only 字段可查。",
+        "改动 report.json rows：MultiWOZ 2.1 / 2.2 两行 flow_decided_rate 加 side_detail「该域分母不含 action 埋点轮——ABCD 的 27.7pp 埋点成分在本行不存在，跨集横比时先读 side」；Taskmaster TM-1 两行加 side_detail「分母全是 ASSISTANT 话轮，无 action 埋点轮；与 ABCD 的混合分母不可直接横比」；CrossWOZ 两行加 side_detail「标注驱动（intent），分母不含 action 埋点轮」。即 verify.json 要求的「ABCD 注明分母含 36482 个 action 埋点轮、占 27.7%；Taskmaster 记 system(assistant)」都已落地——Taskmaster 原本已写 system(assistant)，本轮补的是可横比说明。",
+        "纪律校验（按要求 rate/n 一个字不得动）：改动前先把 report.json 备份到 /tmp/report_before.json，改完后逐行 diff 14 行 rows 的 rate 与 n——输出「rate/n 被改动的行: 0 行（未动）」，并核对其它顶层键（comparison_note / replay_candidates=737 / provenance 等）在改动前一致。改动后再改一轮 boundaries/zero_regression 也重跑了一次同样的 diff，仍是 0 行。",
+        "数值出处：36482 与 95129 来自 out/occ_a.json 的 ABCD 条目（action_turns / agent_turns），40334 与 0.4240 来自同一文件的 agent_flow_turns / agent_flow_rate_text_only，76816 是 flow_decided_turns；27.7% 为 36482/131611 = 0.2772 的四舍五入，与 verify.json.discrepancies[0] 里验证员自己算的「0.2772」同源。",
+        "未采纳的结论（如实留痕，不隐藏）：verify.json.discrepancies[0] 的主结论「报告值 0.5837 不可复现、含 27.7pp 是把 action 埋点轮计了两遍」算术上不成立——它自己写的命中数是 agent 40423 + action 36482 = 76905，而 76905/131611 = 0.5843，与报告主值只差 0.0006，不是它自己写出的 27.66pp；「双计 action」要成立 flow_decided_turns 得是 76482 而不是 76816，差 334。本轮按这条证据把该结论写进 report.json.boundaries[17]（新增），并在 items[4] 里只采纳其成立的部分（side 表体精度）。"
+      ]
+    },
+    {
+      "id": "5-mine-candidates-silent-zero-fixed",
+      "status": "closed",
+      "evidence": [
+        "定位：verify.json.discrepancies[5]——「out/mine_candidates.json（n_candidates=0）是静默零结果失败产物…state_signatures() 按 5 元组解 4 元组 dialog_act 错位，determinism_check 仍 True、exit 0」。",
+        "根因（本轮实测，与 verify.json 的「5 元组解 4 元组」表述都不同）：CrossWOZ 的 dialog_act 实测**全是 4 元组**——python3 遍历 test 分区全部 dialog_act 得长度分布 {4: 17108}，无一例外；字段 0 取值分布为 Inform 10462 / Request 3941 / General 1622 / Recommend 628 / NoOffer 230 / Select 225。所以真实结构是 [类别, 域, 槽名, 值]，没有 5 元组这一说。",
+        "真实错位点在 mine_candidates.py 的 state_signatures()：解包写 kind, intent, domain, value = da，接着判断 if intent != \"Inform\"——**名为 intent 的变量拿的是字段 1（域）**，「餐馆/酒店/景点/出租」全不等于 'Inform'，于是每个话轮产出空签名。与 README 第八节第 2 条此前已写明的判断一致。",
+        "改动 mine_candidates.py：state_signatures() 改为 kind, domain, slot, value = da 且判断 if kind != \"Inform\"，签名格式统一为 槽名/域=值（与 mine_recompute.py 一致，例如 车牌/出租=#CP）；槽名空值也跳过；docstring 写入实测结构、字段位置、以及这段历史教训。",
+        "改动 mine_candidates.py（防止同类静默失败复发）：main() 里加零结果告警——当 n_candidates==0 或 n_sys_turns_with_state_signature==0 时打印「!! 零结果告警：候选为 0 或无任何话轮带状态签名——先怀疑解析错位，不要把它当『该语料没有固定话术』的结论」；同种子两次样例不一致时也告警。仍不中止、不改退出码语义（n_candidates=0 在「语料本身没有可复现固定话术」时是合法答案，但必须显式说出来，不能靠 determinism_check=True 掩盖——空列表也逐字一致，这正是这次事故的成因）。",
+        "改动 mine_candidates.py：load_turns() 改为返回 (turns, n_dialogues)，产物里 n_dialogues 由 None 改为实测 6012（原来恒为 null，是个空字段）；method.state_signature 描述从「(域, 槽, 值) 三元组」更正为「(槽名, 域, 值) 三元组；dialog_act 实测为 4 元组 [类别, 域, 槽名, 值]，签名格式 槽名/域=值」——旧描述与代码实际行为不符。",
+        "重跑（本轮亲跑）：python3 labs/multi-industry-corpus/mine_candidates.py --out /tmp/mine_fixed_v1.json → exit 0；输出「系统话轮: 50813（其中带状态签名 40657）/ 状态签名: 8904（够密的 237）/ 候选话术: 737 条，覆盖 5173 轮（占系统话轮 10.2%）/ 同种子两次跑样例一致: True」。即修复前 0 → 修复后 737。",
+        "确定性核对（本轮亲跑）：同一脚本连跑三次（v1、v2、v3），剔除 run_at 后逐字段比对——v1 vs v2 True、v1 vs v3 True。（第一次只 diff 原文件时显示 differ，唯一差异字段是 run_at 时间戳，剔掉后一致。）",
+        "与 mine_recompute.py 的 737 对照（本轮亲跑逐字段比对 /tmp/mine_fixed_v1.json 与 out/mine_recomputed.json）：**一致**。逐字相等的字段：n_candidates=737、n_state_signatures=8904、n_sys_turns=50813、n_sys_turns_with_state_signature=40657、n_sys_turns_without_state_signature=10156、n_sys_turns_covered_by_a_candidate=5173、coverage_of_all_sys_turns=0.1018、coverage_of_stateful_sys_turns=0.1272、candidates_by_group_hits={>=50:10,>=20:58,>=10:208,>=3:737}、top_states_by_candidate_count（10 项全等）、min_group_hits=3、min_sign_state_turns=50、n_dialogues=6012、seed=20260922；前 8 条 sample_candidates 逐字段相等（state_signature / skeleton / group_hits / sign_total_turns / examples 全部逐字一致）。",
+        "差异项（如实说明，均非口径差异，不影响 737）：① mine_candidates.py 记 n_state_signatures_eligible=237，mine_recompute.py 记的是 n_state_signatures_with_candidate=212——**两个不同定义**（前者=出现≥50 轮的状态签名数，后者=带候选的状态签名数），字段名不同、不可互相当同一字段读，且 212 < 237 自洽（够密的状态签名里有 212 个带候选）。② mine_candidates.py 多记 n_signature_skeleton_pairs=25830（够密签名下的骨架对总数，mine_recompute.py 无此字段）以及 run_at / _schema / corpus / method / determinism_check 等报告壳字段。",
+        "产物处置：把修复后的产物写入 labs/multi-industry-corpus/out/mine_candidates.json（覆盖原 n_candidates=0 的误导性产物），零结果告警未触发；原 0 值产物备份在仓外 /tmp/t22bak/mine_candidates.stale.json（未入库）。",
+        "改动 report.json.boundaries[14]（原第 15 条）：从「out/mine_candidates.json（n_candidates=0）是误导性产物，勿引用」改为「修订版已更正（revision.json items[5]）…原『误导性产物，勿引用』的说法已过时，予以更正」。replay_candidates=737 未动。"
+      ]
+    },
+    {
+      "id": "6-zero-regression-gates-run",
+      "status": "closed",
+      "evidence": [
+        "任务卡验收标准第 7 条要求零回归全绿；report.json.provenance.zero_regression 与 README §2.5 都写着「本轮未复跑」。本轮按指令亲跑两项，命令与输出原样记录。",
+        "命令 1：python3 -m unittest discover -s tools（在仓库根目录下执行）→ exit 0；输出尾部：Ran 119 tests in 0.282s / OK。条数与上轮验收记录（119 passed，docs/tasks/T22-*.md:110）一致。",
+        "命令 2：python3 -m tools.structure_budget.check → exit 0；输出尾部：合计 50 个 .py 文件 / 5070 可执行行 / 结构预算：全部合规。逐层：core 阈值≤150、3 个文件、103 可执行行、超限 0；adapters ≤150、9 文件、663 行、超限 2（历史豁免项）；eval ≤150、9 文件、1490 行、超限 4（历史豁免项）；cli ≤150、10 文件、586 行、超限 0；compiler/assets/runtime/trigger 阈值未登记、不参与判定。",
+        "两项的退出码都用独立方式重取确认过（不靠管道里的 $?）：分别重跑并 echo $?，unittest exit=0、structure_budget exit=0。",
+        "改动 report.json.provenance.zero_regression：unittest_tools 与 structure_budget 从「本轮未复跑」改为上述实测记录，并标注「修订轮」。",
+        "改动 report.json.provenance.commands_run：追加 5 条修订轮命令记录（mine_candidates 复跑、三次确定性核对、737 逐字段对照、两项门禁）。",
+        "未做的事：未跑 analyze_flow_occupancy.py 的重跑（本次未改其口径或判据，rows 只动 side 类字段与说明文字，rate/n 全未动，故不重算占比）。"
+      ]
+    },
+    {
+      "id": "7-readme-known-limitations-refreshed",
+      "status": "closed",
+      "evidence": [
+        "定位：指令要求同步刷新 README 的「已知局限」节，已收口项移除或标注已修、不得留下过期说法。",
+        "改动 labs/multi-industry-corpus/README.md 第八节：把 8 条重排为「已收口 / 仍然成立」两栏——已收口 5 条（台账 sha256 口径+复算命令、MASSIVE zh-CN 条数、MASSIVE 本体过期条目、mine_candidates.py 静默零结果失败、零回归两项未跑）标为「已收口（修订轮）」并指向 revision.json 的对应 item；仍然成立 4 条保留并更新表述。",
+        "改动 README §2.5：原「本轮未复跑——如实声明」改为「修订轮已亲跑」并写出两条命令与实测输出（119 tests / OK；50 个 .py 文件 / 5070 可执行行 / 全部合规）。",
+        "改动 README §2.2：回流实验的复现命令补上修复后的 mine_candidates.py（原先只写「用修正版 mine_recompute.py，不要用 mine_candidates.py」——这条禁令已随修复失效，改为两脚本同判据、产物一致）。",
+        "改动 README §八 第 1 条（ABCD 独立验证差异）：保留「该差异结论的算术不成立」的分析，补一句指向 report.json.boundaries[17] 与 revision.json items[4]，说明本轮已按成立的部分细化 rows 的 side 字段。",
+        "改动 README §八 第 2 条：原「本报告的回流数字全部来自 mine_recompute.py」已不准确（mine_candidates.py 修复后同样产出 737），改为两者同判据、共享数值字段逐字一致，并写清两个不同的状态签名字段定义。",
+        "改动 README §六：MASSIVE 描述同步（本体实测可下载、管道不覆盖 S3 → 未取；zh-CN 16521）。",
+        "改动 README §七 路由表：新增 revision.json 一行；sha256 复算命令指向 corpus_ledger.json.sha256_semantics。"
+      ]
+    }
+  ]
+}
