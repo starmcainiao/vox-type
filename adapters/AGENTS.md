@@ -84,3 +84,21 @@
    **边界仍硬**：不得 import 内部私有名（下划线）；只走公开 `__all__`。
 
 本节登记经第十五批后全仓结构审计（三审计员）发现并补账；原 §⑤ 字面对 framework_kefu 不再单独适用。
+
+## ⑩ 结构预算（T21 登记，机器可读）
+
+结构预算：可执行行数阈值 <= 150
+
+（机器可读标记行，与 §② 的量化标准是同一个数；**不要在这行加任何修饰符**——加粗星号会让正则匹配失败，等于阈值消失。）
+
+与 §② 的量化标准是**同一个数**（150），
+本节只是把它写成 `tools/structure_budget/check.py` 能读的机器可读形式。
+**阈值出处不变，仍是 §②**；本节不新立阈值。
+
+口径：`tokenize` 后 `NEWLINE` token 计数（一条逻辑语句结束时的换行），
+排除注释与 docstring；不含 `tests/` 与 `__pycache__`。§⑨.1 记的
+231 / 236 / 176 与本口径同算法（实测 `asr_omlx/adapter.py` = 106，
+落在 T14 裁定的 145–150 带内）。
+
+超限登记见 §⑨.1（`framework_kefu/bridge.py`、`kefu_client.py`、`asr_omlx/adapter.py`）；
+机器可读的豁免清单在 `tools/structure_budget/LEDGER.md` 的「豁免登记」块。

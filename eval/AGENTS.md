@@ -122,4 +122,38 @@ diff <(grep -v '"generated_at"' /tmp/dq-a/report.json) <(grep -v '"generated_at"
 还原后 31 用例全绿。种子注入用例**真跑产品 API 两次**（不同 seed）再把「换种子必变」抽成独立
 断言函数执行——不靠测试内自造的替身函数空转，判红能力是实测出来的。
 
+## ⑩ 结构预算（T21 登记）
 
+结构预算：可执行行数阈值 <= 150
+
+（机器可读标记行；**不要在这行加任何修饰符**——加粗星号会让正则匹配失败，等于阈值消失。）
+
+口径：`tokenize` 后 `NEWLINE` token 计数（一条逻辑语句结束时的换行），
+排除注释与 docstring；不含 `tests/` 与 `__pycache__`。
+与 `adapters/AGENTS.md §⑨` 的 145–150 带同算法。
+
+阈值出处与 `adapters/AGENTS.md §②`「单个适配器 ≤ 150 行」同源（本仓 R09 的统一体量预算）。
+eval 层明写于此是为了让 `tools/structure_budget/check.py` 有机器可读的阈值来源——
+**脚本不另立一套阈值**。
+
+本层是 harness 层，体量天然偏大：`bench.py` / `duplex_quality.py` / `readback.py` /
+`report.py` 均超阈值，已在 `tools/structure_budget/LEDGER.md` 逐条登记豁免（含理由）。
+豁免不是永久豁票：新增功能前先评估能否拆（如把「采样-聚合」「落盘-指纹」分开）。
+
+## ⑪ helper 去重（T21 #17）
+
+`bench.py` / `readback.py` / `report.py` 曾各持一份逐字相同的
+`_write_jsonl` / `_read_jsonl` / `_sha256_of_file`（另有 `duplex_quality.py` 一份
+`_sha256_of_file`）。T21 收敛为 `eval/_io.py` 的**唯一**实现：
+
+- `eval/_io.py` **只 import 标准库**（`hashlib` / `json` / `pathlib` / `typing`）。
+  收敛点必须落在这里而不是 `bench.py`：`bench` 为跑 harness 静态 import 了
+  `assets/` 与 `runtime/`，helper 住在那里会把两条不该有的跨层依赖带给
+  只需要标准库的 `readback` / `report`。
+- 行为契约逐字不变：`ensure_ascii=False`、`default=str`、一行一条；
+  坏行 `{"__bad_line__": 行号}`、非 dict `{"__not_dict__": 行号}`；
+  sha256 分块 65536。**指纹值不变**。
+- **指纹咬合**：`bench` 落 raw 时写 `{name}_sha256`（写侧），
+  `report.check_raw_on_disk` 重算比对（验侧），两侧共用同一个 `_io.sha256_of_file`。
+  写侧与验侧各持一份时，分块策略或编码假设差一个字就会出现
+  「自己写的指纹自己验不过」或「该抓的值级篡改抓不到」（docs/08 §8.7 欠账 1）。

@@ -59,6 +59,9 @@ from runtime.duplex import DuplexError, DuplexParams
 
 from .offline_tts import OfflineTts
 from .stats import percentile
+# 文件级 I/O 与指纹摘要的统一实现（仅标准库）：manifest 指纹与 bench/raw 指纹
+# 共用同一个 sha256_of_file，分块策略不可能各自漂移
+from . import _io
 
 # ---------------------------------------------------------------------------
 # 报告 schema 与口径（字段名冻结；新增只能追加）
@@ -651,13 +654,9 @@ def _commit_sha() -> str:
         return "unknown"
 
 
-def _sha256_of_file(path: Path) -> str:
-    """按文件字节流算 sha256（分块读，不假设编码）。"""
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+# T21 起 sha256 实现收敛到 eval._io.sha256_of_file（本文件曾持有第四份逐字拷贝）。
+# 本模块是 manifest provenance 指纹的**唯一**读取点，与 bench 写 raw 指纹、
+# report 验 raw 指纹共用同一个函数——分块策略不可能各自漂移。
 
 
 def _manifest_fingerprint(pack: Any) -> Dict[str, Any]:
@@ -679,7 +678,7 @@ def _manifest_fingerprint(pack: Any) -> Dict[str, Any]:
         "model_version": pack.model_version,
         "asset_count": len(pack.assets),
         "manifest_path": manifest_path.name,
-        "manifest_sha256": _sha256_of_file(manifest_path),
+        "manifest_sha256": _io.sha256_of_file(manifest_path),
         "root": str(root),
     }
 

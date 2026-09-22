@@ -17,8 +17,11 @@ cli.commands.bench — `vox bench <pack_dir> --corpus <corpus.json> --out <dir>
      （repeats < MIN_REPEATS / corpus 为空 / out_dir 落进包目录都在这里被拦）
   5. eval.report.write_report                → 写 report.json（含 incomplete 也写）
   6. incomplete is True  → 4（「数据不完整」是结论不是崩溃，报告照样写出）
-     incomplete is False → 0
-  7. 其余执行期异常 → 3（stderr 由 cli.main 带上异常类型名）
+     incomplete is False → 继续看第 7 步
+  7. reference_gate.passed is False → 4（T21 装牙齿：「命中率未达参考门槛」同为结论，
+     报告与数字照旧如实写出，只是返回值如实反映它）
+     passed is True → 0
+  8. 其余执行期异常 → 3（stderr 由 cli.main 带上异常类型名）
 
 WHY `--adapter` 缺省用离线替身而不是真机引擎（eval/AGENTS.md ③.4「离线可跑」）：
   对拍要跑 repeats × 2 臂 × 语料单位数 次执行，真机 `say` 在 CI / 无麦无网环境里
@@ -35,6 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from assets import AssetPackError, load_pack
+# load_corpus 走 eval 的公开导出（eval.bench.load_corpus）；本模块的 re-export 由
+# cli/__init__.py 与 cli/commands/__init__.py 的 __all__ 承担——公开面变更留痕。
 from eval.bench import BenchConfig, BenchReportError, load_corpus, run_bench
 from eval.offline_tts import OfflineTts
 from eval.report import write_report
@@ -73,7 +78,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         dest="required_hit_rate",
         type=float,
         default=0.987,
-        help="命中率参考门槛（写入报告 reference_gate，不阻止出报告）",
+        help="命中率参考门槛（写入报告 reference_gate；未达 → 退出码 4）",
     )
     parser.add_argument("--warmup", type=int, default=1, help="每臂预热次数（不计入样本）")
     parser.add_argument("--plan-id", dest="plan_id", default="vox-bench", help="播报计划 ID 前缀")
@@ -168,6 +173,7 @@ def run(args: Any) -> int:
 
     # 6. 打印：`arms` 直接透传报告里的同名块（**不得改名、不得重算**）——
     #    统计口径是 eval 的契约，CLI 重算一次就等于第二份口径，两边必然漂移。
+    gate = report.get("reference_gate") or {}
     payload: dict = {
         "command": "bench",
         "report_path": str(report_path),
@@ -176,6 +182,13 @@ def run(args: Any) -> int:
         "seed": report["seed"],
         "arms": report["arms"],
         "timing_metrics_meaningful": report["timing_metrics_meaningful"],
+        # gate 结论直接透传报告里的 reference_gate（不得改名、不得重算）——
+        # 「数字如实」与「退出码反映结论」是两件事，两者都要有。
+        "reference_gate": {
+            "required_hit_rate": gate.get("required_hit_rate"),
+            "observed_hit_rate": gate.get("observed_hit_rate"),
+            "passed": bool(gate.get("passed")),
+        },
     }
 
     if report["incomplete"]:
@@ -197,4 +210,17 @@ def run(args: Any) -> int:
     if not report["timing_metrics_meaningful"]:
         summary += "（替身适配器：时序数字不得对外引用）"
     commands.emit_result(payload, as_json=args.as_json, summary=summary)
+
+    # 7. reference_gate 结论 → 退出码（T21 装牙齿）
+    # gate 是「命中率是否达到参考门槛」的业务结论，与 incomplete 同一性质：
+    # 结论如实写在报告里，退出码也如实反映它——不得「算出不过却返回 0」。
+    # 数字不变、报告不变，变的只是返回值（docs/08 §8.2 的 EXIT_QUALITY=4）。
+    if not payload["reference_gate"]["passed"]:
+        g = payload["reference_gate"]
+        sys.stderr.write(
+            f"reference_gate 不通过: observed_hit_rate={g['observed_hit_rate']} "
+            f"< required_hit_rate={g['required_hit_rate']}（报告已写出: {report_path}）\n"
+        )
+        sys.stderr.flush()
+        return EXIT_QUALITY
     return EXIT_OK

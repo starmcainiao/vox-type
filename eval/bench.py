@@ -54,6 +54,9 @@ from core.protocol import VALID_RATES
 from runtime import Executor, RuntimeMissError, SAMPLE_RATE
 
 from .offline_tts import OfflineTts
+# 文件级 I/O 与指纹摘要的统一实现（仅标准库；指纹写侧，见 eval/_io.py 的
+# 「指纹咬合耦合」——report.check_raw_on_disk 是同一个函数的验侧）
+from . import _io
 from .report import (
     BenchReportError,
     assess_completeness,
@@ -428,45 +431,19 @@ def _run_arm(arm: str, config: BenchConfig, audio_dir: Path) -> _ArmRun:
 
 
 # ---------------------------------------------------------------------------
-# 原始数据落盘
+# 原始数据落盘（文件级 I/O 全部在 eval._io：实现只有一份）
 # ---------------------------------------------------------------------------
-def _write_jsonl(path: Path, records: Sequence[Dict[str, Any]]) -> None:
-    """逐条落 JSONL（一行一条），父目录自动创建。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for record in records:
-            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-
-
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    """逐行读 JSONL；坏行记为 {"__bad_line__": 行号} 而不是抛错（报告要如实呈现损坏）。"""
-    records: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                value = json.loads(stripped)
-            except ValueError:
-                value = {"__bad_line__": line_no}
-            records.append(value if isinstance(value, dict) else {"__not_dict__": line_no})
-    return records
-
-
-def _sha256_of_file(path: Path) -> str:
-    """按文件字节流计算 sha256（全文分块读，不假设编码/行结构）。
-
-    WHY 是「文件字节 sha256」而不是内容语义哈希（T08b 审计 #5 留给 T10b 的破口）：
-      行数与 index 都在、只把 first_audio_ms 除以 1000 的「值级篡改」不改变任何计数结构，
-      语义哈希（按记录语义聚合）抓不到它；只有逐字节摘要才能反映「文件内容被换过」。
-      用 sha256 而不是内建 hash()：后者字符串种子随进程变化，同一文件两次跑会算出不同值。
-    """
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+# T21 起本文件不再持有 JSONL 读写与 sha256 的实现，一律经 `from . import _io` 调用。
+# 为何收敛点必须是 eval/_io.py 而不是本文件：本模块为跑 harness 静态 import 了
+#   assets/ 与 runtime/，helper 住在这里会把这些跨层依赖带给只需要标准库的
+#   readback / report。
+# 指纹咬合（bench 写 ↔ report 验）：下方 _build_raw_files 写 `{name}_sha256` 指纹，
+#   eval/report.py 的 check_raw_on_disk 用**同一个** _io.sha256_of_file 重算比对；
+#   两侧共享一份实现后，分块策略不可能各自漂移（docs/08 §8.7 欠账 1）。
+# WHY 是文件字节 sha256 而不是内容语义哈希（T08b 审计 #5 留给 T10b 的破口）：
+#   行数与 index 都在、只把 first_audio_ms 除以 1000 的「值级篡改」不改变任何计数结构，
+#   语义哈希（按记录语义聚合）抓不到它；只有逐字节摘要才能反映「文件内容被换过」。
+#   用 sha256 而不是内建 hash()：后者字符串种子随进程变化，同一文件两次跑会算出不同值。
 
 
 def _build_raw_files(
@@ -497,14 +474,14 @@ def _build_raw_files(
             ),
         }
         for name, (path, records) in files.items():
-            _write_jsonl(path, records)
+            _io.write_jsonl(path, records)
             rel = path.relative_to(work_dir).as_posix()
             pointers[name] = rel
             # 追加指纹：路径键原样保留，新字段只加不改名（报告 schema 可追加不得改名）
-            pointers[f"{name}_sha256"] = _sha256_of_file(path)
+            pointers[f"{name}_sha256"] = _io.sha256_of_file(path)
             pointers[f"{name}_lines"] = len(records)
             # 回读核对：落盘后立即验证，报告不引用自己写不出来的文件
-            existing = _read_jsonl(path) if path.is_file() else []
+            existing = _io.read_jsonl(path) if path.is_file() else []
             indices = [r["index"] for r in existing if isinstance(r.get("index"), int)]
             checks[rel] = {
                 "exists": path.is_file(),

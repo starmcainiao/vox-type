@@ -37,6 +37,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import cer as _cer
 from . import stats as _stats
+# 文件级 I/O 与指纹摘要的统一实现（仅标准库；不引入 bench 的 assets/runtime 依赖）
+from . import _io
 from .report import (
     CALIBER,
     SCHEMA_VERSION,
@@ -279,36 +281,14 @@ def _is_synthetic(asr: Any) -> bool:
 # ---------------------------------------------------------------------------
 # 3. 原始数据落盘
 # ---------------------------------------------------------------------------
-def _write_jsonl(path: Path, records: Sequence[Dict[str, Any]]) -> None:
-    """逐条落 JSONL（一行一条），父目录自动创建。
-
-    WHY 与 bench._write_jsonl 等价实现而不是 import 它：
-      eval.bench 静态 import 了 assets/ 与 runtime/（harness 需要读包与跑执行器），
-      而 readback 是**更窄**的 harness——引入 bench 会把两条不该有的层依赖
-      一起带进回读路径。JSONL 序列化是 4 行标准写法，等价实现的代价远低于
-      多两条跨层 import。**行为契约与 bench 完全一致**：ensure_ascii=False、
-      default=str、一行一条。此段为本卡的「等价实现」点名（卡产物 3 要求点名）。
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for record in records:
-            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-
-
-def _sha256_of_file(path: Path) -> str:
-    """按文件字节流计算 sha256（分块读，不假设编码与行结构）。
-
-    WHY 是文件字节摘要而不是语义摘要：把某条 cer 改成 0.0 不改变行数与 index，
-      任何按计数聚合的比对都抓不到它；只有逐字节摘要会变（docs/08 §8.7 欠账 1）。
-    WHY 不 import eval.report._sha256_of_file：它是模块内私名（下划线前缀），
-      跨模块引私名会把读报告路径变成 bench 的内部依赖。等价实现同样 4 行，
-      但 sha256 算法与分块策略逐字一致——此段同样是「等价实现」点名。
-    """
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+# 文件级 I/O（write_jsonl / sha256_of_file）在 eval._io：实现只有一份。
+# T21 前这里曾点名为「与 bench 等价实现而不 import 它」——当时收敛失败是因为
+#   eval.bench 静态 import 了 assets/ 与 runtime/（harness 需要读包与跑执行器），
+#   而 readback 是更窄的 harness，引 bench 会把两条不该有的层依赖带进回读路径。
+# T21 的解法：收敛点落在**只含标准库**的 eval/_io.py，既消除逐字拷贝，
+#   又没新增任何跨层 import；sha256 的分块策略与 T21 前逐字一致，指纹值不变。
+# WHY 是文件字节摘要而不是语义摘要：把某条 cer 改成 0.0 不改变行数与 index，
+#   任何按计数聚合的比对都抓不到它；只有逐字节摘要会变（docs/08 §8.7 欠账 1）。
 
 
 def _raw_pointers(path: Path, work_dir: Path, records: Sequence[Dict[str, Any]]
@@ -322,7 +302,7 @@ def _raw_pointers(path: Path, work_dir: Path, records: Sequence[Dict[str, Any]]
     rel = path.relative_to(work_dir).as_posix()
     return {
         _cer.RAW_SAMPLES: rel,
-        f"{_cer.RAW_SAMPLES}{_SHA256_SUFFIX}": _sha256_of_file(path),
+        f"{_cer.RAW_SAMPLES}{_SHA256_SUFFIX}": _io.sha256_of_file(path),
         f"{_cer.RAW_SAMPLES}{_LINES_SUFFIX}": len(records),
     }
 
@@ -537,7 +517,7 @@ def run_readback_cli(argv: Optional[Sequence[str]] = None) -> int:
         raw_dir = out_dir / Path(RAW_SAMPLES_REL).parent
         raw_dir.mkdir(parents=True, exist_ok=True)
         raw_path = out_dir / RAW_SAMPLES_REL
-        _write_jsonl(raw_path, samples)
+        _io.write_jsonl(raw_path, samples)
         report["raw"] = _raw_pointers(raw_path, out_dir, samples)
     except ReadbackError as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)

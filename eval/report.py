@@ -28,6 +28,9 @@ from core.metrics_spec import (
 )
 
 from .stats import BOOTSTRAP_RESAMPLES, MIN_REPEATS, QUANTILE_METHOD
+# 文件级 I/O 与指纹摘要的统一实现（仅标准库）：本模块是 raw 指纹的**验侧**，
+# 与 eval/bench.py 的写侧共用同一个函数，见 eval/_io.py 的「指纹咬合耦合」
+from . import _io
 
 
 class BenchReportError(Exception):
@@ -321,21 +324,13 @@ def _expected_raw_counts(report: Dict[str, Any]) -> Dict[str, int]:
     return expected
 
 
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    """逐行读 JSONL；坏行记为 {"__bad_line__": 行号} 而不是抛错（报告要如实呈现损坏）。"""
-    records: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                value = json.loads(stripped)
-            except ValueError:
-                value = {"__bad_line__": line_no}
-            records.append(value if isinstance(value, dict) else {"__not_dict__": line_no})
-    return records
-
+# 文件级 I/O（read_jsonl / sha256_of_file）在 eval._io：实现只有一份。
+# 指纹咬合（bench 写 ↔ report 验）：eval/bench.py 落 raw 时写 `{name}_sha256` 指纹，
+#   本模块 check_raw_on_disk 用**同一个** _io.sha256_of_file 重算并逐文件比对。
+#   两侧共享一份实现后，分块策略不可能各自漂移——否则会出现「自己写的指纹自己验不过」
+#   或「该抓的值级篡改抓不到」（docs/08 §8.7 欠账 1，T08b 审计 #5 留的破口）。
+# WHY 是文件字节摘要而不是内容语义摘要：值级篡改（把 first_audio_ms 全部除以 1000）
+#   不改变行数与 index，任何按计数/结构聚合的比对都抓不到它；只有逐字节摘要会变。
 
 # ---------------------------------------------------------------------------
 # 3b. 原始数据指纹（追加式字段，docs/08 §8.7 欠账 1）
@@ -344,19 +339,6 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
 # 命名与既有 `{arm}_samples` / `{arm}_events` 路径键并列，只追加不改名。
 _SHA256_SUFFIX: str = "_sha256"
 _LINES_SUFFIX: str = "_lines"
-
-
-def _sha256_of_file(path: Path) -> str:
-    """按文件字节流计算 sha256（分块读，不假设编码与行结构）。
-
-    WHY 是文件字节摘要而不是内容语义摘要：值级篡改（把 first_audio_ms 全部除以 1000）
-      不改变行数与 index，任何按计数/结构聚合的比对都抓不到它；只有逐字节摘要会变。
-    """
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _raw_fingerprints(report: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -401,7 +383,7 @@ def check_raw_on_disk(report: Dict[str, Any], out_dir: Any) -> List[str]:
         if not path.is_file():
             reasons.append(f"{rel} 缺失（原始数据不存在，报告不得用估算值填补）")
             continue
-        records = _read_jsonl(path)
+        records = _io.read_jsonl(path)
         want = expected.get(name)
         if want is not None and len(records) != want:
             reasons.append(
@@ -427,7 +409,7 @@ def check_raw_on_disk(report: Dict[str, Any], out_dir: Any) -> List[str]:
         if fp:
             want_hash = fp.get("sha256")
             if isinstance(want_hash, str) and want_hash:
-                actual_hash = _sha256_of_file(path)
+                actual_hash = _io.sha256_of_file(path)
                 if actual_hash != want_hash:
                     # 消息含文件名 + 期望/实际，「点名单个文件」是验收硬要求
                     reasons.append(

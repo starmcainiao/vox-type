@@ -26,6 +26,7 @@ import unittest
 from pathlib import Path
 
 from eval import readback as rb
+from eval import _io
 from eval.cer import CER, CER_MEAN, CER_N, CER_P50, CER_P99
 from eval.report import check_raw_on_disk
 
@@ -153,7 +154,7 @@ class HappyPathTest(unittest.TestCase):
         raw_dir = tmp / "raw"
         raw_dir.mkdir(exist_ok=True)
         raw_path = tmp / rb.RAW_SAMPLES_REL
-        rb._write_jsonl(raw_path, samples)
+        _io.write_jsonl(raw_path, samples)
         report["raw"] = rb._raw_pointers(raw_path, tmp, samples)
 
         written = rb.write_readback(report, tmp)
@@ -166,7 +167,7 @@ class HappyPathTest(unittest.TestCase):
         # 指纹确实等于文件字节 sha256（不是随便填的），行数也一致
         self.assertEqual(
             report["raw"]["readback_samples_sha256"],
-            rb._sha256_of_file(raw_path),
+            _io.sha256_of_file(raw_path),
             "报告里的指纹必须等于 raw 文件的实际字节 sha256",
         )
         self.assertEqual(report["raw"]["readback_samples_lines"], len(samples))
@@ -236,7 +237,7 @@ class PartialFailureTest(unittest.TestCase):
             raw_dir = tmp / "raw"
             raw_dir.mkdir(exist_ok=True)
             raw_path = tmp / rb.RAW_SAMPLES_REL
-            rb._write_jsonl(raw_path, samples)
+            _io.write_jsonl(raw_path, samples)
             report["raw"] = rb._raw_pointers(raw_path, tmp, samples)
 
             written = rb.write_readback(report, tmp)
@@ -287,7 +288,7 @@ class TotalFailureTest(unittest.TestCase):
             raw_dir = tmp / "raw"
             raw_dir.mkdir(exist_ok=True)
             raw_path = tmp / rb.RAW_SAMPLES_REL
-            rb._write_jsonl(raw_path, samples)
+            _io.write_jsonl(raw_path, samples)
             report["raw"] = rb._raw_pointers(raw_path, tmp, samples)
             written = rb.write_readback(report, tmp)
 
@@ -327,7 +328,7 @@ class RawIntegrityTest(unittest.TestCase):
         cls.samples = rb._report_samples(cls.report)
         cls.raw_path = cls.tmp / rb.RAW_SAMPLES_REL
         cls.raw_path.parent.mkdir(parents=True, exist_ok=True)
-        rb._write_jsonl(cls.raw_path, cls.samples)
+        _io.write_jsonl(cls.raw_path, cls.samples)
         cls.report["raw"] = rb._raw_pointers(cls.raw_path, cls.tmp, cls.samples)
 
     @classmethod
@@ -838,7 +839,7 @@ class FingerprintDedupTest(unittest.TestCase):
         samples = rb._report_samples(report)
         raw_path = tmp / rb.RAW_SAMPLES_REL
         raw_path.parent.mkdir(parents=True, exist_ok=True)
-        rb._write_jsonl(raw_path, samples)
+        _io.write_jsonl(raw_path, samples)
         report["raw"] = rb._raw_pointers(raw_path, tmp, samples)
         return report, raw_path
 

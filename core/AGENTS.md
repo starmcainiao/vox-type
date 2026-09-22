@@ -78,3 +78,29 @@
 ## ⑦ 冻结状态
 
 **[冻] 冻结区**。插件适配器与本内核的版本对应关系：适配器声明 `requires_core: ^x.y`，内核只允许**加能力不改语义**。
+
+## ⑨ 结构预算（T21 登记）
+
+结构预算：可执行行数阈值 <= 150
+
+（机器可读标记行。脚本 `tools/structure_budget/check.py` 只认这行；
+**不要在这行加任何修饰符**——加粗星号会让正则匹配失败，等于阈值消失。）
+
+口径：`tokenize` 后 `NEWLINE` token 计数（一条逻辑语句结束时的换行），
+排除注释与 docstring；不含 `tests/` 与 `__pycache__`。
+与 `adapters/AGENTS.md §⑨` 的 145–150 带同算法。
+
+阈值出处与 `adapters/AGENTS.md §②`「单个适配器 ≤ 150 行」同源（本仓 R09 的
+统一体量预算）。core 层明写于此是为了让 `tools/structure_budget/check.py` 有
+**机器可读**的阈值来源——脚本不另立一套阈值。超限且未登记理由的文件 →
+检查非 0 退出。
+
+当前各文件行数快照见 `tools/structure_budget/LEDGER.md`（脚本生成，不要手改数字）。
+
+### T21 #18 公开面变更
+
+`METRIC_FIELDS`（eval 报告口径的冻结字段名集合，恰好 15 个）自 T21 起进入
+`core/__init__.py` 的 `__all__`。此前它只在 `core.metrics_spec` 模块内可见，
+跨层引用要么走模块私有路径、要么各自复述集合——「字段名集合」这一公开语义
+没有对外的合法入口。字段内容**一字未改**（`core/tests/test_metrics_spec.py`
+仍逐字节钉死 15 个）。

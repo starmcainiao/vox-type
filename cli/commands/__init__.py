@@ -24,14 +24,73 @@ from typing import Any, Dict, Optional, Tuple, Union
 from cli.errors import UsageError
 
 
+# 缺省适配器规格（写在下方 §1，这里先绑定一次以打破装载顺序依赖）：
+# 命令子模块（bench / pack_build / pack_check / run / verify）在**本包 body 执行到
+# §1 之前**就会被 cli.main 导入（sys.modules 已注入部分初始化的本模块），
+# 它们在 add_arguments 里读 `commands.DEFAULT_ADAPTER_SPEC`。若常量仍在 §1，
+# 子模块导入时取不到 → 触发本文件末尾的 __getattr__ → AttributeError。
+# 因此该常量的定义必须早于任何命令子模块导入；§1 保持原注释与冻结值，此处只是
+# 前移绑定，语义与值一字未改。
+DEFAULT_ADAPTER_SPEC: str = "adapters.tts_macsay:MacSayTts"
+
+
+# ---------------------------------------------------------------------------
+# 0. 本包公开面（T21 #18 补齐）
+# ---------------------------------------------------------------------------
+# WHY 只导出符号而不 import 命令模块：cli.main 在本包**装载期间**动态加载
+#   cli.commands.* 子模块（见 cli/main.py），而 cli/commands/*.py 反过来从本包
+#   import 工具函数——若在子模块装载时就把 __init__ 的 body 执行完，会形成
+#   `cli.main ↔ cli.commands.bench` 的循环。命令实现本身仍是各子模块的属性
+#   （`cli.commands.bench.run` 等），本包只提供「共享底座工具 + 公开符号转发」。
+__all__ = [
+    "DEFAULT_ADAPTER_SPEC",
+    "resolve_adapter",
+    "assert_dir",
+    "assert_not_within",
+    "assert_not_exists_as_dir",
+    "read_json_file",
+    "parse_json_arg",
+    "emit_result",
+    "violations_to_dicts",
+    # 命令子模块本身也可从本包属性访问（cli.main 依赖这一点）
+    "bench",
+    "pack_build",
+    "pack_check",
+    "run",
+    "verify",
+    # 公开符号转发：CLI 不重定义任何判定，只在 __all__ 里点名「这是公开面」
+    "load_corpus",
+]
+
+
+def __getattr__(name: str) -> Any:
+    """惰性转发命令子模块上的公开符号（`from cli.commands import load_corpus`）。
+
+    实现约束 1：**不得**用模块属性赋值转发——那会让 `from cli import X` 在
+    cli.main 装载本包期间触发命令模块加载，与 cli.main 的 import 形成循环
+    （实测 ImportError: cannot import name 'load_corpus'）。__getattr__ 是
+    模块级 PEP 562 钩子，只在名字被真正取用时触发，此时 cli.main 早已装完。
+    实现约束 2：只对 load_corpus 转发，**其余名字一律抛 AttributeError**。
+    若兜底去 import 命令模块，会在 cli.main 装载命令子模块期间被递归触发
+    （pack_build.add_arguments 读 commands.DEFAULT_ADAPTER_SPEC，此时 bench 子模块
+    尚未装完）——递归 import 会让 `cli.commands` 停在部分初始化的 __init__ 上，
+    命令子模块的 from-import 拿不到本包已定义的函数，全线 AttributeError。
+    转发的对象仍是 eval 的原实现，零本地副本。
+    """
+    if name == "load_corpus":
+        from cli.commands.bench import load_corpus
+
+        return load_corpus
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 # ---------------------------------------------------------------------------
 # 1. 适配器动态解析（缺省值冻结在 docs/08 §8.3）
 # ---------------------------------------------------------------------------
 # 缺省适配器：只有它一个实现，但**写在这里而不是 import 出来**——
 # 保持「CLI 不知道任何具体引擎」的边界。
-DEFAULT_ADAPTER_SPEC: str = "adapters.tts_macsay:MacSayTts"
-
-
+# 常量本身在文件开头（§0 之前）绑定：命令子模块的导入早于本节执行，
+# 若在此处首次定义会被本文件末尾的 __getattr__ 顶掉。
 def resolve_adapter(spec: Optional[str] = None) -> Any:
     """动态解析并实例化一个 TTS 适配器。
 

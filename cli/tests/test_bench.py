@@ -38,6 +38,14 @@ CORPUS_UNITS = [
     {"key": "closing", "text": "感谢您的来电。", "rate": "normal", "variant": 0},
 ]
 
+# 只含终态 key 的语料：fast 臂每次恰好一条命中 → observed_hit_rate = 1.0 且
+# incomplete is False（无未命中、样本数 = repeats）。只有这种「完整且命中率已知」
+# 的场景才能单独观察 reference_gate——带一条未命中 key 的语料会让 fail-closed
+# 中止整条 plan，incomplete 先翻成 True、observed_hit_rate 变 None，gate 反而看不到。
+CORPUS_UNITS_COMPLETE_HIT = [
+    {"key": "closing", "text": "感谢您的来电。", "rate": "normal", "variant": 0},
+]
+
 # §8.6 冻结的 --json 顶层字段集：多一个就是 CLI 自己算了指标
 BENCH_JSON_KEYS = {
     "command", "report_path", "incomplete", "repeats", "seed", "arms",
@@ -107,11 +115,16 @@ class TestBenchSuccess(BenchCliBase):
         self.assertIn("bench: 通过", err)
 
     def test_json_top_level_keys_frozen(self):
-        """顶层字段集照 §8.6 冻结——多出来一个字段就说明 CLI 自己算了指标。"""
+        """顶层字段集照 §8.6 冻结——多出来一个字段就说明 CLI 自己算了指标。
+
+        T21 #15 起额外允许 `reference_gate`：它是报告里同名块的透传结论
+        （gate 不过 → 退出码 4），属于卡面明确允许的「加 gate 结论字段」，
+        不算 CLI 自己算指标。既有七个字段必须原样在场，一个都不能少。
+        """
         rc, stdout, _ = run_cli(self.bench_argv())
         self.assertEqual(rc, 0)
         payload = assert_json_stdout(stdout, self)
-        self.assertEqual(set(payload), BENCH_JSON_KEYS)
+        self.assertEqual(set(payload), BENCH_JSON_KEYS | {"reference_gate"})
 
     def test_arms_are_verbatim_passthrough(self):
         """`arms` 必须与 report.json 里的同名块逐字段相等（证明是透传不是重算）。"""
@@ -226,3 +239,102 @@ class TestBenchIncomplete(BenchCliBase):
         # 原始数据照样落盘（否则事后无法定位是哪次、什么错）
         self.assertTrue((out / "raw").is_dir())
         self.assertTrue((out / "report.json").is_file())
+
+
+# ============================================================
+# 5. reference_gate → 退出码（T21 #15「门禁装牙齿」）
+# ============================================================
+class TestBenchReferenceGate(BenchCliBase):
+    """reference_gate 不通过 → rc 4；通过 → rc 0；报告数字与格式不变。
+
+    反空转：门槛由 --required-hit-rate 注入（CLI 不改任何统计口径），
+    判定全部走 eval.run_bench 产出的 report["reference_gate"]，
+    本测试不重算命中率、也不复制 gate 的布尔逻辑。
+    """
+
+    def _complete_hit_corpus(self, name: str) -> Path:
+        """完整命中语料（见 CORPUS_UNITS_COMPLETE_HIT 的注释）。"""
+        return write_corpus(self.tmp / name, CORPUS_UNITS_COMPLETE_HIT)
+
+    def test_gate_fails_returns_4_and_report_written(self):
+        """命中率未达门槛 → rc 4（EXIT_QUALITY），报告照旧如实写出。"""
+        out = self.tmp / "out-gate-fail"
+        rc, stdout, err = run_cli(
+            self.bench_argv(
+                out=out,
+                corpus=self._complete_hit_corpus("gate_fail_corpus.json"),
+                extra=["--required-hit-rate", "1.0001"],
+            )
+        )
+
+        self.assertEqual(rc, 4)
+        payload = assert_json_stdout(stdout, self)
+        self.assertIs(payload["incomplete"], False, "gate 失败不等于数据不完整")
+        self.assertEqual(payload["reference_gate"]["passed"], False)
+        report = json.loads(Path(payload["report_path"]).read_text(encoding="utf-8"))
+        # 数字如实上报：报告里的 gate 与 stdout 透传一致，且未达门槛
+        self.assertFalse(report["incomplete"], "数据完整却被标成不完整")
+        self.assertFalse(report["reference_gate"]["passed"])
+        self.assertEqual(
+            payload["reference_gate"]["observed_hit_rate"],
+            report["reference_gate"]["observed_hit_rate"],
+        )
+        self.assertEqual(payload["reference_gate"]["observed_hit_rate"], 1.0)
+        # stderr 必须说明为什么是 4（不静默）
+        self.assertIn("reference_gate", err)
+        # 报告与原始数据照旧落盘（结论不通过不等于丢弃证据）
+        self.assertTrue((out / "report.json").is_file())
+        self.assertTrue((out / "raw").is_dir())
+
+    def test_gate_passes_returns_0(self):
+        """命中率达标 → rc 0，且 gate 结论在 payload 里透传。"""
+        out = self.tmp / "out-gate-pass"
+        rc, stdout, _ = run_cli(
+            self.bench_argv(
+                out=out,
+                corpus=self._complete_hit_corpus("gate_pass_corpus.json"),
+                extra=["--required-hit-rate", "0.49"],
+            )
+        )
+
+        self.assertEqual(rc, 0)
+        payload = assert_json_stdout(stdout, self)
+        self.assertIs(payload["incomplete"], False)
+        self.assertEqual(payload["reference_gate"]["passed"], True)
+        self.assertEqual(payload["reference_gate"]["observed_hit_rate"], 1.0)
+
+    def test_gate_threshold_boundary_is_inclusive(self):
+        """门槛正好等于实测命中率 → 仍算通过（判据是 >=，不是 >）。"""
+        out = self.tmp / "out-gate-eq"
+        rc, stdout, _ = run_cli(
+            self.bench_argv(
+                out=out,
+                corpus=self._complete_hit_corpus("gate_eq_corpus.json"),
+                extra=["--required-hit-rate", "1.0"],
+            )
+        )
+
+        self.assertEqual(rc, 0)
+        payload = assert_json_stdout(stdout, self)
+        self.assertEqual(payload["reference_gate"]["passed"], True)
+
+    def test_gate_numbers_are_verbatim_from_report(self):
+        """gate 三个字段必须与 report.json 同名块逐字段一致（透传，不重算）。"""
+        out = self.tmp / "out-gate-fields"
+        rc, stdout, _ = run_cli(
+            self.bench_argv(
+                out=out,
+                corpus=self._complete_hit_corpus("gate_fields_corpus.json"),
+                extra=["--required-hit-rate", "0.5"],
+            )
+        )
+
+        self.assertEqual(rc, 0)
+        payload = assert_json_stdout(stdout, self)
+        report = json.loads(Path(payload["report_path"]).read_text(encoding="utf-8"))
+        for field in ("required_hit_rate", "observed_hit_rate", "passed"):
+            self.assertEqual(
+                payload["reference_gate"][field],
+                report["reference_gate"][field],
+                f"reference_gate.{field} 不是报告里的原值",
+            )
