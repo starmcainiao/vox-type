@@ -314,5 +314,6 @@
       "structure_budget": "本轮已亲跑（修订轮）：python3 -m tools.structure_budget.check → exit 0，合计 50 个 .py 文件 / 5070 可执行行，结构预算：全部合规"
     }
   },
-  "revised_at": "2026-09-22"
+  "revised_at": "2026-09-22",
+  "corrections": "corrections.json（验收方 2026-09-22：两条指控/归因的独立复核结论，不改写原始结论）"
 }

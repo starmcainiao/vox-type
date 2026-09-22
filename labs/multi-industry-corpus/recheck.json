@@ -1,0 +1,134 @@
+{
+  "_schema": "vox-multi-industry-corpus-recheck/1",
+  "rechecked_at": "2026-09-22",
+  "mode": "只读复验（不改任何既有文件；本文件与 /tmp 下临时产物为新增）",
+  "base_ref": "HEAD = 7ad2c32 feat(第二十三批/T22·v2): 补充与复验收口 7 项",
+  "passed": true,
+  "checked": [
+    {
+      "id": "1-manifest-digest-recompute",
+      "ask": "按台账给的复算命令实算 1 份语料的 manifest_digest，与台账逐字比对",
+      "verdict": "PASS",
+      "corpus": "thu-coai/CrossWOZ",
+      "ledger_commands_source": "labs/multi-industry-corpus/corpus_ledger.json:9-15 sha256_semantics.recompute_commands",
+      "commands_run": [
+        "shasum -a 256 ~/corpus/thu-coai__CrossWOZ/archive.zip | awk '{print $1}'",
+        "wc -c < ~/corpus/thu-coai__CrossWOZ/archive.zip | tr -d ' '",
+        "printf 'archive.zip\\t%s\\t%s\\n' \"$FILE_BYTES\" \"$FILE_SHA\" | sha256sum"
+      ],
+      "observed": {
+        "file_sha256": "035a55de1b52e552ec01fb498e5665118f45d1cfc6048d871b534c0d499e87ef",
+        "file_bytes": 20666888,
+        "manifest_digest": "779ca2d5e5a26f05ccc873428d208147dc3e2a3af829a65a4c59ab659d7e729a"
+      },
+      "ledger_recorded": {
+        "sha256": "779ca2d5e5a26f05ccc873428d208147dc3e2a3af829a65a4c59ab659d7e729a",
+        "n_rows_or_size.bytes": 20666888,
+        "location": "labs/multi-industry-corpus/corpus_ledger.json:43 (entries[0].sha256), :47 (bytes)"
+      },
+      "result": "manifest_digest 逐字一致（779ca2d5…729a == 779ca2d5…729a）；字节数 20666888 与台账逐位一致",
+      "note": "实算用了 1 份语料（CrossWOZ），符合本次抽验要求。revision.json items[3] 声明的同一实测值亦与本轮实测一致；其「未重算 ASAPPresearch/ABCD」的如实声明成立——本轮也未重算 ABCD，该条沿用 verify.json.checked[1] 的记录（本轮未独立验证）。真源实现 tools/corpus_fetch/fetch.py:902-911 的 manifest_digest() 与台账 sha256_semantics.formula 逐字相符。"
+    },
+    {
+      "id": "2-mine-candidates-vs-recompute-737",
+      "ask": "mine_candidates.py 修好后与 mine_recompute.py 的 737 是否一致（或差异可解释）",
+      "verdict": "PASS",
+      "command_run": "python3 labs/multi-industry-corpus/mine_candidates.py --out /tmp/recheck_mine_fixed.json",
+      "exit_code": 0,
+      "stdout_head": "系统话轮: 50813（其中带状态签名 40657）/ 状态签名: 8904（够密的 237）/ 候选话术: 737 条，覆盖 5173 轮（占系统话轮 10.2%）/ 同种子两次跑样例一致: True",
+      "compared_against": "labs/multi-industry-corpus/out/mine_recomputed.json",
+      "shared_fields_identical": [
+        "n_candidates=737",
+        "n_state_signatures=8904",
+        "n_sys_turns=50813",
+        "n_sys_turns_with_state_signature=40657",
+        "n_sys_turns_without_state_signature=10156",
+        "n_sys_turns_covered_by_a_candidate=5173",
+        "coverage_of_all_sys_turns=0.1018",
+        "coverage_of_stateful_sys_turns=0.1272",
+        "candidates_by_group_hits={'>=50':10,'>=20':58,'>=10':208,'>=3':737}",
+        "top_states_by_candidate_count（10 项全等）",
+        "min_group_hits=3",
+        "min_sign_state_turns=50",
+        "n_dialogues=6012",
+        "seed=20260922"
+      ],
+      "sample_candidates_identical": true,
+      "sample_candidates_check": "前 8 条逐字段比对（state_signature / skeleton / group_hits / sign_total_turns / examples / id）全部逐字相等",
+      "explained_differences": [
+        {
+          "field": "n_state_signatures_eligible=237（mine_candidates.py）vs n_state_signatures_with_candidate=212（mine_recompute.py）",
+          "explanation": "字段名不同、定义不同：前者=出现≥50 轮的状态签名数（mine_candidates.py:134-136），后者=带候选的状态签名数（mine_recompute.py:158）。212 < 237 自洽——够密的签名里有 212 个带候选。不可互相当同一字段读。"
+        },
+        {
+          "field": "n_signature_skeleton_pairs=25830（仅 mine_candidates.py 有）",
+          "explanation": "够密签名下的骨架对总数，mine_recompute.py 无此字段。仅 mine_candidates.py:138 累加。"
+        },
+        {
+          "field": "_schema / corpus / method / run_at / determinism_check（仅 mine_candidates.py）vs determinism_same_seed_twice_identical_examples（仅 mine_recompute.py）",
+          "explanation": "报告壳字段，非数值口径差异；两者都做了同种子两次比对且都为 True。"
+        }
+      ],
+      "result": "737 一致，全部 14 个共享数值字段与 8 条样例候选逐字相等；差异项均为字段定义/壳字段差异，不影响 737。revision.json items[5] 的对照结论经本轮独立复现成立。"
+    },
+    {
+      "id": "3-report-rate-values-unchanged",
+      "ask": "复核 report.json 的 rate 数值与修订前一致（git show HEAD:… 取旧值比对——修订不得动数值）",
+      "verdict": "PASS",
+      "commands_run": [
+        "git diff --stat HEAD -- labs/multi-industry-corpus/report.json",
+        "git show HEAD:labs/multi-industry-corpus/report.json（与工作区文件整份 JSON 深比对）",
+        "git log --oneline -3 -- labs/multi-industry-corpus/report.json",
+        "git show 8777ca0:labs/multi-industry-corpus/report.json（修订轮上一次提交，行数不同故按 (dataset,metric) 对齐比对）"
+      ],
+      "result": {
+        "git_diff_head_empty": true,
+        "old_equals_new_full_json": true,
+        "rows_changed_on_rate_or_n": 0,
+        "rows_total": 14,
+        "non_rate_n_keys_changed_per_row": 0,
+        "replay_candidates": 737,
+        "boundaries_len": 18
+      },
+      "cross_revision_line_aligned_compare": {
+        "note": "8777ca0 rows=12 行，HEAD rows=14 行（本轮新增 HWU64 与 MASSIVE annot_utt 两行）；因此按 (dataset 前缀, metric) 对齐后比对 12 个共有键",
+        "common_keys_checked": 12,
+        "rate_or_n_mismatch": 0,
+        "values": [
+          "CrossWOZ flow_decided_rate=0.1186 n=50813",
+          "CrossWOZ instruction_template_rate=0.2758 n=50813",
+          "ABCD flow_decided_rate=0.5837 n=131611",
+          "ABCD instruction_template_rate=0.7623 n=131611",
+          "ABCD delexed instruction_template_rate=0.7615 n=95129",
+          "MultiWOZ 2.2 flow_decided_rate=0.1594 n=71522",
+          "MultiWOZ 2.2 instruction_template_rate=0.4706 n=71522",
+          "MultiWOZ 2.1 flow_decided_rate=0.6464 n=71524",
+          "MultiWOZ 2.1 instruction_template_rate=0.4448 n=71524",
+          "Taskmaster flow_decided_rate=0.1545 n=156971",
+          "Taskmaster instruction_template_rate=0.72 n=156971",
+          "MASSIVE zh-CN instruction_template_rate=0.0168 n=16521"
+        ]
+      },
+      "methodology_caveat": "本次抽验收到的 git status 快照显示 report.json / corpus_ledger.json / mine_candidates.py / README.md 为『modified』、revision.json 为 untracked——那是本次抽验开始之前的历史快照。实际复验时 HEAD 已推进到 7ad2c32（『T22·v2 … 验收通过』），上述文件已全部提交、工作区与 HEAD 逐字一致（git diff HEAD 为空）。因此 HEAD 上的『修订后』report.json 本身不含 rate/n 改动。为不因此漏检，额外回退到上一提交 8777ca0（T22 初版，rows=12）做 (dataset,metric) 行对齐比对，12 个共有键的 rate 与 n 全部一致。修订的 rows 改动只落在 side / side_detail 字段（8777ca0 无 side_detail，HEAD 有 7 行 side_detail）。",
+      "result_note": "revision.json items[4] 自评『rate/n 被改动的行: 0 行（未动）』经本轮独立比对成立。"
+    }
+  ],
+  "discrepancies": [
+    {
+      "severity": "info",
+      "id": "d1-manifest-check-scope",
+      "statement": "本次抽验要求实算 1 份语料，已实算 thu-coai/CrossWOZ 1 份并逐字比对通过。台账另 6 条 entries 的 manifest 值（ABCD、multiwoz、Taskmaster、massive、HWU64、primock57）本轮未复算，其中 massive 与 primock57 的条目本身即非语料本体（分别是 README.md 元数据 34420 字节、含 LFS 指针的整包），manifest 语义与 CrossWOZ 那条不同，不宜用同一模板套算。不算失败项，仅为覆盖范围说明。"
+    },
+    {
+      "severity": "info",
+      "id": "d2-git-head-advanced-past-snapshot",
+      "statement": "抽验任务书给出的 git status 快照与复验时的实际仓库状态不一致：快照里 report.json / corpus_ledger.json / mine_candidates.py / README.md 显示为 modified、revision.json 为 untracked，且快照列出的 HEAD 是 8777ca0；实际复验时 HEAD 已是 7ad2c32，这些文件均已提交且工作区干净。结论不受影响（rate/n 未动的结论在两个基线下都成立，见 checked[2]），但『修订前旧值』的取法应从 8777ca0 取而非从 HEAD 取——已在 checked[2].cross_revision_line_aligned_compare 按 8777ca0 基线补做，结果为 12 个共有键 rate/n 全部一致。"
+    }
+  ],
+  "not_run": [
+    "revision.json items[6] 的两项零回归门禁（python3 -m unittest discover -s tools；python3 -m tools.structure_budget.check）——不在本次抽验范围内，本轮未复跑，故不确认其结论。",
+    "revision.json items[1] 的 MASSIVE zh-CN 分区条数（11514+2033+2974=16521）——加法恒等式算术成立，但『16521 条来自 tar.gz 实测』这步本轮未独立联网复验。",
+    "revision.json items[0] 的 MASSIVE S3 直链实测（HTTP 200 / 40251390 bytes / 50.37s / tar 内 58 项）——本轮未联网复测，沿用 report.json.provenance 记录。",
+    "analyze_flow_occupancy.py 占比重算（0.5837 / 0.7623 等）——本轮只做了 report.json 内部数值一致性比对与 8777ca0 行对齐比对，未从语料重算占比；占比的可复现性沿用 verify.json.checked[2] 的独立脚本结论，本轮未重跑该脚本。"
+  ]
+}

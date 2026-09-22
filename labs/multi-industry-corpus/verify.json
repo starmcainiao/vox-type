@@ -14,5 +14,6 @@
     "report.json provenance.commands_run（第 4-8 条）声称的复跑产物路径与实际 out/ 目录不一致：报告引 occ_a.json / occ_b.json / occ_inj.json / report_occ.json，实际 out/ 下没有 occ_a.json、occ_b.json、occ_inj.json，对应物为 occ_a.json/occ_b.json 存在但名为 occ_a.json——更正：out/ 实际含 occ_a.json、occ_b.json、report_occ.json、report_inject.json（无 occ_inj.json，应为 report_inject.json），三处名称写错或已过时。三份 occ/report_occ 的 ABCD 数值一致（0.5837），不构成数值差异。",
     "台账未同步的两处过期条目（本轮未核实真伪，仅转述报告自述）：(a) report.json boundaries 第 8 点称 amazon-massive-dataset-1.1.tar.gz 实测可下载（HTTP 200、40251390 bytes），而 corpus_ledger.json:218-222 的 rejected_sources 仍称「本体取不到」，报告自认 ledger「已过期，未同步更正」；(b) 报告实测 MASSIVE zh-CN 16521 条，与 corpus_ledger.json:97 的「zh-CN 11514 条」不符（报告解释 11521=11514+2033+2974 即 16521，11514 疑似只计 train）。本轮不联网复测下载，故仅转述。",
     "out/mine_candidates.json（n_candidates=0）与 out/mine_recomputed.json（737）并存，前者是静默零结果失败产物（report.json boundaries 第 15 点已自曝：state_signatures() 按 5 元组解 4 元组 dialog_act 错位，determinism_check 仍 True、exit 0）。report.json replay_candidates=737 取的是后者，数值正确，但同目录留存一份误导性产物，未清理。"
-  ]
+  ],
+  "corrections": "corrections.json（验收方 2026-09-22：两条指控/归因的独立复核结论，不改写原始结论）"
 }

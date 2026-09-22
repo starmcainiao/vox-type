@@ -1,0 +1,18 @@
+{
+  "generated_by": "验收方（主会话）2026-09-22，v2 工作流完成后",
+  "why": "v2 的独立复验员提出两条指控，报告撰写员提出反驳；验收方独立复算后判定：报告数字正确、复验员两条指控均不成立。此处落档以保留可追溯性（不改写任何一方的原始结论）。",
+  "corrections": [
+    {
+      "id": "verify-claim-1-abcд-double-count",
+      "claim": "复验员称 ABCD flow_decided_rate=0.5837 无法复现，action 埋点轮被计了两遍（差额 36482）",
+      "verdict": "不成立（复验员算错）",
+      "evidence": "报告口径 (40334+36482)/131611 = 0.5837 与 report.json 一致；复验员自报的 40423+36482=76905 → 0.5843（差 0.0006，非其声称的 0.2766）。其声称的 0.2766 ≈ 36482/131611 = 0.2772，即 action 占分母比例——它把自己的分母算错了一轮。report.json 的 rows[].side_detail 已明写：27.7pp 来自埋点轮、agent-only=0.4240。"
+    },
+    {
+      "id": "root-cause-mine-candidates",
+      "claim": "report.json boundaries[10] 与 verify.json 均称 mine_candidates.py 失败因「按 5 元组解 4 元组 dialog_act 错位」",
+      "verdict": "归因错误（已更正）",
+      "evidence": "真实根因：解包 `kind, intent, domain, value = da` 中变量名 intent 实际拿到字段 1（域），旧版 `if intent != \"Inform\": continue` 于是把「餐馆/酒店/景点/出租」全拒收 → 每话轮空签名 → 0 候选而 determinism_check 仍 True、exit 0。对照：mine_recompute.state_signatures → 3407 话轮有签名，mine_candidates（旧版）→ 0。修复后 mine_candidates n_candidates=737（与 mine_recompute 一致），并已加零结果告警防再静默。"
+    }
+  ]
+}
