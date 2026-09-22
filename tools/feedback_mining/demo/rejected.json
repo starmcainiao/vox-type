@@ -1,0 +1,186 @@
+{
+  "_schema": "vox-feedback-mining/1",
+  "note": "拒收清单：形式条款未过的候选。留痕不丢弃（docs/14 B1–B5）",
+  "rejected_candidates": [
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:32:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "原文含 3 个句末标点，不是「一句」：长流程必须拆成多个 key（字模最小粒度 = 一句）",
+            "rule": "B1"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:32:02Z",
+      "raw_texts": [
+        "工单已受理！请保持电话畅通！师傅会尽快联系您。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-004"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "工单已受理!请保持电话畅通!师傅会尽快联系您.",
+      "turn_ids": [
+        "t-004"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:24:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "含槽位占位符 {date}：槽值一律运行时现场合成，不得进 variant 原文（docs/14 B2）",
+            "rule": "B2"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:24:02Z",
+      "raw_texts": [
+        "已为您预约 {date} 下午上门服务，请保持手机畅通。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-003"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "已为您预约{date}下午上门服务,请保持手机畅通.",
+      "turn_ids": [
+        "t-003"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:32:01Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "归一化后 80 字 > 上限 60 字：超长话术多为多步流程拼接，必须拆成多个 key",
+            "rule": "B4"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:32:01Z",
+      "raw_texts": [
+        "您好，已为您登记供暖报修工单，当前状态为待受理，我们会在工作日内派单，派单后维修师傅会在约定时间上门，如需变更上门时间请回复修改时间，如需人工服务请回复转人工。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-004"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "您好,已为您登记供暖报修工单,当前状态为待受理,我们会在工作日内派单,派单后维修师傅会在约定时间上门,如需变更上门时间请回复修改时间,如需人工服务请回复转人工.",
+      "turn_ids": [
+        "t-004"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:24:03Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "含槽位占位符 [小区名]：槽值一律运行时现场合成，不得进 variant 原文（docs/14 B2）",
+            "rule": "B2"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:24:03Z",
+      "raw_texts": [
+        "您的地址在 [小区名] 附近，维修师傅 30 分钟内到达。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-003"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "您的地址在[小区名]附近,维修师傅30分钟内到达.",
+      "turn_ids": [
+        "t-003"
+      ]
+    }
+  ]
+}

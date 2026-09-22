@@ -1,0 +1,219 @@
+{
+  "_schema": "vox-feedback-mining/1",
+  "a1a2_policy": "a1a2_class 恒为 'pending_human'（A1/A2 是语义判断，机器不判）",
+  "n_rejected": 4,
+  "n_suggestions": 5,
+  "run_at": "2026-09-22T09:40:02Z",
+  "sort_order": "count desc, then text lexicographic",
+  "suggestions": [
+    {
+      "a1a2_class": "pending_human",
+      "count": 3,
+      "first_seen": "2026-09-22T09:08:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "pass",
+        "violations": []
+      },
+      "last_seen": "2026-09-22T09:16:02Z",
+      "raw_texts": [
+        "您好，为您查询到当前排队位置是第 3 位。",
+        "您好，为您查询到当前排队位置是第 3 位。 "
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-001",
+        "t-002"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": "greeting",
+      "text": "您好,为您查询到当前排队位置是第3位.",
+      "turn_ids": [
+        "t-001",
+        "t-002"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 3,
+      "first_seen": "2026-09-22T09:08:03Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "pass",
+        "violations": []
+      },
+      "last_seen": "2026-09-22T09:40:01Z",
+      "raw_texts": [
+        "请保持通话，坐席接通后我会为您转接。"
+      ],
+      "reasons": [
+        "fingerprint_mismatch",
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-001",
+        "t-003",
+        "t-005"
+      ],
+      "states": [
+        "fallback",
+        "miss"
+      ],
+      "suggested_key": "transfer_notice",
+      "text": "请保持通话,坐席接通后我会为您转接.",
+      "turn_ids": [
+        "t-001",
+        "t-003",
+        "t-005"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:16:03Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "pass",
+        "violations": []
+      },
+      "last_seen": "2026-09-22T09:16:03Z",
+      "raw_texts": [
+        "当前人工坐席繁忙，您已进入排队，稍后可回复「转人工」重试。"
+      ],
+      "reasons": [
+        "engine_mismatch"
+      ],
+      "sample_turn_ids": [
+        "t-002"
+      ],
+      "states": [
+        "fallback"
+      ],
+      "suggested_key": "transfer_notice",
+      "text": "当前人工坐席繁忙,您已进入排队,稍后可回复「转人工」重试.",
+      "turn_ids": [
+        "t-002"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:32:03Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "pass",
+        "violations": []
+      },
+      "last_seen": "2026-09-22T09:32:03Z",
+      "raw_texts": [
+        "感谢您的来电，祝您生活愉快，再见。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-004"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": "farewell",
+      "text": "感谢您的来电,祝您生活愉快,再见.",
+      "turn_ids": [
+        "t-004"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:40:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "pass",
+        "violations": []
+      },
+      "last_seen": "2026-09-22T09:40:02Z",
+      "raw_texts": [
+        "转人工"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-005"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": "transfer_notice",
+      "text": "转人工",
+      "turn_ids": [
+        "t-005"
+      ]
+    }
+  ]
+}

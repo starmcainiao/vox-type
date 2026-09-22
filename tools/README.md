@@ -25,8 +25,38 @@
 | `corpus_fetch/fetch.py` | 获取器：先验许可后下载、逐文件 sha256 交叉核对、拒写仓库内路径、`--recheck` 巡检、台账原子写 | 许可判据、`NONCOMMERCIAL_PATTERNS` 硬拒绝 |
 | `corpus_fetch/derive_golden.py` | 从对话语料派生 golden set 对照集（`docs/11 §11.5` 的集合 A） | 两字段口径、`MIN/MAX_UTTER_LEN` |
 | `corpus_fetch/baseline_literal.py` | 逐字档基线（`docs/11 §11.5` 的实验①） | 复用产品归一化，不另写一份 |
+| `feedback_mining/miner.py` | 回流闭环挖掘（T23 / 立项 M3）：轮级留痕 + 事件流 → `suggestions.json` + `rejected.json` + `report.json` | 归一化与单句判据一律 **import** 产品代码，不复制；A1/A2 恒写 `pending_human` |
+| `feedback_mining/make_demo_inputs.py` | 造挖掘器的演示输入（T17 留痕 + T07 事件流，全部自造话术） | 不读时钟、不随机 |
 
-测试：`tools/tests/test_corpus_fetch.py`、`tools/tests/test_derive_golden.py`。
+测试：`tools/tests/test_corpus_fetch.py`、`tools/tests/test_derive_golden.py`、
+`tools/tests/test_feedback_mining.py`（38 条，覆盖 T23 的验收 1–7 与负例实测）。
+
+### feedback_mining（T23 · 立项 M3「回流闭环」）
+
+口径与边界全在 `tools/feedback_mining/README.md`。三条硬边界是仓库红线的落点，记在这里：
+
+- **归一化与单句判据同源**：`adapters.framework_kefu.normalize_text` 与
+  `compiler.source._SENTENCE_TERMINATORS` 一律 import，测试用 `assertIs` 钉住是同一对象。
+- **只形式条款机器化**：`docs/14` 的 A1/A2 与禁入项 ⅰ–ⅳ 是语义判断，
+  `a1a2_class` 字段恒为 `"pending_human"`——脚本不猜语义。
+- **拒收不静默**：形式条款未过的候选进 `rejected.json` 并写明规则编号与原因
+  （同 `corpus_fetch` 的 rejected_sources 纪律）。
+- **确定性**：不读时钟、不随机；同输入两次跑产物逐字节一致。`--shuffle` 是注入开关，
+  只供验证「确定性断言能判红」，生产不用。
+
+```bash
+# 造演示输入（自造话术，含占位符 / 超长 / 跨句三类负例）
+python3 tools/feedback_mining/make_demo_inputs.py --out-dir /tmp/vox-feedback-demo
+# 挖掘（含 provenance：输入 sha256 + 仓 commit）
+python3 tools/feedback_mining/miner.py \
+    --ledger /tmp/vox-feedback-demo/turns.jsonl \
+    --events /tmp/vox-feedback-demo/events.jsonl \
+    --out-dir /tmp/vox-feedback-demo
+```
+
+下一步是**人工**的：候选 → 判 A1/A2 与禁入项 → 写 `packs/<包>/admission.md`
+（`docs/14 §三`）→ `bin/vox pack check` → `vox pack build`。`vox pack check` 的机器化
+admission 校验是 `docs/14 §四` 登记的待办，本工具不接线（`cli/` 是冻结区）。
 
 ## 三、口径（照 docs/11，不自创）
 

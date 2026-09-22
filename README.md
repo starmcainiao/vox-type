@@ -60,7 +60,7 @@ traced). Zero third-party dependencies.
 
 ## Status（全部实测，口径见 `docs/09` / `docs/13`）
 
-- **十一个测试根 1,452 条测试全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
+- **十一个测试根 1,506 条测试全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）；`bin/vox` 五命令可用；业务包 3 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
   命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
@@ -122,7 +122,7 @@ bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
 - [ ] **key 约束解码**：用 Trie/FSM 把 LLM 输出空间物理约束到合法 key 集合——
   **已勘察（`labs/guided-decoding/`）：当前运行时不可行**（`json_schema` 400 拒绝、`guided_json` 被静默忽略），
   需换 vLLM + XGrammar / SGLang / Outlines 类运行时
-- [ ] 回流闭环：日志挖掘 → 话术建议（M3）
+- [x] **回流闭环**：日志挖掘 → 话术建议（T23：`tools/feedback_mining/`，从轮级留痕+事件流挖候选 → 形式条款机器化 + A1/A2 标注待人工 → 建议清单对接 `docs/14` 申报）
 
 ## Third-party data & attribution
 
