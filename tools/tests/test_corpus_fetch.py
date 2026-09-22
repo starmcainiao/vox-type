@@ -14,7 +14,9 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unittest
+import zipfile
 import urllib.error
 import urllib.request
 from contextlib import contextmanager, redirect_stdout
@@ -85,7 +87,8 @@ def sha256(data: bytes) -> str:
 class FakePlatform(ModelScope):
     """不调网络的测试平台：meta / README / tree / 下载全部返回测试固定值。"""
 
-    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0", tree=None):
+    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0", tree=None,
+                 license_body=""):
         super().__init__()
         # name 必须保持 "modelscope"：`_platform_license` 按 name 分派字段位置
         # （ModelScope 取 meta["License"]，HF 取 meta["cardData"]["license"]）。替身返回的是
@@ -94,6 +97,7 @@ class FakePlatform(ModelScope):
         self.name = "modelscope"
         self.readme = readme
         self.platform_license = platform_license
+        self.license_body = license_body
         self.tree_entries = tree if tree is not None else [
             {"path": "data/CSConv.json", "size": len(PAYLOAD), "declared_sha256": "", "is_lfs": False},
             {"path": ".gitattributes", "size": 12, "declared_sha256": "", "is_lfs": False},
@@ -124,7 +128,8 @@ def install_platform(platform: FakePlatform):
     old_plat = PLATFORMS.get("fake-modelscope")
     PLATFORMS["fake-modelscope"] = platform
     old_get = fetch_mod.http_get
-    offline = OfflineHttpGet(readme=platform.readme, platform_license=platform.platform_license)
+    offline = OfflineHttpGet(readme=platform.readme, platform_license=platform.platform_license,
+                             license_body=getattr(platform, "license_body", ""))
     fetch_mod.http_get = offline
     return old_plat, old_get
 
@@ -143,9 +148,11 @@ class OfflineHttpGet:
     未覆盖的 URL 直接抛 FetchError（fail-closed）——任何意外的联网尝试都会让测试响亮地失败。
     """
 
-    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0"):
+    def __init__(self, *, readme=FAKE_README_CLEAN, platform_license="Apache License 2.0",
+                 license_body=""):
         self.readme = readme
         self.platform_license = platform_license
+        self.license_body = license_body
         self.seen_urls = []  # 记录收到的 URL，便于断言替身确实覆盖了全部请求形态
 
     def __call__(self, url, *, timeout=180, binary=False):
@@ -153,13 +160,14 @@ class OfflineHttpGet:
         # 假平台子类复用了 ModelScope.readme_raw_url 的 ...repo?FilePath=README.md 形态
         if "FilePath=README.md" in url or "/readme/" in url:
             return self.readme
+        # readme_source 指向的仓内文件（非 README 时走 download_url 的下载形态）
+        if self.license_body and "fake://download/" in url and url.rstrip("/").rsplit("/", 1)[-1] != "README.md":
+            return self.license_body
         if "api/v1/" in url or url.startswith("fake://"):
             return self.meta_doc(self.platform_license)
         # 假平台子类复用了 ModelScope._api 的 https://modelscope.cn/api/v1/datasets/<id> 调用
         # → 返回与 meta() 同源的许可字段。**这条必须留**：删掉它，FakePlatform 就不必再实现 meta()，
-        # 而且"平台标签不可信"这类负例会退化成"平台未给许可"——判据强度悄悄变弱。
-        if url.startswith("https://") and "/api/v1/" in url:
-            return self.meta_doc(self.platform_license)
+        # 而是真的去请求 —— 那样测试就**联网**了。
         raise FetchError(f"离线测试收到未预期的请求（不应联网）: {url}")
 
     @staticmethod
@@ -278,7 +286,8 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual(out["license_spdx"], "apache-2.0")
         self.assertEqual(out["license_readme_raw"], "Apache License 2.0")
         self.assertEqual(out["noncommercial_hits"], [])
-        self.assertIn("README 正文无禁商用/禁演绎声明", out["audit_checks"])
+        self.assertEqual(out["noncommercial_hits_body"], [])
+        self.assertIn("正文证据与 README 均无禁商用或禁演绎声明", out["audit_checks"])
 
     def test_frontmatter_apache_body_noncommercial_is_rejected_with_matched_words(self):
         install_platform(FakePlatform(readme=FAKE_README_NC, platform_license="apache-2.0"))
@@ -295,20 +304,32 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertIn("无放行口", msg)
         self.assertIn("fixture/ns__dataset", msg)
 
-    def test_unrecognised_license_is_rejected(self):
+    def test_unrecognised_noncommercial_license_is_rejected_as_nc(self):
         readme = FAKE_README_CLEAN.replace("Apache License 2.0", "cc-by-nc-4.0")
         install_platform(FakePlatform(readme=readme, platform_license="cc-by-nc-4.0"))
         with self.assertRaises(LicenseRejected) as cm:
             audit_license(src(expect_license=["cc-by-nc-4.0"]))
         msg = str(cm.exception)
-        # 这条消息**故意不点名** cc-by-nc-4.0：`_normalize_license` 对集合外的值一律归一成
-        # None（不猜、不近似匹配），所以走到的是「两边都未给出可识别的许可」这一支。
-        # 这正是 fail-closed 想要的强度——不给出"我们把它认成别的了"的假确定性。
-        self.assertIn("都未给出可识别的许可", msg)
+        # `cc-by-nc-4.0` 含 NC，会被 ③b 的禁商用/禁演绎扫描先拦下——这是更强的拒绝
+        # （比"不可识别"更硬：不猜是什么许可，直接判定含非商用条款）。
+        self.assertIn("禁商用", msg)
+        self.assertIn("BY-NC", msg)
+        self.assertIn("无放行口", msg)
         # 且必须是这条而不是"许可不在允许集合内"——后者意味着它被识别成了一个具体许可
         self.assertNotIn("不在允许集合", msg)
-        # 归一化路径本身：该写法确实归一为 None
+        # 归一化路径本身：该写法确实归一为 None（集合外，不猜、不近似匹配）
         self.assertIsNone(fetch_mod._normalize_license("cc-by-nc-4.0"))
+
+    def test_unrecognised_license_without_nc_is_rejected_as_unrecognised(self):
+        # 与上一例区分：一个**既不在允许集合、又不含 NC 字样**的许可写法，
+        # 必须走「都未给出可识别的许可」这一支，而不是被误当成"不在允许集合"（不猜）。
+        readme = FAKE_README_CLEAN.replace("Apache License 2.0", "some-house-license-xyz")
+        install_platform(FakePlatform(readme=readme, platform_license="some-house-license-xyz"))
+        with self.assertRaises(FetchError) as cm:
+            audit_license(src(expect_license=["some-house-license-xyz"]))
+        self.assertIn("都未给出可识别的许可", str(cm.exception))
+        self.assertNotIn("不在允许集合", str(cm.exception))
+        self.assertIsNone(fetch_mod._normalize_license("some-house-license-xyz"))
 
     def test_platform_label_alone_is_not_trusted(self):
         readme = "# Fixture\n\nNo front matter here, only a platform tag.\n"
@@ -1174,6 +1195,235 @@ class RecheckTests(unittest.TestCase):
         bad = self.tmpdir / "bad.json"
         bad.write_text("{not json", encoding="utf-8")
         self.assertEqual(recheck(bad), 3)
+
+
+# ---------------------------------------------------------------------------
+# T22 新增：LICENSE 文件作单边证据 / GitHubArchive / codeload 整包
+# ---------------------------------------------------------------------------
+class LicenseBodySourceTests(unittest.TestCase):
+    """卡面「单边证据」处理：仓库有 LICENSE 文件即视为正文证据（强于 front-matter）。
+
+    判据强度**不降级**：声明 readme_source 时必须同时给出 license_body_ack，
+    且商业/禁商用词的硬拒绝扫描对**新证据文件**照常生效。
+    """
+
+    def _src(self, **ov):
+        d = src(platform_license=None, readme_source="LICENSE",
+                license_body_ack="fixture：仓库根 LICENSE 即正文证据")
+        d.update(ov)
+        return d
+
+    def test_license_file_proves_license_when_platform_and_frontmatter_are_silent(self):
+        """平台无标签 + front-matter 无许可 + LICENSE 文件写了 MIT → 通过。
+
+        这是 T22 实测到的真实形态（`ASAPPresearch/ABCD`、`budzianowski/multiwoz`）：
+        许可只在 LICENSE 文件里，README 正文一个字都没有。
+        """
+        install_platform(FakePlatform(readme=FAKE_README_CLEAN.replace(
+            "license: Apache License 2.0\n", ""),
+            platform_license=None,
+            license_body="MIT License\n\nCopyright (c) 2021 ASAPP Research\n"))
+        out = audit_license(self._src(expect_license=["mit"]))
+        self.assertEqual(out["license_spdx"], "mit")
+        self.assertIn("以 readme_source='LICENSE' 为单边证据", " ".join(out["audit_checks"]))
+
+    def test_readme_source_without_ack_is_rejected(self):
+        """声明 readme_source 却不写 ack → 拒绝（否则空 ack 就能绕过前两条判据）。"""
+        install_platform(FakePlatform(readme=FAKE_README_CLEAN.replace(
+            "license: Apache License 2.0\n", ""),
+            platform_license=None,
+            license_body="MIT License\n"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(src(platform_license=None, readme_source="LICENSE"))
+        self.assertIn("license_body_ack", str(cm.exception))
+
+    def test_noncommercial_license_body_is_rejected_with_matched_words(self):
+        """LICENSE 文件本身写了禁商用 → 硬拒收，无放行口。
+
+        这一条是判据强度的守护：换证据文件**不能**绕过禁商用扫描。
+        用 hyphen 写法（`Attribution-NonCommercial`）：`NONCOMMERCIAL_PATTERNS` 里
+        `BY-NC` 这一项不匹配 hyphen 形态，所以断言 `BY-NC` 会失败——这里断言真正命中的词。
+        """
+        install_platform(FakePlatform(readme=FAKE_README_CLEAN.replace(
+            "license: Apache License 2.0\n", ""),
+            platform_license=None,
+            license_body="Creative Commons Attribution-NonCommercial 4.0\n"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(self._src(expect_license=["cc-by-4.0"]))
+        msg = str(cm.exception)
+        self.assertIn("NonCommercial", msg)
+        self.assertIn("无放行口", msg)
+
+    def test_noncommercial_hyphenated_body_hits_by_nc_word(self):
+        """hyphen 写法 `BY-NC` 也必须命中并被判无放行口。"""
+        install_platform(FakePlatform(readme=FAKE_README_CLEAN.replace(
+            "license: Apache License 2.0\n", ""),
+            platform_license=None,
+            license_body="Creative Commons BY-NC 4.0\n"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(self._src(expect_license=["cc-by-4.0"]))
+        self.assertIn("BY-NC", str(cm.exception))
+
+    def test_readme_source_licence_conflicts_with_frontmatter(self):
+        """LICENSE 与 front-matter 不一致 → 以正文（LICENSE）为准拒收。
+
+        这一支只在**平台侧有许可**时可达：平台与 front-matter 冲突时，
+        `test_license_conflict_between_platform_and_readme_is_rejected` 已经先拦下了。
+        """
+        install_platform(FakePlatform(
+            readme=FAKE_README_CLEAN,  # front-matter: Apache License 2.0
+            platform_license="Apache License 2.0",
+            license_body="MIT License\n"))
+        with self.assertRaises(LicenseRejected) as cm:
+            audit_license(self._src(expect_license=["mit"]))
+        msg = str(cm.exception)
+        self.assertIn("冲突", msg)
+        self.assertIn("mit", msg)
+
+
+class LicenseNormalizeTests(unittest.TestCase):
+    def test_list_license_with_single_value_normalizes(self):
+        """HuggingFace 的 cardData.license 是 list（`["apache-2.0"]`），必须能归一。"""
+        self.assertEqual(fetch_mod._normalize_license(["apache-2.0"]), "apache-2.0")
+
+    def test_list_license_with_multiple_distinct_values_rejected(self):
+        """多许可的义务是并集 → 归一成 None（绝不挑最宽松的那一份）。"""
+        self.assertIsNone(fetch_mod._normalize_license(["mit", "apache-2.0"]))
+
+    def test_list_license_with_repeated_same_value_ok(self):
+        self.assertEqual(fetch_mod._normalize_license(["cc-by-4.0", "CC-BY-4.0"]), "cc-by-4.0")
+
+    def test_empty_list_and_empty_string_are_none(self):
+        self.assertIsNone(fetch_mod._normalize_license([]))
+        self.assertIsNone(fetch_mod._normalize_license(""))
+
+    def test_front_matter_survives_leading_whitespace(self):
+        """HF 数据卡的 README 实测带前导换行——必须容忍，否则误拒整批采集。"""
+        self.assertEqual(
+            fetch_mod._front_matter_license("\n---\nlicense: apache-2.0\n---\nbody"),
+            "apache-2.0",
+        )
+
+
+class GitHubArchiveTests(unittest.TestCase):
+    """codeload 整包通道：审计与解压。"""
+
+    def _mk_zip(self, entries: dict) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+            for name, content in entries.items():
+                z.writestr(name, content)
+        return buf.getvalue()
+
+    def test_archive_readme_missing_is_a_hard_error(self):
+        """整包里根本没有 README → 硬失败，绝不返回空串给许可扫描。"""
+        g = fetch_mod.GitHubArchive()
+        zip_b = self._mk_zip({"README.md.txt": b"x"})
+        old = fetch_mod.http_get
+        try:
+            fetch_mod.http_get = lambda url, **kw: zip_b if kw.get("binary") else "{}"
+            with self.assertRaises(FetchError) as cm:
+                g.fetch_archive_readme("owner/repo", "master")
+            self.assertIn("README.md", str(cm.exception))
+        finally:
+            fetch_mod.http_get = old
+
+    def test_extract_archive_strips_single_top_level_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td)
+            blob = self._mk_zip({"owner-repo/README.md": b"hello", "owner-repo/LICENSE": b"MIT"})
+            zp = dest / "archive.zip"
+            zp.write_bytes(blob)
+            out = fetch_mod.extract_archive(zp, dest)
+            self.assertEqual(sorted(out), ["LICENSE", "README.md"])
+            self.assertEqual((dest / "README.md").read_bytes(), b"hello")
+
+    def test_extract_archive_rejects_zip_slip(self):
+        """Zip Slip：包内条目指向目标目录之外 → 拒绝解压。"""
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td) / "out"
+            blob = self._mk_zip({"owner/../../evil": b"pwn"})
+            zp = Path(td) / "archive.zip"
+            zp.write_bytes(blob)
+            with self.assertRaises(FetchError) as cm:
+                fetch_mod.extract_archive(zp, dest)
+            self.assertIn("Zip Slip", str(cm.exception))
+            self.assertFalse((Path(td) / "evil").exists())
+
+    def test_process_github_archive_writes_lock(self):
+        """整包来源能走完 process() 并写出台账条目。"""
+        with tempfile.TemporaryDirectory() as td:
+            dest_root = Path(td) / "corpus"
+            dest_root.mkdir()
+            zip_b = self._mk_zip({"owner-repo/README.md": FAKE_README_CLEAN.encode("utf-8"),
+                                  "owner-repo/LICENSE": b"MIT License\n"})
+            old_get, old_dl = fetch_mod.http_get, fetch_mod.http_download_to_file
+            try:
+                fetch_mod.http_get = lambda url, **kw: zip_b if kw.get("binary") else "{}"
+
+                def fake_dl(url, dest, **kw):
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zip_b)
+                    return len(zip_b), hashlib.sha256(zip_b).hexdigest()
+
+                fetch_mod.http_download_to_file = fake_dl
+
+                out = fetch_mod.process(
+                    src(id="owner/repo", platform="github-archive",
+                        readme_source="LICENSE", license_body_ack="fixture",
+                        expect_license=["mit"], files=["*"]),
+                    dry_run=False, out_root=dest_root,
+                    repo_root=REPO_ROOT,
+                )
+                self.assertEqual(out["license_spdx"], "mit")
+                self.assertEqual(out["files"][0]["path"], "archive.zip")
+                # local_file 必须逐字等于真实落盘位置——多拼一层 .zip 会让 recheck 全数报「缺失」
+                self.assertEqual(
+                    out["files"][0]["local_file"],
+                    str(dest_root / "owner__repo" / "archive.zip"),
+                )
+                self.assertTrue((dest_root / "owner__repo" / "README.md").exists())
+                self.assertTrue((dest_root / "owner__repo" / "archive.zip").exists())
+            finally:
+                fetch_mod.http_get, fetch_mod.http_download_to_file = old_get, old_dl
+
+    def test_process_github_archive_rejects_partial_files_declaration(self):
+        """整包来源声明了具体 files → 报错（不完整语料不得入库）。
+
+        必须在**下载之前**拦下：先下载再声明校验的话，不完整语料已经被拉回来了。
+        这里用一个「一旦被调用就抛异常」的下载替身证明下载真的没发生。
+        """
+        with tempfile.TemporaryDirectory() as td:
+            dest_root = Path(td) / "corpus"
+            dest_root.mkdir()
+            old_dl = fetch_mod.http_download_to_file
+            try:
+                def must_not_download(url, dest, **kw):
+                    raise AssertionError(
+                        f"files 声明校验必须在下载之前失败，但下载仍发生了: {url}")
+
+                fetch_mod.http_download_to_file = must_not_download
+                old_get = fetch_mod.http_get
+                # 许可审计会在 process() 开头跑；给 github-archive 一个假的整包内容，
+                # 让审计走「单边证据」分支通过，从而真正测到 files 声明校验这一步。
+                zip_ok = self._mk_zip({
+                    "owner-repo-master/README.md": b"# owner repo\n",
+                    "owner-repo-master/LICENSE": b"Apache License 2.0\n",
+                })
+                def _fake_get(url, **kw):
+                    return zip_ok if kw.get("binary") else "{}"
+
+                fetch_mod.http_get = _fake_get
+                with self.assertRaises(FetchError) as cm:
+                    fetch_mod.process(
+                        src(id="owner/repo", platform="github-archive", files=["data/x.json"],
+                            readme_source="LICENSE", license_body_ack="fixture"),
+                        dry_run=False, out_root=dest_root, repo_root=REPO_ROOT,
+                    )
+                self.assertIn('files=["*"]', str(cm.exception))
+            finally:
+                fetch_mod.http_download_to_file = old_dl
+                fetch_mod.http_get = old_get
 
 
 if __name__ == "__main__":

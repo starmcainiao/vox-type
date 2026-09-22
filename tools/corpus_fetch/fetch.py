@@ -42,14 +42,17 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -359,14 +362,122 @@ class HFMirror(Platform):
         return f"{self.BASE}/datasets/{sid}/resolve/{rev}/{urllib.parse.quote(path, safe='/')}"
 
 
-PLATFORMS: Dict[str, Platform] = {"modelscope": ModelScope(), "hf-mirror": HFMirror()}
+class GitHubArchive(Platform):
+    """github.com 的 codeload 整库 zip（许可证据型来源）。
+
+    WHY 需要这一类（2026-09-22 实测）：本批多行业语料里有两份的**许可证据只存在于 GitHub 仓库文件里**
+    ——`budzianowski/multiwoz` 的 `LICENSE` 文件与 README 第 345-347 行、`ASAPPresearch/ABCD` 的
+    `LICENSE` 文件。它们在 hf-mirror 上只有第三方镜像（许可标签与正文**冲突**，如 `mitermix/abcd`
+    正文写 cc-by-nc-4.0），在 modelscope 上只有 Apache 标签化的镜像。而 `LICENSE` 文件是比平台标签
+    更强的证据，因此必须能直接从源仓库取证。
+
+    为什么用 codeload zip 而不是 raw.githubusercontent.com：后者在本机时断时续
+    （实测同一 URL 先 000、后 200，不可靠），而 `https://codeload.github.com/<owner>/<repo>/zip/refs/heads/<rev>`
+    返回一个完整的确定性 tarball——它同时提供**许可证据**（LICENSE / README）与**语料本体**
+    （data/ 目录），一份产物满足审计与入库两件事。
+
+    形态上的必然限制（写进类里，别让后来人误判成 bug）：
+      - `meta()` 返回空 dict → 平台侧**没有**许可字段，`_platform_license` 返回 None；
+        这类来源的许可只有**正文证据**，审计走 README front-matter + 硬拒绝词扫描。
+        `expect_license` 仍然生效（④），用来声明「本卡认定的许可是什么」。
+      - `tree()` 对整包 zip 没有「平台文件树」——zip 本身不可分文件枚举，
+        只能把整包当成一个文件（sha256 为实测值，`verified_against_platform=false`）。
+      - `download_url()` 因此忽略 `path`，始终返回整包地址；声明 `files` 的非 `*` 具体路径
+        会在 `select_files()` 处**响亮报错**（不完整语料不得入库），这是刻意保留的行为。
+
+    审计时的 README 约定：`readme_raw_url()` 从整包里抽 `<root>/README.md`，`<root>` 取 zip 内
+    顶层目录名（codeload 固定为 `<repo>-master` 这种形态）。**若 README 缺失，审计硬失败**——
+    而不是拿空正文去跑许可词扫描（那会让一份没读过的 README 拿到通行证）。
+    """
+
+    name = "github-archive"
+    BASE = "https://codeload.github.com"
+
+    def meta(self, sid: str) -> Dict[str, Any]:
+        return {}
+
+    def readme_raw_url(self, sid: str, rev: str) -> str:
+        raise FetchError(
+            f"{sid}: github-archive 没有可直接 GET 的 README 原文 URL——README 在整包 zip 内。"
+            f"请改用 audit_license_from_readme()（它会下载整包并从包内抽 README）。"
+        )
+
+    def evidence_url(self, sid: str, rev: str) -> str:
+        return f"https://github.com/{sid}/blob/{rev}/README.md"
+
+    def tree(self, sid: str, rev: str) -> List[Dict[str, Any]]:
+        return []
+
+    def download_url(self, sid: str, rev: str, path: str) -> str:
+        return f"{self.BASE}/{sid}/zip/refs/heads/{urllib.parse.quote(rev, safe='')}"
+
+    def fetch_archive_readme(self, sid: str, rev: str) -> str:
+        """下载整包 zip 并在包内找 README.md，返回其解码后的正文。
+
+        为什么要这一层：codeload zip 只有**一个**可下载单元（整包），README 在包内而不是一个
+        独立的 HTTP URL。若在这里失败就静默返回空串，许可词扫描会在空正文上空转成「通过」——
+        等于给一份**没读过的** README 发通行证（正是 §11.3 加固要避免的事故形态）。所以这里
+        一律硬失败：拉不到包、包不是合法 zip、包内没有 README，都抛 FetchError。
+
+        包内路径约定：codeload 固定把内容放进一个顶层目录（形如 `<repo>-<rev>`），因此
+        README.md 可能在根、也可能在顶层目录下——两者都试，找不到就报**实际有哪些根级条目**，
+        让人一眼看出仓库结构变了（改名/挪位都会在这里暴露）。
+        """
+        url = self.download_url(sid, rev, "")
+        raw = http_get(url, binary=True)
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile as e:
+            raise FetchError(
+                f"{sid}: codeload 返回的不是合法 zip（{len(raw)} 字节）:: {e}"
+                f"（不是合法压缩包时绝不当作 README 缺失的降级路径）"
+            ) from e
+        names = zf.namelist()
+        readme_names = [n for n in names if n.rsplit("/", 1)[-1].lower() == "readme.md" and n.count("/") <= 1]
+        if not readme_names:
+            roots = sorted({n.split("/", 1)[0] for n in names if "/" in n})[:10]
+            raise FetchError(
+                f"{sid}: 整包内未找到 README.md（包内根级条目 {roots}，共 {len(names)} 个条目）——"
+                f"没有 README 就没有正文许可证据，不得当作「无正文限制」放行"
+            )
+        # 优先取根级的 README.md，其次顶层目录下的
+        readme_names.sort(key=lambda n: (n.count("/"), n))
+        with zf.open(readme_names[0]) as f:
+            data = f.read()
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise FetchError(
+                f"{sid}: 包内 README.md 不是合法 UTF-8，无法作为许可证据 :: {e}"
+                f"（严格解码；乱码正文会让许可关键词扫描空转「通过」）"
+            ) from e
+
+
+PLATFORMS: Dict[str, Platform] = {
+    "modelscope": ModelScope(),
+    "hf-mirror": HFMirror(),
+    "github-archive": GitHubArchive(),
+}
 
 
 # ---------------------------------------------------------------------------
 # 许可审计（下载之前）
 # ---------------------------------------------------------------------------
 def _normalize_license(raw: Any) -> Optional[str]:
-    """把平台/README 里的许可写法归一到 SPDX 小写。识别不了的返回 None（= 判据不通过）。"""
+    """把平台/README 里的许可写法归一到 SPDX 小写。识别不了的返回 None（= 判据不通过）。
+
+    注意：HuggingFace 系的平台字段是 **list**（`cardData.license: ["apache-2.0"]`），
+    这里取第一个非空元素归一。只允许**单元素**或**同许可重复**——多元素（真·多许可）
+    一律返回 None 拒收，不做「挑最宽松的那个」这种近似（那会让一份双许可语料被当成
+    宽松那一份入库，而它的实际义务是两者的并集）。
+    """
+    if isinstance(raw, (list, tuple)):
+        vals = [str(x).strip() for x in raw if str(x).strip()]
+        if not vals:
+            return None
+        if len({v.lower() for v in vals}) > 1:
+            return None  # 多许可：义务是并集，不能归一成任何单一 SPDX
+        raw = vals[0]
     if not isinstance(raw, str):
         return None
     s = raw.strip().lower()
@@ -389,8 +500,14 @@ def _normalize_license(raw: Any) -> Optional[str]:
 
 
 def _front_matter_license(readme: str) -> Optional[str]:
-    """从 README 的 YAML front-matter 里取 license 字段（`---\\nlicense: x\\n---`）。"""
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", readme, flags=re.DOTALL)
+    """从 README 的 YAML front-matter 里取 license 字段（``---\\nlicense: x\\n---``）。
+
+    允许 README 以 BOM 或若干空白开头（HuggingFace 系列数据卡的 README 实测带前导换行）。
+    这里必须容忍，否则会把「front-matter 明明写了许可」误判成「无许可」——fail-closed 的
+    代价是少一份语料，但**误拒**会让整批采集在第一次运行时全部假失败。
+    """
+    s = readme.lstrip("\ufeff \t\r\n")
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", s, flags=re.DOTALL)
     if not m:
         return None
     lm = re.search(r"^license\s*:\s*(.+)$", m.group(1), flags=re.MULTILINE | re.IGNORECASE)
@@ -403,6 +520,105 @@ def _platform_license(platform: Platform, sid: str) -> Any:
     if platform.name == "modelscope":
         return meta.get("License")
     return (meta.get("cardData") or {}).get("license")
+
+
+def _readme_source_text(src: Dict[str, Any], platform: Platform, sid: str, rev: str) -> str:
+    """取「正文许可证据」文本。缺省走平台 README 原文；`readme_source` 可覆盖为仓内其他文件。
+
+    为什么要这一层：卡面「单边证据」处理写明——**仓库有 `LICENSE` 文件即视为正文证据**，
+    而且它的效力**强于** README front-matter。但现实中不少源仓库的许可只写在 `LICENSE` 文件里，
+    README 正文根本没有任何许可字样（本批实测：`ASAPPresearch/ABCD`、`budzianowski/multiwoz`）。
+
+    这条分支只用来**替换证据来源**，不放宽任何判据：替换后的正文仍然要跑商业警示词与
+    禁商用词扫描，仍然要过 `expect_license` 核对。同时 `license_body_ack` 是**必填**——
+    不写明「为什么可以改用另一个文件当正文证据」，一律拒绝（防止有人拿任意一份宽松文本
+    顶替真正的许可声明）。缺 README 一律硬失败，不允许空正文进入扫描环节。
+    """
+    rs = src.get("readme_source")
+    if not rs:
+        # 没有 readme_source 时：README 同时充当「正文证据」与「front-matter 来源」。
+        # 因此**不能**返回空串给 readme——空串会让 front-matter 求值成 None，
+        # 进而把一份明明 front-matter 写了许可的语料误判成「只有平台标签，证据不足」。
+        if isinstance(platform, GitHubArchive):
+            # github-archive 没有平台元数据接口，README 原文只能从整包里抽（硬失败，不降级）
+            body = platform.fetch_archive_readme(sid, rev)
+        else:
+            body = http_get(platform.readme_raw_url(sid, rev))
+        return body, body
+
+    ack = src.get("license_body_ack")
+    if not ack:
+        raise LicenseRejected(
+            f"{sid}: 声明了 readme_source={rs!r} 但没有 license_body_ack——"
+            f"改用其他文件当正文证据必须写明理由（防止拿任意宽松文本顶替真正的许可声明）"
+        )
+    if rs.lower() == "readme.md":
+        # 等价于未声明：README 自己就是正文证据，不需要替换，也**不需要** ack。
+        if isinstance(platform, GitHubArchive):
+            return platform.fetch_archive_readme(sid, rev), ""
+        return http_get(platform.readme_raw_url(sid, rev)), ""
+
+    if isinstance(platform, GitHubArchive):
+        # github-archive 没有平台元数据 → README 原文与 LICENSE 原文都从整包里抽。
+        # 整包只下一次，两个文件共用；任一份缺失都硬失败，绝不拿 README 冒充 LICENSE。
+        url = platform.download_url(sid, rev, "")
+        raw = http_get(url, binary=True)
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile as e:
+            raise FetchError(f"{sid}: codeload 返回的不是合法 zip（{len(raw)} 字节）:: {e}") from e
+        readme = _zip_read_text(zf, "README.md", sid)
+        body = _zip_read_text(zf, rs, sid)
+    else:
+        readme = http_get(platform.readme_raw_url(sid, rev))
+        body = http_get(platform.download_url(sid, rev, rs))
+    return body, readme
+
+
+def _zip_read_text(zf: zipfile.ZipFile, rel: str, sid: str) -> str:
+    """从 zip 里读一个文件并按 UTF-8 严格解码。找不到就硬失败，不返回空串。
+
+    找不到一律抛错，而不是回退成 README 或空串——空串会让许可词扫描空转成「通过」，
+    等于给一份**没读过的**文件发通行证（§11.9.2 的实测事故）。
+
+    路径匹配支持两种写法：完整相对路径（如 `TM-1-2019/README.md`，带目录唯一命中）
+    与裸文件名（如 `LICENSE`，按 basename 在所有层级里找）。只认 basename 会让
+    `README.md` 这种在仓库里出现多次的文件命中错误的那一份——所以带目录的声明
+    必须走完整路径匹配，只有裸文件名才退回到 basename 搜索。
+    """
+    names = [n for n in zf.namelist() if not n.endswith("/")]
+    if "/" in rel:
+        candidates = [n for n in names if n == rel or n.endswith("/" + rel)]
+    else:
+        candidates = [n for n in names if n.rsplit("/", 1)[-1] == rel]
+    if not candidates:
+        raise FetchError(f"{sid}: 整包内未找到 {rel}（不得静默降级为其他文件）")
+    candidates.sort(key=lambda n: (n.count("/"), n))
+    with zf.open(candidates[0]) as f:
+        data = f.read()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise FetchError(f"{sid}: 包内 {rel} 不是合法 UTF-8，无法作为许可证据 :: {e}") from e
+
+
+def _read_archive_path(platform: "GitHubArchive", sid: str, rev: str, path: str) -> str:
+    """从 codeload 整包里抽指定文件（raw 域名不可用时用）。找不到就硬失败，不返回空串。"""
+    url = platform.download_url(sid, rev, "")
+    raw = http_get(url, binary=True)
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as e:
+        raise FetchError(f"{sid}: codeload 返回的不是合法 zip（{len(raw)} 字节）:: {e}") from e
+    for n in zf.namelist():
+        if n.endswith("/" + path) or n == path:
+            with zf.open(n) as f:
+                data = f.read()
+            try:
+                return data.decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise FetchError(f"{sid}: 包内 {path} 不是合法 UTF-8，无法作为许可证据 :: {e}") from e
+    raise FetchError(f"{sid}: 整包内未找到 {path}（不得静默降级为 README）")
 
 
 def audit_license(src: Dict[str, Any]) -> Dict[str, Any]:
@@ -428,60 +644,134 @@ def audit_license(src: Dict[str, Any]) -> Dict[str, Any]:
     out["license_platform_raw"] = plat_raw
     out["audit_checks"].append(f"平台 license 字段 = {plat_raw!r} → {plat_lic}")
 
-    # ② README 正文（走原文接口，不是前端页面——前端返回 HTML 外壳，解析必然失败）
-    readme = http_get(platform.readme_raw_url(sid, rev))
-    fm_raw = _front_matter_license(readme)
+    # ② 正文许可证据。两个来源都要拿到，都要跑硬拒绝词扫描：
+    #      · `body_text` = 卡面认定的「正文证据」（缺省是 README；`readme_source` 可换成仓内 LICENSE 等）
+    #      · `readme`    = README 原文（始终要取——正文与 front-matter 冲突时以正文为准）
+    #    绝不允许「拿不到正文」退化成空串：空正文会让 NONCOMMERCIAL_PATTERNS 扫描空转成「通过」，
+    #    等于给一份**没读过的**文件发通行证（§11.9.2 的实测事故）。
+    body_text, readme = _readme_source_text(src, platform, sid, rev)
+    if src.get("readme_source"):
+        out["audit_checks"].append(
+            f"正文证据取自已声明文件 readme_source={src['readme_source']!r}"
+            f"（ack：{src.get('license_body_ack','')[:80]}…）"
+        )
+    elif isinstance(platform, GitHubArchive):
+        out["audit_checks"].append("README 取自 codeload 整包内（该仓库无平台 license 字段）")
+
+    # ②b README front-matter（`license:` 字段）——只对真正取到的 README 原文求值。
+    #    必须先于下面的扫描求值：扫描的错误消息要引用 front-matter 里写的许可。
+    fm_raw = _front_matter_license(readme) if readme else None
     fm_lic = _normalize_license(fm_raw)
     out["license_readme_raw"] = fm_raw
     out["license_evidence_url"] = platform.evidence_url(sid, rev)
     out["audit_checks"].append(f"README front-matter license = {fm_raw!r} → {fm_lic}")
 
+    # ③ 商业警示词：**两处正文都要扫**（只扫一边会让另一边的商业声明漏网）
+    scanned = [("正文证据", body_text)]
+    if readme:
+        scanned.append(("README", readme))
+    commercial_hits: List[str] = []
+    for label, text in scanned:
+        if not text:
+            raise FetchError(
+                f"{sid}: {label} 正文为空，无法作为许可证据"
+                f"（不做空串降级——空正文会让许可词扫描空转「通过」）"
+            )
+        hits = [p for p in COMMERCIAL_WARNING_PATTERNS if re.search(p, text)]
+        if hits:
+            commercial_hits.extend([f"{label}:{h}" for h in hits])
+            ack = src.get("license_keyword_ack")
+            if not ack:
+                raise LicenseRejected(
+                    f"{sid}: {label} 命中商业语料警示词 {hits}，且 sources.json 无 license_keyword_ack"
+                    f"（硬拒绝，不得下载；确需使用请人工核后在该来源上写明 ack 理由）"
+                )
+            out["audit_checks"].append(f"{label} 商业警示词 {hits} 已由人工 ack：{ack}")
+    if not commercial_hits:
+        out["audit_checks"].append("正文证据与 README 均无商业语料警示词")
+
+    # ③b 禁商用/禁演绎声明：**两处都要扫，无逃生口**
+    nc_all: List[str] = []
+    for label, text in scanned:
+        h = [p for p in NONCOMMERCIAL_PATTERNS if re.search(p, text, re.IGNORECASE)]
+        nc_all.extend([f"{label}:{x}" for x in h])
+    # 键名保持原有语义（README 的命中），供既有测试与台账消费方读取
+    out["noncommercial_hits"] = [h[6:] for h in nc_all if h.startswith("README:")]
+    out["commercial_warning_hits"] = [h[6:] for h in commercial_hits if h.startswith("README:")]
+    out["commercial_warning_hits_body"] = [h for h in commercial_hits if not h.startswith("README:")]
+    out["noncommercial_hits_body"] = [h for h in nc_all if not h.startswith("README:")]
+    if nc_all:
+        raise LicenseRejected(
+            f"{sid}: 正文证据/README 含禁商用或禁演绎声明 {nc_all}"
+            f"（front-matter 写的是 {fm_lic}、平台标签写的是 {plat_lic}，"
+            f"以正文为准 → 不可用；无放行口）"
+        )
+    out["audit_checks"].append("正文证据与 README 均无禁商用或禁演绎声明")
+
+    # 平台标签与 front-matter 都不是可识别许可时：只有「显式声明 readme_source + ack」这条路径
+    # 能救——它把证据从平台/front-matter 转移到一份**指定的**文件里。这是卡面「仓库有 LICENSE 文件
+    # 即视为正文证据（强于 front-matter）」这条规则的落地方式。
+    # 注意：**无 ack 就一律拒绝**——否则任何来源都能靠一个空 readme_source 绕过前两条判据。
+    # 只在「显式声明 readme_source」时才去抽新证据文件的许可字面；否则 README 正文里出现的
+    # 任何许可句（比如引用了别的许可证）都会被误当成许可证据，从而把「只有平台标签」这条判据
+    # 悄悄绕过去——这正是 fail-closed 要防的形态。
+    body_lic = _license_sentence_from_text(body_text) if src.get("readme_source") else None
+    if body_lic:
+        out["audit_checks"].append(
+            f"readme_source={src['readme_source']!r} 中的许可字面 → {body_lic}"
+        )
     if plat_lic is None and fm_lic is None:
-        raise LicenseRejected(f"{sid}: 平台与 README 都未给出可识别的许可（不得下载）")
-    if plat_lic is None:
-        raise LicenseRejected(f"{sid}: 平台未给许可，仅有 README={fm_lic}（证据不足，不得下载）")
-    if fm_lic is None:
+        if not body_lic:
+            raise FetchError(
+                f"{sid}: 平台与 README front-matter 都未给出可识别的许可，且 readme_source"
+                f"={'未声明' if not src.get('readme_source') else src.get('readme_source')!r}"
+                f" 也未取到可识别许可（不得下载）"
+            )
+        out["audit_checks"].append(
+            f"平台与 front-matter 均无许可 → 以 readme_source={src['readme_source']!r} 为单边证据"
+            f"（ack 必填；商业/禁商用词硬拒绝与 expect_license 核对仍照跑）"
+        )
+        lic = body_lic
+    elif fm_lic is None:
         raise LicenseRejected(
             f"{sid}: README 无 license front-matter，只有平台标签 {plat_lic}"
             f"（平台标签不可信，不得下载）"
         )
-    if plat_lic != fm_lic:
+    elif plat_lic is None:
+        # 平台侧无许可字段。两条出路：
+        #   · GitHubArchive（codeload 不暴露任何元数据）+ 声明了 readme_source 且取到许可 → 单边证据
+        #   · 否则一律拒绝（平台标签不可信这一侧的反向：只有 README 也不够）
+        if body_lic:
+            out["audit_checks"].append(
+                f"平台无 license 字段 → 以 readme_source={src['readme_source']!r} 为单边证据"
+                f"（ack 必填；商业/禁商用词硬拒绝与 expect_license 核对仍照跑）"
+            )
+            lic = body_lic
+        else:
+            raise LicenseRejected(
+                f"{sid}: 平台未给许可，仅有 README={fm_lic}（证据不足，不得下载）"
+            )
+    else:
+        # 平台标签与 README front-matter 都给了许可：两者必须一致。
+        # 不一致时以 README 正文为准拒收——平台标签不可信（§11.9.2 的实测事故）。
+        if plat_lic != fm_lic:
+            raise LicenseRejected(
+                f"{sid}: 平台标签({plat_lic}) 与 README({fm_lic}) 冲突，以 README 为准 → 不可用"
+            )
+        lic = fm_lic
+
+    # 若正文证据声明的许可与最终采用的许可不一致 → 冲突，以正文为准拒收
+    if body_lic and body_lic != lic:
         raise LicenseRejected(
-            f"{sid}: 平台标签({plat_lic}) 与 README({fm_lic}) 冲突，以 README 为准 → 不可用"
+            f"{sid}: readme_source 声明的许可 {body_lic} 与最终采用的 {lic} 冲突"
+            f"（以正文证据为准 → 不可用，无放行口）"
         )
 
-    lic = fm_lic
     if lic not in ALLOWED_LICENSES:
         raise LicenseRejected(f"{sid}: 许可 {lic} 不在允许集合 {sorted(ALLOWED_LICENSES)} 内")
 
-    # ③ 商业警示词
-    hits = [p for p in COMMERCIAL_WARNING_PATTERNS if re.search(p, readme)]
-    out["commercial_warning_hits"] = hits
-    if hits:
-        ack = src.get("license_keyword_ack")
-        if not ack:
-            raise LicenseRejected(
-                f"{sid}: README 命中商业语料警示词 {hits}，且 sources.json 无 license_keyword_ack"
-                f"（硬拒绝，不得下载；确需使用请人工核后在该来源上写明 ack 理由）"
-            )
-        out["audit_checks"].append(f"商业警示词 {hits} 已由人工 ack：{ack}")
-    else:
-        out["audit_checks"].append("README 无商业语料警示词")
-
-    # ③b 禁商用/禁演绎声明：**无逃生口**
-    # WHY：这一条是 2026-09-18 的实测事故加上的——front-matter 写 apache-2.0、正文写
-    #      CC BY-NC-ND 的语料真实存在（MagicData 方言集），只信 front-matter 会假通过。
-    nc_hits = [p for p in NONCOMMERCIAL_PATTERNS if re.search(p, readme, re.IGNORECASE)]
-    out["noncommercial_hits"] = nc_hits
-    if nc_hits:
-        raise LicenseRejected(
-            f"{sid}: README 正文含禁商用/禁演绎声明 {nc_hits}"
-            f"（front-matter 写的是 {lic}，与正文冲突 → 以正文为准 → 不可用；无放行口）"
-        )
-    out["audit_checks"].append("README 正文无禁商用/禁演绎声明")
-
     # ④ 与声明核对
-    expect = [e.lower() for e in src.get("expect_license", [])]
+    expect = [str(e).lower() for e in src.get("expect_license", [])]
     if expect and lic not in expect:
         raise LicenseRejected(f"{sid}: 实测许可 {lic} 与 sources.json 声明的 {expect} 不符")
     if not expect:
@@ -492,6 +782,31 @@ def audit_license(src: Dict[str, Any]) -> Dict[str, Any]:
     out["license_spdx"] = lic
     out["audit_checks"].append(f"审计通过：许可 = {lic}")
     return out
+
+
+def _license_sentence_from_text(text: str) -> str:
+    """从一份许可正文（典型：LICENSE 文件）里抽出可用于 SPDX 归一的许可字面。
+
+    只认几类最稳的字面：SPDX 标识、`MIT License`、`Apache License, Version 2.0`、
+    `Creative Commons Attribution 4.0`。抽不到就返回空串（由调用方按「无许可」处理）——
+    不猜、不近似匹配，宁可拒收也不把「Uncle Sam License」当成宽松许可放过。
+    """
+    # (正则, 归一结果) —— 正则里带反斜杠的字面量容易和 _normalize_license 的写法不匹配，
+    # 所以这里直接返回**归一后的 SPDX**，不再让调用方二次归一。
+    for pat, lic in (
+        (r"MIT License", "mit"),
+        (r"Apache License,?\s*Version 2\.0", "apache-2.0"),
+        (r"Apache License 2\.0", "apache-2.0"),
+        (r"Creative Commons Attribution 4\.0", "cc-by-4.0"),
+        (r"CC-BY-4\.0", "cc-by-4.0"),
+        (r"CC BY 4\.0", "cc-by-4.0"),
+        (r"Creative Commons Zero v1\.0", "cc0-1.0"),
+        (r"CC0 1\.0", "cc0-1.0"),
+        (r"BSD 3-Clause", "bsd-3-clause"),
+    ):
+        if re.search(pat, text, re.IGNORECASE):
+            return lic
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +839,23 @@ def select_files(src: Dict[str, Any], tree: List[Dict[str, Any]]) -> List[Dict[s
     return picked
 
 
+def archive_entry(rec: Dict[str, Any], archive_sha: str) -> Dict[str, Any]:
+    """把整包 zip 登记为单个台账文件条目（github-archive 专用）。
+
+    `local_file` 直接用传入值，不再推导（旧的 `+ ".zip"` 拼接会让 `recheck` 去找
+    `archive.zip.zip` 而全数报「缺失」——台账与磁盘实物必须逐字对应）。
+    """
+    return {
+        "path": rec["path"],
+        "size_bytes": rec["size_bytes"],
+        "sha256": archive_sha,
+        "declared_sha256": "",
+        "is_lfs": False,
+        "verified_against_platform": False,
+        "local_file": str(Path(rec["local_file"])),
+    }
+
+
 def download_file(src: Dict[str, Any], rec: Dict[str, Any], dest: Path) -> Tuple[int, str]:
     """下载单个文件到 dest，返回 (实测字节数, 实测 sha256)。
 
@@ -531,6 +863,40 @@ def download_file(src: Dict[str, Any], rec: Dict[str, Any], dest: Path) -> Tuple
     """
     url = PLATFORMS[src["platform"]].download_url(src["id"], src.get("revision", DEFAULT_REVISION), rec["path"])
     return http_download_to_file(url, dest)
+
+
+def extract_archive(zip_path: Path, dest_dir: Path) -> List[str]:
+    """把 zip 解到 dest_dir，返回解出的相对路径列表（已剥离单一层级的顶层目录）。
+
+    为什么剥掉顶层目录：codeload zip 的内容统一放在 `<repo>-<rev>/` 下。若不解平，台账里的
+    路径会带一份**不可预测**的前缀（仓库改名就全变了），且下游脚本得先猜顶层名。剥层让
+    「台账里的 path」与「仓库内的相对路径」逐字对应。
+
+    安全：`Zip Slip` 防护——任何指向 dest_dir 之外的条目一律抛错，不静默跳过
+    （静默跳过 = 语料不完整却被当成完整入库）。
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out: List[str] = []
+    with zipfile.ZipFile(zip_path) as zf:
+        entries = [n for n in zf.namelist() if not n.endswith("/")]
+        tops = {n.split("/", 1)[0] for n in entries}
+        strip = ""
+        if len(tops) == 1:
+            top = next(iter(tops))
+            strip = top + "/"
+        for n in entries:
+            rel = n[len(strip):] if n.startswith(strip) else n
+            target = (dest_dir / rel).resolve()
+            if dest_dir.resolve() not in target.parents and target != dest_dir.resolve():
+                raise FetchError(
+                    f"zip 条目越界（Zip Slip），拒绝解压: {n} → {target}"
+                    f"（不允许包内条目写出去自目录之外）"
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(n) as src_f, target.open("wb") as dst_f:
+                dst_f.write(src_f.read())
+            out.append(rel)
+    return out
 
 
 def manifest_digest(files: List[Dict[str, Any]]) -> str:
@@ -722,11 +1088,6 @@ def process(
     if dry_run:
         return {"id": sid, "platform": platform.name, "kind": src["kind"], "dry_run": True, **audit}
 
-    tree = platform.tree(sid, rev)
-    picked = select_files(src, tree)
-    total = sum(f["size"] for f in picked)
-    print(f"    待下 {len(picked)} 个文件，共 {total / 1e6:.1f} MB")
-
     dest_dir = out_root / sid.replace("/", "__")
     # 双保险：语料绝不落进仓库（docs/11 裁定 2）
     resolved = dest_dir.resolve()
@@ -737,31 +1098,80 @@ def process(
         raise FetchError(f"--out-root 不得指向仓库内: {out_root}")
 
     rec_files: List[Dict[str, Any]] = []
-    for f in picked:
-        path = f["path"]
-        dest = dest_dir / path
-        size, sha = download_file(src, f, dest)
-        # 实测 vs 平台声明必须相符——不符说明传输被截断/内容被改
-        if size != f["size"]:
-            raise FetchError(f"{sid}::{path} 体量不符：实测 {size} vs 平台 {f['size']}（不得入库）")
-        if f["declared_sha256"] and sha != f["declared_sha256"]:
-            raise FetchError(
-                f"{sid}::{path} sha256 不符：实测 {sha} vs 平台 {f['declared_sha256']}（不得入库）"
-            )
-        rec_files.append(
-            {
-                "path": path,
-                "size_bytes": size,
-                "sha256": sha,
-                "declared_sha256": f["declared_sha256"],
-                "is_lfs": f["is_lfs"],
-                "verified_against_platform": bool(f["declared_sha256"]),
-                "local_file": str(dest),
-            }
-        )
 
-    n_verified = sum(1 for f in rec_files if f["verified_against_platform"])
-    print(f"    ✓ {len(rec_files)} 个文件已下并校验（{n_verified} 个有平台哈希可交叉核对）")
+    if isinstance(platform, GitHubArchive):
+        # github-archive：只有一个下载单元（整包 zip），没有平台文件树可枚举。
+        # 台账以「整包 = 一个文件」登记，sha256 是实测值（无平台哈希可交叉核对，如实留空）。
+        # 声明了非 `*` 的具体 files 时仍要走 select_files 的缺失核对——那里会响亮报错。
+        declared = src.get("files", ["*"])
+        if "*" not in declared and not src.get("whole_archive_declared_files", False):
+            # 整包来源只有「整包」这一个下载单元，声明具体 files 却不允许整包 = 自相矛盾：
+            # 要么改 `files: ["*"]`，要么显式写 `whole_archive_declared_files: true`
+            # 承认「整包下载、只声明其中几份」并在包内逐个核对存在性。
+            raise FetchError(
+                f"{sid}: github-archive 只支持 files=[\"*\"]（整包）；声明 {declared} 会让"
+                f"「不完整语料当完整入库」。要按需声明文件请加 "
+                f"whole_archive_declared_files: true（下载后逐个核对包内存在性）。"
+            )
+        zip_dest = dest_dir / "archive.zip"
+        size, sha = download_file(
+            {**src, "platform": platform.name, "revision": rev},
+            {"path": "archive.zip"},
+            zip_dest,
+        )
+        n_extracted = extract_archive(zip_dest, dest_dir)
+        rec_files.append(archive_entry({"path": "archive.zip", "size_bytes": size, "local_file": str(zip_dest)}, sha))
+        if "*" in declared:
+            print(f"    ✓ 整包已下并解压到 {dest_dir}（{len(n_extracted)} 个条目，sha256 实测无平台哈希可核对）")
+        else:
+            # 整包来源声明了具体 files 时：必须逐个核对包内是否真的都有，否则就是
+            # 「不完整语料当完整入库」。不匹配就报错，而不是静默收下全部文件。
+            # 比对用「相对路径集合 + 尾段名集合」两种形态，兼容声明里带/不带顶层目录两种写法。
+            rels = set(n_extracted)
+            basenames = {Path(p).name for p in n_extracted}
+            missing = [
+                p for p in declared
+                if p not in rels and Path(p).name not in basenames
+            ]
+            if missing:
+                raise FetchError(
+                    f"{sid}: 声明的 files 在整包内不存在 {missing}（不完整语料不得入库）"
+                )
+            print(
+                f"    ✓ 整包已下并解压到 {dest_dir}（{len(n_extracted)} 个条目，"
+                f"声明的 {len(declared)} 个文件均已核对存在；未声明的其余条目一并落盘，台账只登记整包）"
+            )
+    else:
+        tree = platform.tree(sid, rev)
+        picked = select_files(src, tree)
+        total = sum(f["size"] for f in picked)
+        print(f"    待下 {len(picked)} 个文件，共 {total / 1e6:.1f} MB")
+
+        for f in picked:
+            path = f["path"]
+            dest = dest_dir / path
+            size, sha = download_file(src, f, dest)
+            # 实测 vs 平台声明必须相符——不符说明传输被截断/内容被改
+            if size != f["size"]:
+                raise FetchError(f"{sid}::{path} 体量不符：实测 {size} vs 平台 {f['size']}（不得入库）")
+            if f["declared_sha256"] and sha != f["declared_sha256"]:
+                raise FetchError(
+                    f"{sid}::{path} sha256 不符：实测 {sha} vs 平台 {f['declared_sha256']}（不得入库）"
+                )
+            rec_files.append(
+                {
+                    "path": path,
+                    "size_bytes": size,
+                    "sha256": sha,
+                    "declared_sha256": f["declared_sha256"],
+                    "is_lfs": f["is_lfs"],
+                    "verified_against_platform": bool(f["declared_sha256"]),
+                    "local_file": str(dest),
+                }
+            )
+
+        n_verified = sum(1 for f in rec_files if f["verified_against_platform"])
+        print(f"    ✓ {len(rec_files)} 个文件已下并校验（{n_verified} 个有平台哈希可交叉核对）")
 
     entry = {
         "id": sid,

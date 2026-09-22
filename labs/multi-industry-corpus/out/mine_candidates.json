@@ -1,0 +1,37 @@
+{
+  "_schema": "vox-backflow-mining/1",
+  "run_at": "2026-09-22T12:02:42+08:00",
+  "seed": 20260922,
+  "corpus": "thu-coai/CrossWOZ（train+val+test，系统侧）",
+  "method": {
+    "state_signature": "系统话轮 dialog_act 里 Inform 且值非空的 (域, 槽, 值) 三元组",
+    "skeleton": "common.skeleton —— 与 labs/corpus-harvest/cross_check_template_rate.py 同源",
+    "candidate_rule": "同一状态签名下同一骨架出现 ≥ 3 次",
+    "significance_floor": "状态签名自身出现 ≥ 50 轮",
+    "answer": "M3「日志挖掘 → 话术建议」在公开数据上能走多远：能挖出候选，但覆盖的是「系统确认某个槽的值」这一类窄场景（数据库查询回显），不是通用话术生成。"
+  },
+  "determinism_check": {
+    "same_seed_twice_identical_examples": true
+  },
+  "n_dialogues": null,
+  "n_sys_turns": 50813,
+  "n_sys_turns_with_state_signature": 0,
+  "n_sys_turns_without_state_signature": 50813,
+  "min_sign_state_turns": 50,
+  "min_group_hits": 3,
+  "n_state_signatures": 0,
+  "n_state_signatures_eligible": 0,
+  "n_signature_skeleton_pairs": 0,
+  "n_candidates": 0,
+  "n_sys_turns_covered_by_a_candidate": 0,
+  "coverage_of_all_sys_turns": 0.0,
+  "coverage_of_stateful_sys_turns": 0.0,
+  "candidates_by_group_hits": {
+    ">=50": 0,
+    ">=20": 0,
+    ">=10": 0,
+    ">=3": 0
+  },
+  "top_states_by_candidate_count": {},
+  "sample_candidates": []
+}
