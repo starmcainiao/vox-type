@@ -73,6 +73,8 @@
 | --- | --- |
 | `adapters/framework_kefu/kefu_client.py` | 191 |
 | `adapters/framework_kefu/bridge.py` | 155 |
+| `adapters/tts_omlx/adapter.py` | 146 |
+| `adapters/tts_omlx/postprocess.py` | 133 |
 | `adapters/framework_kefu/hit_query.py` | 129 |
 | `adapters/asr_omlx/adapter.py` | 106 |
 | `adapters/tts_macsay/adapter.py` | 55 |
@@ -80,7 +82,8 @@
 | `adapters/framework_kefu/__init__.py` | 7 |
 | `adapters/asr_omlx/__init__.py` | 2 |
 | `adapters/tts_macsay/__init__.py` | 2 |
-| **合计** | **663** |
+| `adapters/tts_omlx/__init__.py` | 2 |
+| **合计** | **944** |
 
 ### `trigger`（未登记阈值，不参与判定）
 
@@ -124,7 +127,7 @@
 | `cli/__main__.py` | 4 |
 | **合计** | **586** |
 
-全仓合计（50 个 .py 文件）：**5070** 可执行行
+全仓合计（53 个 .py 文件）：**5351** 可执行行
 
 ## 违规
 
