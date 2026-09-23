@@ -3,7 +3,7 @@
 #
 # 定位仓库根 → exec python3 -m cli "$@"。
 # 不依赖安装、不依赖 cwd：仓库根由本脚本自身位置推导，
-#   因此可以从任意目录直接跑 /Volumes/.../vox-type/bin/vox。
+#   因此可以从任意目录直接跑 <仓库路径>/vox-type/bin/vox。
 #
 # WHY 用 `python3 -m cli` 而不是 `python3 <root>/cli/main.py`：
 #   后者会把 cli/ 目录（而非仓库根）放进 sys.path，`import core` / `import compiler`

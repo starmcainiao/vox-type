@@ -77,6 +77,12 @@ FLAG_ALLOW_ALL_SKIPPED = "--allow-all-skipped"
 LOCK_FILENAME = "corpus.lock.json"
 SOURCES_FILENAME = "sources.json"
 
+# 台账里路径值的锚（T36）。**不写机器绝对路径**：台账随仓进公开分发，绝对路径会把本机
+# 盘位布局带出去（发布树六类扫描要求机器盘位与家目录路径零命中，类别见 `docs/18 §一`），
+# 而且绝对路径对**别的机器**本来就不成立。写成 `${CORPUS_ROOT}/<相对>` 后两条同时消失
+# ——本机按同一个环境变量还原，别人按自己的还原（见 `portable_path` / `resolve_portable`）。
+ROOT_PLACEHOLDER = "${CORPUS_ROOT}"
+
 # 可接受的许可（SPDX 小写）。不在这个集合里的许可一律拒绝下载。
 ALLOWED_LICENSES = {"mit", "apache-2.0", "cc-by-4.0", "cc0-1.0", "bsd-3-clause"}
 
@@ -121,6 +127,8 @@ DEFAULT_REVISION = "main"
 LOCK_NOTE = (
     "由 tools/corpus_fetch/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对"
     "（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。"
+    "路径值一律写成 ${CORPUS_ROOT}/<相对>：台账随仓公开分发，不得记录机器绝对路径；"
+    "按同一个环境变量即可还原为本机路径（--recheck 自动还原）。"
 )
 
 
@@ -844,6 +852,7 @@ def archive_entry(rec: Dict[str, Any], archive_sha: str) -> Dict[str, Any]:
 
     `local_file` 直接用传入值，不再推导（旧的 `+ ".zip"` 拼接会让 `recheck` 去找
     `archive.zip.zip` 而全数报「缺失」——台账与磁盘实物必须逐字对应）。
+    传入值应为 `portable_path()` 产出的可移植形式（T36），本函数不做二次改写。
     """
     return {
         "path": rec["path"],
@@ -852,7 +861,7 @@ def archive_entry(rec: Dict[str, Any], archive_sha: str) -> Dict[str, Any]:
         "declared_sha256": "",
         "is_lfs": False,
         "verified_against_platform": False,
-        "local_file": str(Path(rec["local_file"])),
+        "local_file": str(rec["local_file"]),
     }
 
 
@@ -952,7 +961,7 @@ def _hold_lease(lock_path: Path) -> Generator[None, None, None]:
 def _write_doc_locked(lock_path: Path, entries: List[Dict[str, Any]]) -> None:
     """已在锁内时调用：临时文件 + rename 原子落盘，失败不留下半份台账。"""
     doc = {
-        "_schema": "vox-corpus-lock/1",
+        "_schema": "vox-corpus-lock/2",
         "_note": LOCK_NOTE,
         "entries": entries,
     }
@@ -1064,6 +1073,41 @@ def resolve_out_root(out_root: Path, repo_root: Path) -> Path:
     return resolved
 
 
+def portable_path(p: Path, root: Path) -> str:
+    """把仓外落盘路径写成 `${CORPUS_ROOT}/<相对>` 的可移植形式（T36）。
+
+    WHY 不写绝对路径（两条，任一条都够）：
+      1. 台账随仓进公开分发（`docs/11 §11.3` 白盒溯源）——绝对路径会把本机盘位布局带出去，
+         而发布树六类扫描要求机器盘位与家目录路径零命中（类别见 `docs/18 §一`）；
+      2. 绝对路径对**别的机器**本来就不成立，等于「换台机器就没法 --recheck」。
+
+    **落盘路径不在 root 之下 → 抛 FetchError**，不退化成写绝对路径：退化成绝对路径
+    等于把刚修掉的红线又放回去，这种「默默换个写法」正是本仓禁止的静默降级。
+    """
+    rp = Path(p).expanduser().resolve()
+    rr = Path(root).expanduser().resolve()
+    try:
+        rel = rp.relative_to(rr)
+    except ValueError as e:
+        raise FetchError(
+            f"落盘路径不在语料根之下，无法写成可移植形式: {rp}（root={rr}）——"
+            f"台账不得记录机器绝对路径（T36 / docs/11 §11.3）"
+        ) from e
+    return f"{ROOT_PLACEHOLDER}/{rel.as_posix()}"
+
+
+def resolve_portable(value: str, root: Path) -> Path:
+    """把台账里的路径值还原为本机路径（`--recheck` 用）。
+
+    只认 `${CORPUS_ROOT}` 前缀；其余形态原样按 Path 处理——**向后兼容**，
+    旧台账里的裸绝对路径与测试里的临时目录都还能读，免得一改就让历史台账读不动。
+    """
+    if value.startswith(ROOT_PLACEHOLDER):
+        rel = value[len(ROOT_PLACEHOLDER):].lstrip("/")
+        return Path(root).expanduser() / rel
+    return Path(os.path.expanduser(value))
+
+
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
@@ -1120,7 +1164,7 @@ def process(
             zip_dest,
         )
         n_extracted = extract_archive(zip_dest, dest_dir)
-        rec_files.append(archive_entry({"path": "archive.zip", "size_bytes": size, "local_file": str(zip_dest)}, sha))
+        rec_files.append(archive_entry({"path": "archive.zip", "size_bytes": size, "local_file": portable_path(zip_dest, out_root)}, sha))
         if "*" in declared:
             print(f"    ✓ 整包已下并解压到 {dest_dir}（{len(n_extracted)} 个条目，sha256 实测无平台哈希可核对）")
         else:
@@ -1166,7 +1210,7 @@ def process(
                     "declared_sha256": f["declared_sha256"],
                     "is_lfs": f["is_lfs"],
                     "verified_against_platform": bool(f["declared_sha256"]),
-                    "local_file": str(dest),
+                    "local_file": portable_path(dest, out_root),
                 }
             )
 
@@ -1186,15 +1230,20 @@ def process(
         "sha256": manifest_digest(rec_files),
         "files": rec_files,
         "fetched_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "local_path": str(dest_dir),
+        "local_path": portable_path(dest_dir, out_root),
         "why": src.get("why", ""),
         "notes": src.get("notes_override") or ("; ".join(src.get("skip", {}).values()) if src.get("skip") else ""),
     }
     return entry
 
 
-def recheck(lock_path: Path) -> int:
-    """巡检：对台账里每个文件重算 sha256，与台账记录比对。用于事后证明「语料没被动过」。"""
+def recheck(lock_path: Path, root: Path = DEFAULT_CORPUS_ROOT) -> int:
+    """巡检：对台账里每个文件重算 sha256，与台账记录比对。用于事后证明「语料没被动过」。
+
+    `root` 用于把台账里的 `${CORPUS_ROOT}/…` 还原为本机路径（T36）——缺省取
+    `CORPUS_ROOT` 环境变量 / `~/corpus`。**指错根就报「缺失」并以 1 退出**，
+    不静默跳过：巡检没跑起来与巡检通过必须能分辨。
+    """
     if not lock_path.exists():
         print(f"台账不存在: {lock_path}", file=sys.stderr)
         return 2
@@ -1204,9 +1253,12 @@ def recheck(lock_path: Path) -> int:
         print(f"台账不是合法 JSON: {lock_path} :: {e}", file=sys.stderr)
         return 3
     bad = 0
+    unanchored = 0
     for ent in doc.get("entries", []):
         for f in ent.get("files", []):
-            p = Path(f["local_file"])
+            if not str(f["local_file"]).startswith(ROOT_PLACEHOLDER):
+                unanchored += 1
+            p = resolve_portable(f["local_file"], root)
             if not p.exists():
                 print(f"  ✗ 缺失 {p}", file=sys.stderr)
                 bad += 1
@@ -1216,6 +1268,15 @@ def recheck(lock_path: Path) -> int:
                 print(f"  ✗ 被改动 {p}: 台账 {f['sha256'][:16]}… 实测 {sha[:16]}…", file=sys.stderr)
                 bad += 1
     total = sum(len(ent.get("files", [])) for ent in doc.get("entries", []))
+    if unanchored:
+        # 兼容分支被走到就必须留痕：否则「写入侧退回绝对路径」这件事在巡检输出里完全不可见
+        # ——recheck 仍会照常打「异常 0 个」并以 0 退出，红线状态无人能发现。
+        # 只告警、不改退出码：仓外旧台账（v1）本来就是合法可读的，改码会误伤正常用法。
+        print(
+            f"  ⚠ {unanchored}/{total} 条路径未按 {ROOT_PLACEHOLDER} 锚定，按本机路径直读——"
+            f"v1 旧台账属正常兼容；若这是要进公开分发的台账，必须迁移（T36）",
+            file=sys.stderr,
+        )
     print(f"巡检 {total} 个文件，异常 {bad} 个")
     return 1 if bad else 0
 
@@ -1270,7 +1331,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"台账路径: {resolved_lock}（仓外，须在 --out-root 之下）")
 
     if args.recheck:
-        return recheck(resolved_lock)
+        return recheck(resolved_lock, out_root)
 
     sources_path = Path(args.sources) if args.sources else Path(__file__).resolve().parents[2] / SOURCES_FILENAME
     sources = load_sources(sources_path)

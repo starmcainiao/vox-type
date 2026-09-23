@@ -31,7 +31,7 @@
       "禁商用/禁演绎词（无逃生口）",
       "expect_license 核对"
     ],
-    "out_of_repo_note": "管道台账（~/corpus/corpus.lock.json）带绝对路径，属仓外数据，不入库；本文件是仓内镜像，路径一律相对 ~/corpus/。"
+    "out_of_repo_note": "管道台账（~/corpus/corpus.lock.json）属仓外数据，不入库；本文件是仓内镜像，路径一律相对 ~/corpus/。T36 更正（2026-09-23）：管道台账自本次起也**只记 ${CORPUS_ROOT}/<相对>**、不再记机器绝对路径（发布树六类扫描要求机器盘位与家目录路径零命中，类别见 docs/18 §一）；此前那句「带绝对路径」已不成立。"
   },
   "entries": [
     {

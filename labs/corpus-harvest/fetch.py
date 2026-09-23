@@ -49,7 +49,14 @@ LOCK_PATH = HERE / "corpus.lock.json"
 
 # 语料落盘根目录：**必须在仓库之外**（docs/11 裁定 2）
 CORPUS_ROOT = Path(os.environ.get("CORPUS_ROOT", "~/corpus")).expanduser()
-REPO_ROOT = Path("<仓库根>")
+# 仓库根自推（T36）：此前是脱敏成占位符 `<仓库根>` 的——占位符让下面「拒绝写入仓库内」
+# 那两道守卫**静默失效**（任何路径都不被视为仓内路径）。自推既恢复守卫，也不再需要占位符。
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 台账里路径值的锚（T36，与 tools/corpus_fetch/fetch.py 同口径）：台账随仓公开分发，
+# **不得记录机器绝对路径**——发布树六类扫描要求机器盘位与家目录路径零命中（类别见 `docs/18 §一`）；
+# 且绝对路径对别的机器本来就不成立。
+ROOT_PLACEHOLDER = "${CORPUS_ROOT}"
 
 # 可接受的许可（SPDX 小写）。不在这个集合里的许可一律拒绝下载。
 ALLOWED_LICENSES = {"mit", "apache-2.0", "cc-by-4.0", "cc0-1.0", "bsd-3-clause"}
@@ -96,6 +103,36 @@ class FetchError(Exception):
 
 class LicenseRejected(FetchError):
     """许可判据不通过——这是 fail-closed 的正常出口，不是 bug。"""
+
+
+def portable_path(p: Path, root: Path) -> str:
+    """把落盘路径写成 `${CORPUS_ROOT}/<相对>` 的可移植形式（T36）。
+
+    **不在 root 之下 → 抛 FetchError**，不退化成写绝对路径：退化成绝对路径等于把
+    刚修掉的发布树红线又放回去（静默降级，本仓禁止）。
+    """
+    rp = Path(p).expanduser().resolve()
+    rr = Path(root).expanduser().resolve()
+    try:
+        rel = rp.relative_to(rr)
+    except ValueError as e:
+        raise FetchError(
+            f"落盘路径不在语料根之下，无法写成可移植形式: {rp}（root={rr}）——"
+            f"台账不得记录机器绝对路径（T36 / docs/11 §11.3）"
+        ) from e
+    return f"{ROOT_PLACEHOLDER}/{rel.as_posix()}"
+
+
+def resolve_portable(value: str, root: Path) -> Path:
+    """把台账里的路径值还原为本机路径（`--recheck` 用；`portable_path` 的逆）。
+
+    只认 `${CORPUS_ROOT}` 前缀；其余形态（旧台账的裸绝对路径、相对路径）原样按 Path
+    处理——**向后兼容**，免得一改就让历史台账读不动。`root` 由调用方给（CLI 侧 =
+    `--out-root`）：指错根不会静默通过，会逐条报「缺失」并以 1 退出。
+    """
+    if value.startswith(ROOT_PLACEHOLDER):
+        return Path(root).expanduser() / value[len(ROOT_PLACEHOLDER):].lstrip("/")
+    return Path(os.path.expanduser(value))
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +563,7 @@ def process(src: Dict[str, Any], *, dry_run: bool, out_root: Path) -> Dict[str, 
                 "declared_sha256": f["declared_sha256"],
                 "is_lfs": f["is_lfs"],
                 "verified_against_platform": bool(f["declared_sha256"]),
-                "local_file": str(dest),
+                "local_file": portable_path(dest, out_root),
             }
         )
 
@@ -546,7 +583,7 @@ def process(src: Dict[str, Any], *, dry_run: bool, out_root: Path) -> Dict[str, 
         "sha256": manifest_digest(rec_files),
         "files": rec_files,
         "fetched_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "local_path": str(dest_dir),
+        "local_path": portable_path(dest_dir, out_root),
         "why": src.get("why", ""),
         "notes": src.get("notes_override") or ("; ".join(src.get("skip", {}).values()) if src.get("skip") else ""),
     }
@@ -562,7 +599,7 @@ def recheck(out_root: Path) -> int:
     bad = 0
     for e in doc.get("entries", []):
         for f in e.get("files", []):
-            p = Path(f["local_file"])
+            p = resolve_portable(f["local_file"], out_root)
             if not p.exists():
                 print(f"  ✗ 缺失 {p}", file=sys.stderr)
                 bad += 1
@@ -640,8 +677,8 @@ def main() -> int:
         LOCK_PATH.write_text(
             json.dumps(
                 {
-                    "_schema": "vox-corpus-lock/1",
-                    "_note": "由 labs/corpus-harvest/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。",
+                    "_schema": "vox-corpus-lock/2",
+                    "_note": "由 labs/corpus-harvest/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。路径值一律写成 ${CORPUS_ROOT}/<相对>：台账随仓公开分发，不得记录机器绝对路径（T36）。",
                     "entries": merged,
                 },
                 ensure_ascii=False,

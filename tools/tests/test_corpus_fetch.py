@@ -19,7 +19,7 @@ import unittest
 import zipfile
 import urllib.error
 import urllib.request
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -36,9 +36,11 @@ from tools.corpus_fetch.fetch import (  # noqa: E402
     filter_sources,
     manifest_digest,
     merge_lock,
+    portable_path,
     process,
     recheck,
     resolve_out_root,
+    resolve_portable,
     select_files,
     update_lock,
     write_lock,
@@ -722,14 +724,19 @@ class EndToEndOfflineTests(unittest.TestCase):
         # —— 台账段 ——
         write_lock(self.lock_path, [entry])
         doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
-        self.assertEqual(doc["_schema"], "vox-corpus-lock/1")
+        self.assertEqual(doc["_schema"], "vox-corpus-lock/2")
         self.assertEqual(len(doc["entries"]), 1)
         self.assertEqual(doc["entries"][0]["size_bytes"], len(PAYLOAD) + len(EXTRA))
         by_path = {f["path"]: f for f in doc["entries"][0]["files"]}
         self.assertEqual(by_path["data/CSConv.json"]["sha256"], sha256(PAYLOAD))
         self.assertFalse(by_path["meta/manifest.json"]["verified_against_platform"])
-        # 真实文件在盘上 → recheck 零异常
-        self.assertEqual(recheck(self.lock_path), 0)
+        # 真实文件在盘上 → recheck 零异常（T36：台账里是 ${CORPUS_ROOT} 锚定值，
+        # 必须把同一根传进去才还原得到——指错根会报「缺失」，这是设计而非缺陷）
+        self.assertEqual(recheck(self.lock_path, self.out_root), 0)
+        # 负例（同一份台账，根指错）：必须报异常并以 1 退出，不得静默通过
+        wrong_root = self.tmpdir / "not-the-corpus-root"
+        wrong_root.mkdir()
+        self.assertEqual(recheck(self.lock_path, wrong_root), 1)
 
     def test_dry_run_audits_without_downloading_or_writing(self):
         install_platform(FakePlatform())
@@ -1055,6 +1062,7 @@ class LockCriticalSectionTests(unittest.TestCase):
         def reader_writing_second_instance(path):
             path.write_text(
                 json.dumps(
+                    # 故意保留 v1 形态：证明**读旧台账仍然可用**（向后兼容，T36 只升写入侧）
                     {"_schema": "vox-corpus-lock/1", "_note": "n",
                      "entries": [{"id": "concurrent/w", "files": []}]},
                     ensure_ascii=False,
@@ -1114,7 +1122,7 @@ class LockAtomicityTests(unittest.TestCase):
         write_lock(self.lock_path, [{"id": "a/b", "files": []}])
         doc = json.loads(self.lock_path.read_text(encoding="utf-8"))
         self.assertEqual([e["id"] for e in doc["entries"]], ["a/b"])
-        self.assertEqual(doc["_schema"], "vox-corpus-lock/1")
+        self.assertEqual(doc["_schema"], "vox-corpus-lock/2")
         # 原子：没有留下临时文件
         self.assertEqual(list(self.tmpdir.glob("corpus.lock.json.tmp")), [])
         # 并发门禁的占位文件在同目录（仓外），不写进仓库
@@ -1187,6 +1195,41 @@ class RecheckTests(unittest.TestCase):
             {"path": "f2.json", "sha256": sha256(b"def"), "local_file": gone},
         ])
         self.assertEqual(recheck(lock), 1)
+
+    def test_portable_path_anchors_and_refuses_to_escape_root(self):
+        """锚定与越界两条都要钉死：**越界必须抛错，不得退化成写绝对路径**。
+
+        WHY 专门补这一条：注入验证实测——把越界分支改成「静默写绝对路径」时，
+        其余全部测试仍然全绿。也就是说本卡最核心的那条判据原先**没有任何回归守卫**，
+        只有人工注入能发现。
+        """
+        root = self.tmpdir / "root"
+        root.mkdir()
+        inside = root / "a" / "b.json"
+        inside.parent.mkdir(parents=True)
+        inside.write_bytes(b"y")
+        self.assertEqual(portable_path(inside, root), "${CORPUS_ROOT}/a/b.json")
+
+        outside = self.tmpdir / "outside" / "x.json"
+        outside.parent.mkdir()
+        outside.write_bytes(b"x")
+        with self.assertRaises(FetchError) as cm:
+            portable_path(outside, root)
+        # 报错要能定位（带上越界路径与根），且明确指向 T36 的红线
+        self.assertIn("不在语料根之下", str(cm.exception))
+        self.assertIn("T36", str(cm.exception))
+
+    def test_recheck_warns_on_unanchored_ledger_paths(self):
+        """未锚定（v1 旧形态）的路径必须**留痕告警**，但退出码语义不变。"""
+        lock = self._lock_with([
+            {"path": "f1.json", "sha256": sha256(b"abc"), "local_file": self._write_file("d/f1.json", b"abc")},
+        ])
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            rc = recheck(lock, self.tmpdir)
+        self.assertEqual(rc, 0)          # 兼容可读 → 仍退出 0（不得改坏退出码语义）
+        self.assertIn("未按", err.getvalue())  # 但必须在 stderr 留痕
+        self.assertIn("T36", err.getvalue())
 
     def test_recheck_missing_lock_returns_2(self):
         self.assertEqual(recheck(self.tmpdir / "nope.json"), 2)
@@ -1377,11 +1420,19 @@ class GitHubArchiveTests(unittest.TestCase):
                 )
                 self.assertEqual(out["license_spdx"], "mit")
                 self.assertEqual(out["files"][0]["path"], "archive.zip")
-                # local_file 必须逐字等于真实落盘位置——多拼一层 .zip 会让 recheck 全数报「缺失」
+                # local_file 必须是可移植形式（不含机器绝对路径），且**解析后逐字等于真实落盘位置**——
+                # 多拼一层 .zip 会让 recheck 全数报「缺失」（T36 把断言从「字面等于」改为「解析后等于」，
+                # 原意图不变：台账里的路径必须能还原到磁盘实物）。
                 self.assertEqual(
                     out["files"][0]["local_file"],
-                    str(dest_root / "owner__repo" / "archive.zip"),
+                    "${CORPUS_ROOT}/owner__repo/archive.zip",
                 )
+                self.assertEqual(
+                    resolve_portable(out["files"][0]["local_file"], dest_root),
+                    dest_root / "owner__repo" / "archive.zip",
+                )
+                self.assertNotIn(str(dest_root), out["files"][0]["local_file"])
+                self.assertNotIn(str(dest_root), out["local_path"])
                 self.assertTrue((dest_root / "owner__repo" / "README.md").exists())
                 self.assertTrue((dest_root / "owner__repo" / "archive.zip").exists())
             finally:
