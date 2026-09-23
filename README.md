@@ -74,22 +74,36 @@ traced). Zero third-party dependencies.
 
 ## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
 
+> **第一次来？先看 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**——那份从 clone 到听见声音，
+> 每条命令都贴了**实机跑出来的真值输出**，并如实列出当前还不好用的地方。下面是最短版本。
+
 ```sh
 git clone https://github.com/starmcainiao/vox-type && cd vox-type
 
-# 1) 全量测试（十一个测试根）
+# 1) 铸一个业务包（源码 packs/heat_kefu/ → 资产包；预铸成功率必须 100%）
+sh bin/vox pack build packs/heat_kefu --out /tmp/vox-demo/heat-kefu
+
+# 2) 播一句：plan 就是「这一轮要说什么」的 JSON 数组
+printf '[{"key": "opening__1"}, {"key": "opening__2"}]' > /tmp/vox-demo/plan.json
+sh bin/vox run /tmp/vox-demo/plan.json --pack /tmp/vox-demo/heat-kefu --out /tmp/vox-demo/out.wav
+# → hit=2 miss=0 tts_calls=0 first_audio_ms=0.5
+#    ↑ 「零 TTS 调用」就是本项目的字面价值：这两句是磁盘读，不是合成
+afplay /tmp/vox-demo/out.wav      # 听一下（非 macOS 用别的播放器）
+
+# 3) 查包 / 质检
+sh bin/vox pack check packs/heat_kefu --json
+sh bin/vox verify /tmp/vox-demo/heat-kefu
+
+# 4) 跑全量测试（十一个测试根；不装任何第三方依赖）
 for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do
   python3 -m unittest discover -s $d 2>&1 | tail -1
 done
-
-# 2) 铸一个业务包（预铸成功率必须 100%，带病不上线）
-bin/vox pack build packs/heat_kefu --out ~/vox-build/heat-kefu --json
-
-# 3) 查包 / 对拍 / 质检
-bin/vox pack check packs/heat_kefu --json
-bin/vox bench ~/vox-build/heat-kefu --help   # 离线对拍（口径见 docs/08）
-bin/vox verify ~/vox-build/heat-kefu         # 对任意产物跑质检
 ```
+
+> ⚠️ **两个前提**（当前版本，均已登记待补）：缺省合成引擎是 **macOS 自带的 `say`**——
+> Linux 上 `pack build` 会响亮地失败（`say 命令不可用`），换引擎用 `--adapter`；
+> `bench` 另需一份 `--corpus` 语料文件，**仓内暂无示例**。
+> 两者都能照 [`docs/22`](docs/22-五分钟跑起来.md) 抄一份，缺口清单也在那份文档的 §5。
 
 可选评测组件（不装也能跑全量测试）：本机模型服务 oMLX（回读 CER 与 ASR 实测用，
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
