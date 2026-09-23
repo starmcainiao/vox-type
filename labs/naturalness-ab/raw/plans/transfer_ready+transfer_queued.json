@@ -1,0 +1,8 @@
+[
+  {
+    "key": "transfer_ready"
+  },
+  {
+    "key": "transfer_queued"
+  }
+]
