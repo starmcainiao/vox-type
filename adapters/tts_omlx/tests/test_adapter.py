@@ -24,6 +24,7 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from typing import Optional
 
 from adapters.tts_omlx import OmlxTts, TtsError
 

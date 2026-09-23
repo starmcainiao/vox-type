@@ -99,3 +99,25 @@ docs/tasks/T38-adapters-tts-omlx测试的CI环境依赖与假绿修复.md
 **不是还原失败，是 `__pycache__` 陈旧**（原地替换文件后 mtime+size 未触发失效）；
 `find adapters -name __pycache__ -exec rm -rf {} +` 后即恢复全绿。**教训：原地换文件做注入时，
 先清字节码缓存，否则会把「缓存陈旧」误读成「代码没还原」。**
+
+### 追加：本次修复**自己又踩了仓里已写明的坑**（如实记账）
+
+第一版修复用了 `Optional[str]` 注解但**没加 `from typing import Optional`**。本机主解释器是
+**3.14（PEP 649 延迟求值）→ 注解不求值、全绿**；CI 的 **3.12/3.13 在 import 时求值 → NameError**，
+整个 `tts_omlx.tests.test_adapter` 模块**导入即失败**（`unittest.loader._FailedTest`，
+adapters 根 293 → 255 条）。
+
+**这正是 `docs/tasks/01-接手指南` 与 `docs/18` 都已写明的那条教训**——「涉及注解/新语法时要用
+`~/miniforge3/bin/python3`（3.12）复跑关键根」。我读过它，没照做，于是同一类事故当场重演一次。
+
+**追加验收（按规程补做，两个解释器 × 有无 ffmpeg）**：
+
+| 条件 | 结果 |
+|---|---|
+| 3.14 本机 | `adapters` **293 OK** |
+| 3.12（`~/miniforge3`，CI 档） | `adapters` **293 OK** |
+| 3.12 + 最小 PATH（模拟 CI 无 ffmpeg） | `adapters` **293 OK（skipped=1）** |
+| 3.12 全根复跑 | 仅 `assets` 1 条 + `runtime` 3 条红（**即 `§五#22` 的已知冻结区缺陷**），其余全绿 |
+
+**新增过程纪律（本卡副产品，建议提升为仓级惯例）**：**凡新增/修改注解，提交前至少用 3.12 跑一遍改动的根**；
+**凡新增依赖外部可执行文件的测试，用最小 PATH 跑一遍**。两条都是命令，写在这里以免再靠记。
