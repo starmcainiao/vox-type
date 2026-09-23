@@ -214,6 +214,12 @@ python3 cross_check_template_rate.py --out raw/cross_check.json
 | `raw/literal_baseline.json` | 逐字档逐条原始数据 |
 | `raw/semantic_probe.jsonl` + `semantic_probe_summary.json` | 语义档逐条提案与汇总 |
 
+> **分发排除（T37，2026-09-23）**：上表 `raw/semantic_probe.jsonl` **不进公开分发**——
+> 它的每一条都携带语料的 `user_utterance` **逐字原文**（2433 条，实测 800 条 16 字窗口里命中 240 条），
+> 属 `docs/11 §11.7` 排除清单第二条（`labs/**/raw/**` 中含第三方逐字原文的部分）。
+> **不影响 11.8% 的可核验性**：复现走 `§十` 对账表的命令（重跑 `semantic_probe.py` 写 `/tmp/sp.jsonl`），
+> 不依赖这份已提交的原始文件。执行点 = 仓根 `.gitattributes` 的 `export-ignore`（机器强制，不靠人记）。
+
 ### 8.1 下载器踩过的两个坑（**T12 提升为工具时不能丢**）
 
 **坑 1：`optional` 闸门在重写时丢了。** 重写 `fetch.py` 时漏掉 optional 过滤，

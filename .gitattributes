@@ -18,3 +18,11 @@ packs/fin-cs/golden export-ignore
 packs/fin-cs/golden/** export-ignore
 packs/*/golden export-ignore
 packs/*/golden/** export-ignore
+
+# docs/11 §11.7 排除清单第二条：`labs/**/raw/**` 中含第三方语料**逐字原文**的部分。
+# 该条是**内容相关**的（同一目录下并非每个文件都含原文），因此只能逐个确认后登记——
+# 已确认含原文的是语义档探针的逐条输出（每条带一个 `user_utterance` 原句，2433 条）。
+# 逐字档基线与汇总文件经扫描**不含**原文，故不在排除之列。
+# 核验：git archive HEAD | tar -t | grep -c 'labs/corpus-harvest/raw/semantic_probe.jsonl'  # 必须 0
+# （判据要精确到文件——同目录的 semantic_probe_summary.json 是汇总、不含原文，按前缀匹配会误数）
+labs/corpus-harvest/raw/semantic_probe.jsonl export-ignore
