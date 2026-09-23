@@ -1,9 +1,12 @@
-# adapters.tts_omlx.adapter — oMLX 本地神经 TTS 薄适配器（含零样本克隆重铸）。
+# adapters.tts_omlx.adapter — OpenAI 兼容 /v1/audio/speech 客户端（薄适配器，含零样本克隆重铸）。
+# 定位：说的是 OpenAI speech 协议，谁实现这个协议就适配谁——本机 oMLX、Linux 上的
+#   vLLM-Omni / SGLang-Omni，或任意云服务。目录名沿用 tts_omlx 只是历史（不专用 oMLX）。
+#   基址与音色都不写死：VOX_TTS_ENDPOINT（基址）/ VOX_TTS_VOICE（音色）可覆盖，缺省回落常量。
 # 服务出 24 kHz，适配器内用 ffmpeg 降到契约的 16 kHz/单声道/16-bit（runtime.audio 只认这个）。
 # 两条路径都由 env 决定，代码里不写死任何参考音频：
-#   a) 默认音色 —— 不发 ref_audio，带 voice="default"；
+#   a) 默认音色 —— 不发 ref_audio，带 voice=env VOX_TTS_VOICE 或 "default"；
 #   b) 零样本克隆 —— env VOX_TTS_REF（参考音频）+ VOX_TTS_REF_TEXT（转写），缺一即 fail-closed；
-#      voice 取 clone-<参考音频 sha256 前 8 位>（指纹里不出现路径），
+#      voice 取 clone-<参考音频 sha256 前 8 位>（指纹里不出现路径；克隆优先于 VOX_TTS_VOICE），
 #      model_version 为 qwen3-tts-0.6b-base-clone（换音色即换指纹，旧资产自动失效）。
 # 失败纪律 fail-closed：缺 ffmpeg / 空文本 / 未知语速档 / 连接与超时 / 非 2xx / 响应不是合法 WAV /
 # 降采样失败 / 落盘失败一律抛 TtsError，绝不返回静音、空文件或假成功。
@@ -58,19 +61,25 @@ class TtsError(RuntimeError):
 
 
 class OmlxTts:
-    # oMLX 本地神经 TTS 适配器；voice / model_version 随 env 切换默认音色或克隆音色。
+    # OpenAI 兼容 /v1/audio/speech 客户端（oMLX / vLLM-Omni / SGLang-Omni / 云服务同一协议）；
+    # voice / model_version 随 env 切换默认音色或克隆音色。
     # 适配器身份与契约声明（薄适配器不含业务逻辑）
     name, requires_core = "omlx-tts", "^0.1"
     DEFAULT_MODEL_VERSION = DEFAULT_MODEL
     rate_map = {"slow": 0.85, "normal": 1.0, "fast": 1.25}
     capabilities = {"zero_shot_clone": True, "streaming": False, "max_rate_hz": TARGET_RATE}
 
-    def __init__(self, base_url: str = BASE_URL, model: Optional[str] = None, timeout_seconds: float = 600,
+    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None, timeout_seconds: float = 600,
                  ffmpeg: Optional[str] = None, opener: Optional[Any] = None, runner: Optional[Any] = None) -> None:
         # 参数校验失败抛 ValueError，不静默回落到默认值；timeout 需有限正数（0.6B 冷启动实测 68 s）。
-        base, model = (base_url or "").strip().rstrip("/"), (model or os.environ.get("VOX_TTS_MODEL") or DEFAULT_MODEL).strip()
+        # 基址兜底顺序：参数 → env VOX_TTS_ENDPOINT → 常量 BASE_URL（有序可测）；给错值仍 ValueError，不静默回落。
+        # WHY 用 get(k, 默认值) 而非 `env or 默认值`：**设了但为空**的 env（`export VOX_TTS_ENDPOINT="$TTS_HOST"`
+        # 而 TTS_HOST 未定义、或 systemd `Environment=VOX_TTS_ENDPOINT=`）在 `or` 下会被当成"未设"，
+        # 于是请求**悄悄打到本机默认地址**——正是本仓要消除的静默换地址。空串交给下面那道 http 校验响亮拦下。
+        base = (base_url if base_url is not None else os.environ.get("VOX_TTS_ENDPOINT", BASE_URL)).strip().rstrip("/")
+        model = (model or os.environ.get("VOX_TTS_MODEL") or DEFAULT_MODEL).strip()
         if not base.startswith(("http://", "https://")):
-            raise ValueError(f"base_url 必须是 http(s) 地址，实际为 {base_url!r}（oMLX 实测端点为 {BASE_URL}）")
+            raise ValueError(f"base_url 必须是 http(s) 地址，实际为 {base!r}（env VOX_TTS_ENDPOINT / 常量 {BASE_URL}）")
         if not model or not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError(f"model/timeout_seconds 非法: model={model!r} timeout={timeout_seconds!r}（须非空且有限正数）")
         self.base_url, self.model, self.timeout, self._ffmpeg, self._opener, self._runner = (
@@ -91,9 +100,9 @@ class OmlxTts:
 
     @property
     def voice(self) -> str:
-        # 默认 "default"；克隆为 clone-<参考音频 sha256 前 8 位>，指纹里永不出现路径。
+        # 默认音色取 env VOX_TTS_VOICE（缺省回落 DEFAULT_VOICE）；克隆优先：clone-<参考音频 sha256 前 8 位>，指纹里永不出现路径。
         ref = self._clone_ref()
-        return DEFAULT_VOICE if ref is None else CLONE_PREFIX + hashlib.sha256(ref.read_bytes()).hexdigest()[:8]
+        return (os.environ.get("VOX_TTS_VOICE") or DEFAULT_VOICE) if ref is None else CLONE_PREFIX + hashlib.sha256(ref.read_bytes()).hexdigest()[:8]
 
     @property
     def model_version(self) -> str:
@@ -111,9 +120,11 @@ class OmlxTts:
         return self.base_url + SPEECH_ENDPOINT
 
     def _payload(self, text: str, rate: float) -> dict:
-        # 克隆请求体带 base64 ref_audio + ref_text，默认音色只带 voice（实现见 postprocess）。
+        # 克隆请求体带 base64 ref_audio + ref_text 且不带 voice；默认音色只带 voice，
+        # 并以 self.voice 为准（env VOX_TTS_VOICE 由此真的到达服务端，不是发了等于没发）。
         ref = self._clone_ref()
-        return postprocess.build_payload(self.model, text, rate, None if ref is None else ref.read_bytes())
+        payload = postprocess.build_payload(self.model, text, rate, None if ref is None else ref.read_bytes())
+        return {**payload, "voice": self.voice} if ref is None else payload
 
     def synthesize(self, text: str, out_path, rate_key: str = "normal") -> None:
         # 合成并落盘 16kHz/单声道/16-bit WAV；父目录自动创建，任何失败都抛 TtsError。

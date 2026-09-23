@@ -200,7 +200,7 @@
           "layer": "adapters",
           "file": "tts_omlx/adapter.py",
           "path": "adapters/tts_omlx/adapter.py",
-          "executable_lines": 146
+          "executable_lines": 148
         },
         {
           "layer": "adapters",
@@ -374,6 +374,6 @@
     }
   ],
   "total_files": 53,
-  "total_executable_lines": 5351,
+  "total_executable_lines": 5353,
   "violations": []
 }

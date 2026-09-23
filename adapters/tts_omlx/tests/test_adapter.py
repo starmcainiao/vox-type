@@ -10,6 +10,9 @@ adapters.tts_omlx.tests.test_adapter — oMLX TTS 适配器测试
      缺 ffmpeg 抛 TtsError（fail-closed，绝不返回静音/空文件）。
   4. 配置期负例：base_url 非 http(s) / model 空白 / timeout 非正 → ValueError。
   5. 降级链路形状：服务端返回 24kHz → 产物必须被降到 16kHz；产物不合契约 → 抛错。
+  6. env 兜底（T40）：VOX_TTS_ENDPOINT / VOX_TTS_VOICE 生效并真的到达请求体；
+     缺 env 时回落常量；非法 env（非 http(s)）仍抛 ValueError，不得静默回落。
+     克隆路径优先于 VOX_TTS_VOICE（指纹与请求体都不受它影响）。
 
 纪律：除默认音色冒烟外全部离线——用「假响应 / 假 runner」替身注入，
   不联网、不起服务、不用私人录音；替身不是产品件。
@@ -125,7 +128,10 @@ class EnvGuard:
     在 with 外断言」这种写法静默变成测了个空 env。
     """
 
-    KEYS = ("VOX_TTS_REF", "VOX_TTS_REF_TEXT", "VOX_TTS_MODEL", "VOX_FFMPEG")
+    # VOX_TTS_ENDPOINT / VOX_TTS_VOICE 必须一起清：文档教 Linux 用户 export 它们，
+    # 若不清，开发机上一旦 export 过，下面断言常量/默认音色的用例就会假红。
+    KEYS = ("VOX_TTS_REF", "VOX_TTS_REF_TEXT", "VOX_TTS_MODEL", "VOX_FFMPEG",
+            "VOX_TTS_ENDPOINT", "VOX_TTS_VOICE")
 
     def __init__(self, cleared: bool = True) -> None:
         self._saved = {k: os.environ.get(k) for k in self.KEYS}
@@ -206,6 +212,50 @@ class TestAttributes(TmpDir):
         """base_url 非 http(s) → ValueError（不静默回落到默认值）。"""
         with self.assertRaises(ValueError):
             OmlxTts(base_url="not-a-url")
+
+    def test_endpoint_and_voice_env_fallbacks_are_honored(self):
+        """env 兜底真的生效：VOX_TTS_ENDPOINT 覆盖基址、VOX_TTS_VOICE 覆盖音色。
+
+        断言到**出口**而不只是属性：`endpoint()` 拼出的 URL 与 `_payload()` 里的 voice
+        才是服务端真正收到的东西（只改属性、请求体照旧 = 发了等于没发）。
+        CLI 的 `--adapter` 只传「模块:类名」、传不进构造参数，env 是服务器上唯一的入口。
+        """
+        os.environ["VOX_TTS_ENDPOINT"] = "http://127.0.0.1:8123/"
+        os.environ["VOX_TTS_VOICE"] = "Some-Server-Voice"
+        tts = OmlxTts()
+        self.assertEqual(tts.base_url, "http://127.0.0.1:8123", "env 基址应生效（尾斜杠被剥掉）")
+        self.assertEqual(tts.endpoint(), "http://127.0.0.1:8123/v1/audio/speech")
+        self.assertEqual(tts.voice, "Some-Server-Voice")
+        self.assertEqual(tts._payload("任意文本", 1.0)["voice"], "Some-Server-Voice",
+                         "音色必须真的进请求体，否则 VOX_TTS_VOICE 是空转")
+        self.assertEqual(OmlxTts(base_url="http://10.0.0.5:9999").base_url, "http://10.0.0.5:9999",
+                         "显式参数优先于 env（顺序：参数 → env → 常量）")
+
+    def test_endpoint_and_voice_fall_back_to_constants_without_env(self):
+        """不设 env 时回落常量：基址 http://127.0.0.1:10099、音色 default（有序、可预期）。"""
+        tts = self.default_tts()
+        self.assertEqual(tts.base_url, "http://127.0.0.1:10099")
+        self.assertEqual(tts.endpoint(), "http://127.0.0.1:10099/v1/audio/speech")
+        self.assertEqual(tts.voice, "default")
+        self.assertEqual(tts._payload("任意文本", 1.0)["voice"], "default")
+
+    def test_invalid_env_endpoint_still_raises_value_error(self):
+        """非法 VOX_TTS_ENDPOINT（非 http/https，含纯空白）→ ValueError，不得静默回落常量。
+
+        fail-closed 的意义：地址写错时必须响亮地失败，而不是悄悄拿默认端点去合成
+        ——那会表现为「部署到服务器后声音/服务不对，但没人知道为什么」。
+
+        `""`（**设了但为空**）与 "   " 同档：`export VOX_TTS_ENDPOINT="$TTS_HOST"` 而 TTS_HOST
+        未定义、或 systemd `Environment=VOX_TTS_ENDPOINT=`，都会产生空串。若把空串当成「未设」，
+        请求就会**悄悄打到本机默认地址**（静默换地址）。独立复核 2026-09-23 实测发现
+        `or 默认值` 写法下空串确实静默回落——已修成 `get(k, 默认值)`，本用例钉住它。
+        """
+        for bad in ("not-a-url", "ftp://127.0.0.1:10099", "127.0.0.1:10099", "   ", ""):
+            with self.subTest(endpoint=bad):
+                os.environ["VOX_TTS_ENDPOINT"] = bad
+                with self.assertRaises(ValueError) as ctx:
+                    OmlxTts()
+                self.assertIn("base_url", str(ctx.exception))
 
     def test_model_whitespace_only_is_rejected(self):
         """model 为纯空白 → ValueError（不得被当成「未指定」而回落默认模型）。"""
@@ -455,6 +505,21 @@ class TestClonePath(TmpDir):
         self.assertNotIn("voice", payload, "克隆路径不得再发 voice=default")
         self.assertEqual(payload["speed"], 1.0)
 
+    def test_clone_fingerprint_wins_over_voice_env(self):
+        """克隆音色优先于 VOX_TTS_VOICE：指纹与请求体都不受 env 影响（不是两条路混着走）。
+
+        否则 VOX_TTS_VOICE 一设，克隆包的 voice / model_version 就会漂到别的含义上，
+        等于悄悄换了资产身份。
+        """
+        ref = self.write_ref()
+        os.environ["VOX_TTS_VOICE"] = "Some-Server-Voice"
+        os.environ["VOX_TTS_REF"] = str(ref)
+        os.environ["VOX_TTS_REF_TEXT"] = "转写"
+        tts = OmlxTts()
+        self.assertEqual(tts.voice, "clone-" + hashlib.sha256(ref.read_bytes()).hexdigest()[:8])
+        self.assertEqual(tts.model_version, "qwen3-tts-0.6b-base-clone")
+        self.assertNotIn("voice", tts._payload("要说的话", 1.0))
+
     def test_payload_default_path_carries_voice_default(self):
         """默认音色请求体必须带 voice=default，且不出现 ref_audio。"""
         payload = self.default_tts()._payload("要说的话", 0.85)
@@ -533,8 +598,11 @@ class TestDefaultVoiceSmoke(unittest.TestCase):
             self.skipTest("本机 oMLX :10099 未运行（默认音色冒烟需要真服务）")
         tmp = tempfile.mkdtemp()
         try:
-            saved = {k: os.environ.get(k) for k in ("VOX_TTS_REF", "VOX_TTS_REF_TEXT",
-                                                    "VOX_TTS_MODEL", "VOX_FFMPEG")}
+            # 非克隆 env 全部清掉（含 VOX_TTS_ENDPOINT / VOX_TTS_VOICE）：冒烟必须打本机缺省端点、
+            # 用缺省音色，否则开发机上 export 过的地址会把这条用例悄悄指向别处。
+            keys = ("VOX_TTS_REF", "VOX_TTS_REF_TEXT", "VOX_TTS_MODEL", "VOX_FFMPEG",
+                    "VOX_TTS_ENDPOINT", "VOX_TTS_VOICE")
+            saved = {k: os.environ.get(k) for k in keys}
             for k in saved:
                 os.environ.pop(k, None)
             try:

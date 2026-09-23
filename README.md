@@ -100,10 +100,21 @@ for d in core rules assets adapters compiler runtime eval cli tools trigger pack
 done
 ```
 
-> ⚠️ **两个前提**（当前版本，均已登记待补）：缺省合成引擎是 **macOS 自带的 `say`**——
-> Linux 上 `pack build` 会响亮地失败（`say 命令不可用`），换引擎用 `--adapter`；
-> `bench` 另需一份 `--corpus` 语料文件，**仓内暂无示例**。
-> 两者都能照 [`docs/22`](docs/22-五分钟跑起来.md) 抄一份，缺口清单也在那份文档的 §5。
+> ⚠️ **两个前提**：① **缺省合成引擎是 macOS 自带的 `say`**——Linux / 服务器上第一条 `pack build`
+> 会响亮地失败（`say 命令不可用`）。**非 macOS 上改走模型 TTS**：仓内的 `adapters.tts_omlx:OmlxTts`
+> 是 **OpenAI 兼容 `/v1/audio/speech` 客户端**（**不专用 oMLX**——oMLX / vLLM-Omni / SGLang-Omni /
+> 任意云服务说的是同一个协议），把端点用 env 指过去就行，不新增任何第三方依赖：
+>
+> ```sh
+> VOX_TTS_ENDPOINT=http://127.0.0.1:10099 \
+>   sh bin/vox pack build packs/heat_kefu --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-demo/heat-kefu-model
+> ```
+>
+> （`VOX_TTS_ENDPOINT` 缺省就是 `http://127.0.0.1:10099`——本机 oMLX；音色可用 `VOX_TTS_VOICE`
+> 指定，缺省 `default`。端点必须是 http/https：写错会**响亮地**抛 `ValueError`，**不会**替你悄悄
+> 换一个地址。**要免掉 `--adapter` 这个 flag 得改冻结区 `cli/`，需开批**——见 `docs/13` 未完成清单。）
+> ② `bench` 另需一份 `--corpus` 语料文件，**仓内暂无示例**。
+> 两件事都能照 [`docs/22`](docs/22-五分钟跑起来.md) 抄一份，缺口清单也在那份文档的 §5。
 
 可选评测组件（不装也能跑全量测试）：本机模型服务 oMLX（回读 CER 与 ASR 实测用，
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见

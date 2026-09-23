@@ -4,6 +4,12 @@
 
 **职责**：**薄**适配器，把外部能力接进本系统。
 - `tts-*`：TTS 引擎（如 `tts-macsay`、后续 `tts-qwen3`、`tts-cloud`）
+  - **`tts_omlx/` = OpenAI 兼容 `/v1/audio/speech` 客户端**（T40 登记，消除「名字叫 omlx 却不是
+    omlx 专用」的认知债）：它说的是 **OpenAI speech 协议**，谁实现这个协议就适配谁——本机 oMLX、
+    Linux 上的 vLLM-Omni / SGLang-Omni，或任意云服务；**目录名里的 `omlx` 是历史，不是专用**。
+    基址与音色都由 env 决定（`--adapter` 传不进构造参数，env 是服务器上唯一的入口）：
+    `VOX_TTS_ENDPOINT`（缺省 `http://127.0.0.1:10099`）、`VOX_TTS_VOICE`（缺省 `default`）；
+    给错值（非 http/https 的基址）抛 `ValueError`，**不静默回落**。克隆路径优先于 `VOX_TTS_VOICE`。
 - `asr-*`：（后置）语音识别引擎
 - `framework-*`：（后置）框架插件（pipecat / livekit / 自研 organs/voice）
 
