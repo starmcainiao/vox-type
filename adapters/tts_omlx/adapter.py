@@ -10,25 +10,21 @@
 #      model_version 为 qwen3-tts-0.6b-base-clone（换音色即换指纹，旧资产自动失效）。
 # 失败纪律 fail-closed：缺 ffmpeg / 空文本 / 未知语速档 / 连接与超时 / 非 2xx / 响应不是合法 WAV /
 # 降采样失败 / 落盘失败一律抛 TtsError，绝不返回静音、空文件或假成功。
-import base64
+# 拆分（T41 方案 A 铺路）：HTTP 传输与请求体在 transport.OmlxTtsTransport（有界重试也在那一层），
+#   本文件只留编排——参数校验、音色/指纹决策、ffmpeg 归一、落盘与契约复验。
 import hashlib
-import json
 import math
 import os
 import shutil
-import socket
-import ssl
-import subprocess
+import sys
 import tempfile
-import urllib.error
-import urllib.request
 import wave
-from http.client import HTTPException as HttpLibError
-from http.client import IncompleteRead as HttpIncompleteRead
 from pathlib import Path
 from typing import Any, Optional
 
 from . import postprocess
+from .transport import (MAX_RETRIES, NORMALIZE_FAIL_MARKER, OmlxTtsTransport,
+                        RETRY_DELAYS, TtsError)
 
 BASE_URL = "http://127.0.0.1:10099"
 SPEECH_ENDPOINT = "/v1/audio/speech"
@@ -38,26 +34,7 @@ DEFAULT_VOICE = "default"
 DEFAULT_FFMPEG = "ffmpeg"
 TARGET_FMT = (1, 2, 16000)
 TARGET_RATE = TARGET_FMT[2]
-MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 CLONE_PREFIX = "clone-"
-# 有界重试：oMLX 在模型装卸/换载窗口内会以 HTTP 500 拒绝请求
-# （实测文案 "Model '…' is busy; cannot start work while unload is pending…"），
-# 那是引擎瞬时态而非失败合成——重试而非报错，但必须有界，超限仍 fail-closed。
-MAX_RETRIES = 5
-RETRY_DELAYS = (2.0, 5.0, 10.0, 20.0, 30.0)
-BUSY_MARKERS = ("is busy;", "unload is pending", "cannot start work")
-# 阶段故障 → 消息模板（表驱动：逐条 except 会把文件推过 adapters/AGENTS.md §② 的 150 行标准）
-HTTP_STAGES = {socket.timeout: "TTS 请求超时（socket.timeout，{t} 秒）", ssl.SSLError: "TTS TLS 错误（ssl.SSLError）",
-               urllib.error.URLError: "TTS 无法连接（urllib.error.URLError）",
-               HttpLibError: "TTS 响应协议错误（http.client.HTTPException）"}
-READ_STAGES = {HttpIncompleteRead: "TTS 响应读取中断（http.client.IncompleteRead）",
-               HttpLibError: "TTS 响应读取协议错误（http.client.HTTPException）",
-               TimeoutError: "TTS 响应读取超时（TimeoutError）"}
-
-
-# TTS 合成失败统一异常：消息必须含失败原因与上下文，不允许用空文件冒充成功。
-class TtsError(RuntimeError):
-    pass
 
 
 class OmlxTts:
@@ -84,6 +61,8 @@ class OmlxTts:
             raise ValueError(f"model/timeout_seconds 非法: model={model!r} timeout={timeout_seconds!r}（须非空且有限正数）")
         self.base_url, self.model, self.timeout, self._ffmpeg, self._opener, self._runner = (
             base, model, timeout_seconds, ffmpeg if ffmpeg is not None else (os.environ.get("VOX_FFMPEG") or DEFAULT_FFMPEG), opener, runner)
+        self._transport = OmlxTtsTransport(opener=opener, timeout=timeout_seconds, endpoint=self.endpoint())
+        self._normalize_retries = 0  # 归一失败的累计重采次数（供构建侧/测试观测；每次重试必写 stderr）
 
     def _clone_ref(self) -> Optional[Path]:
         # 无 VOX_TTS_REF 返回 None（走默认音色）；env 不完整或文件无效即 fail-closed。
@@ -137,77 +116,59 @@ class OmlxTts:
             raise TtsError(f"创建输出目录失败: {out.parent} ({exc})") from exc
         if out.exists() and out.is_dir():
             raise TtsError(f"目标路径是已存在的目录而非文件: {out}")
-        raw = self._fetch(self._payload(text, self.rate_value(rate_key)))
-        # 定位 ffmpeg；解析不到即 fail-closed，不猜别的工具。
+        # 定位 ffmpeg；解析不到即 fail-closed，不猜别的工具。放请求之前：缺 ffmpeg 属确定性
+        # 失败，连一次服务端请求都不该发（否则白白消耗采样型引擎的算力，还把重试语义弄混）。
         ffmpeg = shutil.which(self._ffmpeg)
         if ffmpeg is None:
             raise TtsError(f"ffmpeg 不可用: {self._ffmpeg!r}（可在 PATH 提供或以 env VOX_FFMPEG 覆盖）——服务出 24 kHz，缺 ffmpeg 无法降到契约 16 kHz")
+        payload = self._payload(text, self.rate_value(rate_key))
         with tempfile.TemporaryDirectory(prefix="vox_tts_omlx_") as tmp:
             src = Path(tmp) / "raw.wav"
-            src.write_bytes(raw)
-            # 一步归一：ffmpeg 降到契约 16k + 首尾静音裁剪 + 峰值归一（神经引擎产物
-            # 不满足预铸质检阈值，归一是合成侧的活）。runner 沿用注入替身以保持可测性。
-            normalized = postprocess.normalize_from(src, ffmpeg=ffmpeg, runner=self._runner)
+            normalized = self._normalize_with_retries(src, ffmpeg, payload, text)
             self._assert_contract(normalized)
             try:
                 shutil.move(str(normalized), str(out))
             except OSError as exc:
                 raise TtsError(f"落盘移动失败: {normalized} -> {out} ({exc})") from exc
 
-    def _fetch(self, payload: dict) -> bytes:
-        # POST 合成请求并读响应；引擎装卸窗口的 500 busy 与连接类故障做有界重试，
-        # 超限仍 fail-closed（不静默返回空产物），末次错误带重试次数便于定位。
-        req = urllib.request.Request(self.endpoint(), data=json.dumps(payload).encode("utf-8"),
-                                     headers={"Content-Type": "application/json"}, method="POST")
+    def _normalize_with_retries(self, src: Path, ffmpeg: str, payload: dict, text: str) -> Path:
+        # 采样型引擎的归一失败是随机态：同一条文本重采会得到**不同的新产物**，所以重试必须
+        # 重新向服务端请求一次合成——只对同一份原始字节重复归一是确定性操作，重试一万次也不会变。
+        # 有界：与传输层重试共用 transport.MAX_RETRIES / RETRY_DELAYS，超限仍 fail-closed。
+        # 留痕：每次重采都打一行 stderr 警告（格式固定，供门禁按「重试」计数）；成功的那条
+        # 不静默通过——第 1 次警告就是它的痕迹。确定性失败在这里一次都不重试，消息原样上抛。
         attempt = 0
         while True:
+            src.write_bytes(self._transport.fetch(payload))
             try:
-                return self._fetch_once(req)
+                return postprocess.normalize_from(src, ffmpeg=ffmpeg, runner=self._runner)
             except TtsError as exc:
-                if not self._retryable(exc) or attempt >= MAX_RETRIES:
+                if not self._transport.is_normalization_failure(exc):
                     raise
+                if attempt >= MAX_RETRIES:
+                    # 耗尽仍失败时把重试次数并进消息：它会随 compiler/prebake.py 的
+                    # failed.reason 自动进构建报告（那边是 f"{type(e).__name__}: {e}"）。
+                    raise TtsError(f"{exc}（归一失败重试已耗尽：共重试 {attempt} 次，上限 {MAX_RETRIES}）") from exc
                 self._sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
                 attempt += 1
+                self._normalize_retries += 1
+                self._warn_normalize_retry(text, attempt, str(exc))
 
-    def _retryable(self, exc: TtsError) -> bool:
-        # 只对「引擎瞬时态」重试：装卸窗口的 500 busy、连接/超时类故障。
-        # 4xx（未知 voice、缺 ref_text）与响应过大是确定性错误，不重试。
-        text = str(exc)
-        return ("HTTP 5" in text or any(m in text for m in BUSY_MARKERS)
-                or any(s in text for s in ("无法连接", "超时", "TLS", "读取", "HTTPException")))
-
-    def _sleep(self, seconds: float) -> None:
+    @staticmethod
+    def _sleep(seconds: float) -> None:
         import time
         time.sleep(seconds)
 
-    def _fetch_once(self, req: urllib.request.Request) -> bytes:
-        # 单次 POST 与响应读取；连接/超时/读取期故障按阶段表收口，HTTPError 带 body 片段。
-        try:
-            response = (self._opener if self._opener is not None else urllib.request.urlopen)(req, timeout=self.timeout)
-        except urllib.error.HTTPError as exc:
-            try:
-                snippet = exc.read()[:200].decode("utf-8", "replace")
-            except (OSError, HttpLibError):
-                snippet = ""
-            raise TtsError(f"TTS 服务端返回 HTTP {exc.code}（urllib.error.HTTPError）→ {self.endpoint()}: {exc.reason} {snippet!r}") from exc
-        except BaseException as exc:
-            raise self._classified(exc, HTTP_STAGES, "TTS 无法连接")
-        try:
-            raw = response.read()
-        except BaseException as exc:
-            raise self._classified(exc, READ_STAGES, "TTS 响应读取失败")
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise TtsError(f"TTS 响应过大（{len(raw)} 字节 > {MAX_RESPONSE_BYTES}），疑似服务端串流")
-        return raw
-
-    def _classified(self, exc: BaseException, stages: dict, stage_kind: str) -> Exception:
-        # 按阶段表把故障归类为 TtsError（消息含阶段与端点）；未归类时按 OSError 兜底，其余原样返回。
-        label = stages.get(type(exc))
-        if label is not None:
-            return TtsError(f"{label.format(t=self.timeout)} → {self.endpoint()}")
-        if isinstance(exc, OSError):
-            return TtsError(f"{stage_kind}（{type(exc).__name__}）→ {self.endpoint()}")
-        return exc
+    @staticmethod
+    def _warn_normalize_retry(text: str, attempt: int, reason: str) -> None:
+        # 固定格式（门禁按「重试」行数计数，不可改字段顺序）：
+        #   [TTS 归一重试] 重试 N/MAX: <文本摘要> | <归一失败原因>
+        # 文本摘要取前 24 个 Unicode 码点（CJK 一个汉字就是一个码点），换行压平防伪造第二条记录。
+        # 用 sys.stderr.write 而非 print(file=sys.stderr)：print 在调用点绑定 stderr 对象，
+        # 测试替身（contextlib.redirect_stderr 或 mock.patch 替换 sys.stderr）都抓不到它——
+        # 而这条警告是唯一的重试留痕，必须可被观测。
+        sample = "".join(c for c in text if c != "\n")[:24] or "<空文本>"
+        sys.stderr.write(f"[TTS 归一重试] 重试 {attempt}/{MAX_RETRIES}: {sample} | {reason}\n")
 
     def _assert_contract(self, path: Path) -> None:
         # 用 wave 复验产物格式与非空——不靠信任 ffmpeg 或归一化步骤的输出。

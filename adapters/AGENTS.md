@@ -89,6 +89,14 @@
    T11 验收登记），它必然要驱动 runtime 播包；这与「业务适配器只吃 core」的普通适配器不同。
    **边界仍硬**：不得 import 内部私有名（下划线）；只走公开 `__all__`。
 
+3. **实现变更（T41，2026-09-23）：`tts_omlx/` 拆出 `transport.py`**——按 §⑨.1 对 asr_omlx 写下的
+   同一思路（「拆传输/协议两层可自然回 150 内，不必长期靠豁免」），把「HTTP 传输 / 请求体 /
+   传输层有界重试」移到 `adapters/tts_omlx/transport.py`，`adapter.py` 回到只做编排
+   （音色 / 指纹 / 克隆 / 落盘 / 契约复验）。实测：`adapter.py` **115** 可执行行、
+   `transport.py` **71**（`tools/structure_budget/check.py` 口径），均 ≤150——**未新增豁免**，
+   §⑨.1 的豁免清单不变。**重试纪律**：归一自检失败的有界重试沿用 `transport.MAX_RETRIES` /
+   `RETRY_DELAYS`，每次重采写 stderr 留痕，超限仍 fail-closed（确定性失败一次都不重试）。
+
 本节登记经第十五批后全仓结构审计（三审计员）发现并补账；原 §⑤ 字面对 framework_kefu 不再单独适用。
 
 ## ⑩ 结构预算（T21 登记，机器可读）

@@ -200,13 +200,19 @@
           "layer": "adapters",
           "file": "tts_omlx/adapter.py",
           "path": "adapters/tts_omlx/adapter.py",
-          "executable_lines": 148
+          "executable_lines": 115
         },
         {
           "layer": "adapters",
           "file": "tts_omlx/postprocess.py",
           "path": "adapters/tts_omlx/postprocess.py",
           "executable_lines": 133
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_omlx/transport.py",
+          "path": "adapters/tts_omlx/transport.py",
+          "executable_lines": 71
         }
       ]
     },
@@ -373,7 +379,7 @@
       ]
     }
   ],
-  "total_files": 53,
-  "total_executable_lines": 5353,
+  "total_files": 54,
+  "total_executable_lines": 5391,
   "violations": []
 }

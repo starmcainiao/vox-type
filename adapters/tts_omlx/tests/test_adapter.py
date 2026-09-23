@@ -20,30 +20,54 @@ adapters.tts_omlx.tests.test_adapter — oMLX TTS 适配器测试
 
 import base64
 import hashlib
+import io
 import os
+import sys
 import shutil
 import struct
 import tempfile
 import unittest
 import wave
+from unittest import mock
+from contextlib import redirect_stderr
 from pathlib import Path
 from typing import Optional
 
 from adapters.tts_omlx import OmlxTts, TtsError
+import adapters.tts_omlx.adapter as adapter_module
+from adapters.tts_omlx.transport import OmlxTtsTransport
 
 
 # ---------------------------------------------------------------------------
 # 测试替身（非产品件）
 # ---------------------------------------------------------------------------
 def make_wav(path: Path, framerate: int = 24000, channels: int = 1,
-             sampwidth: int = 2, frames: int = 2400) -> None:
-    """写一个最小合法 WAV（线性样本，帧数 > 0 且非全零）。"""
+             sampwidth: int = 2, frames: int = 2400, level: Optional[int] = None) -> None:
+    """写一个最小合法 WAV（线性样本，帧数 > 0 且非全零）。
+
+    level：语音段幅值（默认 None = 30000 的线性斜坡，行为不变）。
+    **给造「坏件」用**：归一的第一步是 `_trim`，把首尾各裁到 5 ms（100 样本）的静音垫窗，
+    判据 `abs(s) > SILENCE_THRESHOLD(328)`；然后 `_peak_normalize` 把峰值压到 -10.5 dBFS
+    （≈9783）。想让自检判「头静音超限」，需要**峰值由某个样本决定、而其余 99.9% 的样本
+    落在 328~1024 之间**——那样 pad 被放大到约 9780 ≫ 328，但峰值所在样本被 trim 掉。
+    实测（三段联跑，`_trim` + `_peak_normalize` + 自检）的可用区间是
+    **level ∈ [500, 1000]**：更低被 `_trim` 判全静音，更高则 pad 一起被裁。
+    """
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(channels)
         wf.setsampwidth(sampwidth)
         wf.setframerate(framerate)
-        wf.writeframes(struct.pack("<" + "h" * frames, *range(frames)) if sampwidth == 2
-                       else bytes(frames * sampwidth))
+        if sampwidth == 2:
+            if level is None:
+                samples = [0] * 300 + list(range(max(1, frames - 600))) + [0] * 300
+            else:
+                amp = max(1, int(level))
+                # 头尾各 300 静音；语音段全是 amp；**末位**放 30000 作为峰值锚点——
+                # 峰值必须离开垫窗，否则 `_trim` 会把垫窗一起裁掉，自检通过。
+                samples = [0] * 300 + [amp] * max(1, frames - 600) + [30000] + [0] * 300
+            wf.writeframes(struct.pack("<" + "h" * len(samples), *samples))
+        else:
+            wf.writeframes(bytes(frames * sampwidth))
 
 
 def read_fmt(path: Path) -> tuple:
@@ -65,6 +89,35 @@ class FakeResponse:
 def opener_returning(body: bytes):
     """返回一个「urlopen 替身」：任何请求都回成给定字节。"""
     return lambda req, timeout=None: FakeResponse(body)
+
+
+class NormalizingFakeRunner:
+    """subprocess.run 替身：第几次调用产出哪种产物（按调用次序排脚本）。
+
+    与 FakeRunner 的差别只在「可编排」：一次合成 = 一次 ffmpeg 调用，所以
+    「首次归一失败、第二次成功」就是第 1 次调用产出坏件、第 2 次产出好件。
+    每次调用仍写一个真实合法 WAV，适配器后续的 wave 复核照常穿过产品代码。
+    """
+
+    def __init__(self, steps: list) -> None:
+        self.steps = list(steps)
+        self.calls = 0
+        self.commands = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls += 1
+        self.commands.append(cmd)
+        step = self.steps[self.calls - 1] if self.calls <= len(self.steps) else self.steps[-1]
+        # 关键一：ffmpeg 的活就是把 24 kHz 降到契约 16 kHz，替身必须**产出 16 kHz**，
+        # 否则归一在 `_read_samples` 格式校验处就失败，测到的是「产物格式不符」而非
+        # 「归一自检不过」——那是完全另一条路径，负例会假绿。
+        # 关键二：语音段幅值即「产物质量」，见 make_wav 的 level 说明。
+        make_wav(Path(cmd[-1]), framerate=16000, level=step)
+        result = type("Result", (), {})()
+        result.returncode = 0
+        result.stderr = ""
+        result.stdout = ""
+        return result
 
 
 class FakeRunner:
@@ -176,6 +229,49 @@ class TmpDir(unittest.TestCase):
     def default_tts(self, **kwargs) -> OmlxTts:
         """构造一个不带任何 clone 配置的适配器。"""
         return OmlxTts(**kwargs)
+
+    def _expect_tts_error(self, func, *args, **kwargs) -> Exception:
+        """断言 func(*args) 抛 TtsError 并返回该异常对象。
+
+        为什么不能直接 `with self.assertRaises(TtsError): func(...)`：`assertRaises`
+        作为**语句式调用**（非上下文管理器）在 unittest 里返回 **None**，拿不到异常——
+        于是「断言消息含重试次数」这类检查会静默退化成断言 None。用 `with` 形式才
+        能拿到 `ctx.exception`。
+        """
+        with self.assertRaises(TtsError) as ctx:
+            func(*args, **kwargs)
+        return ctx.exception
+
+    def capture_stderr(self, func):
+        """截住 stderr 执行 func，返回 (stderr 文本, func 的返回值)。
+
+        WHY 要换掉 sleep：归一重试前的退避是真实时钟（2/5/10/20/30 秒），
+        恒失败的用例会把退避全部走一遍——测试只验行为不验节奏，故归零防挂死。
+        stderr 必须截下来：否则「重试后成功」那条就无声通过了。
+
+        两处坑（都已实测踩过）：
+        1. `redirect_stderr` **抓不住** `print(..., file=sys.stderr)`——print 在调用点求值
+           `sys.stderr` 这个文件对象，绕过了 `sys.stderr` 的替换。必须 `mock.patch` 那个
+           对象本身，让 print 拿到替身。
+        3. func 内部请自己用 `self._expect_tts_error(...)` 拿异常对象（见下方）；
+           **不要**直接写 `self.assertRaises(...)` 语句式——unittest 的 assertRaises
+           非上下文形式返回 None，断言会静默退化成测了个空。
+        """
+        buf = io.StringIO()
+        # 坑一（sleep）：产品里是 `self._sleep(...)` 这类**绑定调用**，替身必须是
+        # `staticmethod(...)`——否则 self 会占据第一个形参，实测报
+        # `TypeError: lambda() takes 1 positional argument but 2 were given`。
+        # 替身一旦装错，sleep 就没归零：恒失败用例要真睡满 2+5+10+20+30=67 秒，
+        # 而 stderr 又已被换掉（下面那个坑），于是只看到「警告消失了」——两个坑叠起来
+        # 才造成最初那种「重试根本没发生」的假象。
+        # 坑二（stderr）：产品是 `import sys` 后 `sys.stderr.write(...)`，要 patch 的是
+        # **产品模块那个 sys 对象**的属性，不是 sys 模块自身的属性；且 `buf.getvalue()`
+        # 必须放在 `with` 之外——否则 mock 的 `__exit__` 会把 sys.stderr 换回真终端，
+        # 再 getvalue 时缓冲区已被还原前的写入清空（实测踩到，表现为 `stderr=''`）。
+        with mock.patch.object(OmlxTts, "_sleep", staticmethod(lambda seconds: None)), \
+                mock.patch.object(adapter_module.sys, "stderr", buf):
+            result = func()
+        return buf.getvalue(), result
 
 
 # ============================================================
@@ -624,6 +720,99 @@ class TestDefaultVoiceSmoke(unittest.TestCase):
             self.assertEqual(len(samples), fmt[3])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ============================================================
+# 8. 归一失败（随机型）的有界重采（T41）
+# ============================================================
+@unittest.skipUnless(FFMPEG_BIN, "找不到可用的占位可执行文件，替身用例无法通过适配器的 ffmpeg 可用性检查")
+class TestNormalizeRetry(TmpDir):
+    """「产物归一失败」是有界重采，不是静默重试。
+
+    采样型引擎的归一失败意味着**那一份产物**不合格，重采才会得到不同的新字节——
+    所以重试必须重新向服务端请求一次合成，而非对同一份字节重复归一（确定性操作）。
+    反空转：若重试逻辑被移除，本类的第一条（成功）会抛错、第二条会立即抛错，全部变红。
+    """
+
+    # 语音段幅值 700：归一后 5 ms 垫窗被放大到约 9780 ≫ 328 → 自检报「头静音超限」；
+    # 幅值 30000 是好件（垫窗与语音一起被裁到 5 ms，远低门限）。
+    # 可用区间实测是 [500, 1000]，取中值 700 留余量。
+    BAD_LEVEL = 700
+    GOOD_LEVEL = 30000
+
+    def test_first_failure_then_success_is_retried_exactly_once(self):
+        """首次归一失败、第二次成功 → 最终成功，且 stderr 恰好一条重试警告。"""
+        runner = NormalizingFakeRunner(steps=[self.BAD_LEVEL, self.GOOD_LEVEL])
+        tts = self.default_tts(opener=opener_returning(b"RIFF" + b"\x00" * 100),
+                               ffmpeg=FFMPEG_BIN, runner=runner)
+        out = self.out("retried.wav")
+
+        stderr, _ = self.capture_stderr(lambda: tts.synthesize("欢迎使用黑铁语音助手的开场白", out))
+        lines = [l for l in stderr.splitlines() if "重试" in l]
+
+        self.assertTrue(out.is_file(), "归一失败一次后重采应最终落盘")
+        self.assertEqual(read_fmt(out)[2], 16000)
+        self.assertEqual(len(lines), 1, f"重试警告应恰一次，实际 stderr={stderr!r}")
+        line = lines[0]
+        self.assertIn("1/5", line, "警告须带第几次/上限（格式稳定，门禁按此计数）")
+        self.assertIn("欢迎使用黑铁语音助手的开场白", line, "警告须带该条文本摘要，可定位是哪条")
+        self.assertIn("超限", line, "警告须带失败原因")
+        self.assertEqual(tts._normalize_retries, 1, "重试计数必须可观测")
+        self.assertEqual(len(runner.commands), 2, "重试必须真的重新合成一次（两次 ffmpeg 调用）")
+        self.assertEqual(runner.calls, 2)
+
+    def test_always_failing_normalize_stops_within_max_retries(self):
+        """恒失败 → 必须在 MAX_RETRIES 次内停下（不许挂死），仍抛 TtsError 且带重试次数。"""
+        from adapters.tts_omlx.transport import MAX_RETRIES
+
+        runner = NormalizingFakeRunner(steps=[self.BAD_LEVEL])
+        tts = self.default_tts(opener=opener_returning(b"RIFF" + b"\x00" * 100),
+                               ffmpeg=FFMPEG_BIN, runner=runner)
+        out = self.out("never.wav")
+
+        stderr, error = self.capture_stderr(lambda: self._expect_tts_error(tts.synthesize, "恒失败的合成请求", out))
+        self.assertIn("共重试 %d 次" % MAX_RETRIES, str(error))
+        self.assertEqual(tts._normalize_retries, MAX_RETRIES, "必须重采满上限次")
+        self.assertEqual(runner.calls, MAX_RETRIES + 1, "1 次首试 + MAX_RETRIES 次重采，不多不少")
+        self.assertEqual(len([l for l in stderr.splitlines() if "重试" in l]), MAX_RETRIES)
+        self.assertIn("%d/%d" % (MAX_RETRIES, MAX_RETRIES), stderr, "末次警告须显示打到上限")
+        self.assertFalse(out.exists(), "重试耗尽不得落盘")
+
+    def test_deterministic_failure_is_not_retried(self):
+        """确定性失败（缺 ffmpeg）→ 重试次数为 0，消息与今天一致。"""
+        runner = NormalizingFakeRunner(steps=[self.BAD_LEVEL])
+        tts = self.default_tts(opener=opener_returning(b"RIFF"),
+                               ffmpeg="/definitely/no/such/ffmpeg-binary",
+                               runner=runner)
+        stderr, error = self.capture_stderr(
+            lambda: self._expect_tts_error(tts.synthesize, "测试句子", self.out("d.wav")))
+        self.assertIn("ffmpeg", str(error).lower())
+        self.assertEqual(tts._normalize_retries, 0, "缺 ffmpeg 属确定性失败，不得重试")
+        self.assertEqual(runner.calls, 0)
+        self.assertNotIn("重试", stderr, "确定性失败不得有任何重试留痕")
+
+    def test_empty_text_and_unknown_rate_are_not_retried(self):
+        """空文本 / 未知语速档同样不重试（那些重试一万次也不会变）。"""
+        for kwargs in ({"ffmpeg": FFMPEG_BIN, "runner": NormalizingFakeRunner(steps=[self.GOOD_LEVEL])},
+                       {"ffmpeg": "/definitely/no/such/ffmpeg-binary"}):
+            tts = self.default_tts(opener=opener_returning(b"RIFF"), **kwargs)
+            for text, rate_key in (("测试句子", "definitely_not_a_rate"), ("", "normal")):
+                with self.subTest(text=text, rate=rate_key):
+                    stderr, error = self.capture_stderr(
+                        lambda: self._expect_tts_error(tts.synthesize, text, self.out(), rate_key))
+                    self.assertEqual(tts._normalize_retries, 0)
+                    self.assertNotIn("重试", stderr)
+
+    def test_only_normalization_failure_is_retryable(self):
+        """只有「产物归一失败」这类随机失败才被重采（其余标记不触发重试）。"""
+        self.assertTrue(OmlxTtsTransport.is_normalization_failure(
+            TtsError("产物归一失败: 归一后头静音仍超限: 310.3 ms > 100 ms")))
+        for no_retry in (TtsError("产物格式不符（要求 16kHz/单声道/16-bit 且非空，实际 0Hz）"),
+                         TtsError("空文本无法合成语音（禁止合成静音）"),
+                         TtsError("TTS 服务端返回 HTTP 400（urllib.error.HTTPError）"),
+                         TtsError("未知语速档位: 'turbo'（仅支持: fast, normal, slow）")):
+            with self.subTest(msg=str(no_retry)):
+                self.assertFalse(OmlxTtsTransport.is_normalization_failure(no_retry))
 
 
 if __name__ == "__main__":
