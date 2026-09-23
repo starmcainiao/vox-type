@@ -257,7 +257,9 @@ class TestLookupExpiryFuse(_Tmp):
     def test_lookup_returns_none_after_expiry(self):
         root = _make_pack(self.tmp, {"invalid_at": EXPIRES_STR})
         pack = load_pack(root)
-        entry = self._find(pack)
+        # 注入失效前时刻取条目：**不能走默认 now（=墙钟）**——写死的失效时刻一旦被墙钟
+        # 越过，这条「失效前能取到」的断言就必然转红（日历炸弹，2026-09-23 CI 三档全红即由此）。
+        entry = self._find(pack, now=EXPIRES_BEFORE)
         self.assertIsNotNone(entry)          # 失效前能取到
         self.assertIsNone(self._find(pack, now=EXPIRES_AFTER))
 

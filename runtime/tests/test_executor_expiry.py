@@ -18,7 +18,7 @@ runtime.tests.test_executor_expiry - 过期资产拒播（T18 红线用例）
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import core.metrics_spec as spec
@@ -98,19 +98,27 @@ class TestFutureExpiryPlays(_Tmp):
     def setUp(self):
         super().setUp()
         self.tts = FakeTts()
+        # 失效时刻**相对当前墙钟**构造（T18 遗留修复，2026-09-23 / docs/13 §五#22）。
+        # 原先写死 "2026-09-23T00:00:00Z"——本类有两条用例用**默认 now（=墙钟）**，
+        # 墙钟越过该点后必然转红，测试就成了**日历炸弹**（2026-09-23 CI 三档全红即由此）。
+        # 改相对后任何日期都成立；需要精确时刻的用例仍显式注入 now=，可重放性不变。
+        self.expires = datetime.now(timezone.utc) + timedelta(hours=1)
         self.pack = make_pack_with_expiry(
             self.pack_root,
-            self._with_expiry(default_entries(), "2026-09-23T00:00:00Z"),
+            self._with_expiry(default_entries(), self.expires.isoformat()),
         )
 
     def test_lookup_hits_before_expiry(self):
+        before = datetime.now(timezone.utc) - timedelta(minutes=1)
         entry = self.pack.lookup("greeting", 0, "normal", 0,
-                                 "您好，请问需要什么帮助", now=NOW_BEFORE)
+                                 "您好，请问需要什么帮助", now=before)
         self.assertIsNotNone(entry)
         self.assertEqual(
-            entry.invalid_at,
-            datetime(2026, 9, 23, 0, 0, 0, tzinfo=timezone.utc),
+            entry.invalid_at, self.expires,
+            "落进条目里的失效时刻必须与 manifest 写的一致（UTC）",
         )
+        self.assertGreater(entry.invalid_at, datetime.now(timezone.utc),
+                           "前提：本类是「失效在未来」的正例")
 
     def test_executor_plays_normally(self):
         """正例：invalid_at 在未来 -> Executor 正常播、零 TTS。"""
@@ -131,9 +139,11 @@ class TestFutureExpiryPlays(_Tmp):
 
     def test_lookup_after_expiry_returns_none(self):
         """同一条目在失效后取不出来（与 Executor 判据同一来源）。"""
+        # 同样相对构造：写死的"以后"迟早会变成"以前"（见 setUp 的日历炸弹说明）
         self.assertIsNone(
             self.pack.lookup("greeting", 0, "normal", 0,
-                             "您好，请问需要什么帮助", now=NOW_AFTER))
+                             "您好，请问需要什么帮助",
+                             now=self.expires + timedelta(hours=1)))
 
 
 # ============================================================

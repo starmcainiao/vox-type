@@ -522,9 +522,13 @@ class Executor:
             return FALLBACK, REASON_AUDIO_FILE_MISSING, candidate
 
         # 通过资产层公开 API 取条目（每层只认上一层产物）
+        # **now 必须与调用方同一个**（T18 遗留修复，docs/13 §五#22）：_decide_unit 先用
+        # `self.now` 判过期（`_expired_at`）、确认没过期才走到这里；此处若用默认墙钟，
+        # 两条判据就会在「注入的 now 未过期、墙上时钟已过期」时打架 → lookup 返回 None
+        # → 撞下面那条 fail-closed。判据只有一份来源（`self.now`），不是一份半。
         entry = self.pack.lookup(
             key=key, part_index=part_index, rate_key=rate_key,
-            variant=variant, expected_text=candidate.text,
+            variant=variant, expected_text=candidate.text, now=self.now,
         )
         if entry is None:
             # 诊断与 lookup 结论冲突 = 包在并发中被改动，fail-closed，绝不静默换路
