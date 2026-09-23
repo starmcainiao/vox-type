@@ -91,10 +91,30 @@ class FakeRunner:
         return result
 
 
-# WHY 用 shutil.which 而不是写死路径：仓内文本不得出现本机绝对路径。
-# 这些用例的 runner 是替身，ffmpeg 只用于断言命令行确实带了 16k；
-# 找不到 ffmpeg 时回落 "ffmpeg"，命令行断言依然成立。
-FFMPEG_BIN: str = shutil.which("ffmpeg") or "ffmpeg"
+def _stub_ffmpeg() -> Optional[str]:
+    """给「替身 runner」用例用的 ffmpeg **占位可执行文件**（存在即可，真执行被 runner 接管）。
+
+    WHY 不能是 `shutil.which("ffmpeg") or "ffmpeg"`（2026-09-23 CI 实测踩到）：
+    适配器在合成前会 `shutil.which(self._ffmpeg)` 做**可用性检查**，裸名在没装 ffmpeg 的机器
+    （CI runner）解析不到 → 直接抛 TtsError。后果分两种，**两种都是坏的**：
+
+    · 正向用例（断言命令行带 16k / 产物是契约格式）→ **ERROR**，三档 Python 全红；
+    · 负向用例（断言「格式不合规」「非 0 退出」要抛 TtsError）→ **假绿**：
+      它们因**错误的原因**抛了同一个异常而「通过」，实际只验到「ffmpeg 不存在」，
+      待验的复核逻辑一行没跑到。
+
+    所以占位必须**解析得到**：取任一存在的可执行文件即可（真 ffmpeg 只在需要跑真合成的
+    冒烟用例里才必需，那条另有 skipUnless）。取不到（极端环境）→ None，调用方 skip。
+    """
+    for cand in ("true", "sh"):
+        p = shutil.which(cand)
+        if p:
+            return p
+    return "/bin/sh" if Path("/bin/sh").exists() else None
+
+
+# 不用写死路径的理由不变：仓内文本不得出现本机绝对路径（此处按名字查找，不写字面）。
+FFMPEG_BIN: Optional[str] = _stub_ffmpeg()
 
 
 class EnvGuard:
@@ -293,8 +313,13 @@ class TestSynthesizeFailClosed(TmpDir):
 # ============================================================
 # 4. 降级链路形状：24kHz → 16kHz（离线，假 runner 产出契约格式）
 # ============================================================
+@unittest.skipUnless(FFMPEG_BIN, "找不到可用的占位可执行文件，替身用例无法通过适配器的 ffmpeg 可用性检查")
 class TestDownsampleShape(TmpDir):
-    """服务出 24 kHz，产物必须落在契约的 16 kHz/单声道/16-bit。"""
+    """服务出 24 kHz，产物必须落在契约的 16 kHz/单声道/16-bit。
+
+    **本类全部用 `FakeRunner` 替身**：验的是适配器自己的复核逻辑（命令行参数、产物格式校验、
+    失败不落盘），**不验真 ffmpeg**——真合成的冒烟在 `TestRealSmoke`（另有 skipUnless）。
+    """
 
     def test_output_is_16k_mono_16bit(self):
         """合成产物必须是 16000Hz / 单声道 / 16-bit 且非空。"""
