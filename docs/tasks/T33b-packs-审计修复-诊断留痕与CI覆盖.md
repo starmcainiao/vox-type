@@ -145,7 +145,7 @@ README 的「结果」节补一句：报告自带 `provenance`，可自证语料
    → rc 0 且**无 skip**（新测试类在其中跑掉）。
 5. **空转修正有效**：给出你做的注入验证（把序列档打成全 miss → 对应用例必须红；还原后绿）。
 6. `report.json` 含 `provenance` 三字段且值正确（`yaml_sha256` 与 `shasum -a 256 <yaml>` 一致）；
-   重跑 rc 0；产物里无本机路径（`/Volumes/`、`/Users/`、`kefu-agent`、`newProject` 零命中）。
+   重跑 rc 0；产物里无本机路径（机器盘位路径、家目录路径、宿主仓名、父目录名零命中——类别清单见 `docs/18 §一`）。
 7. 三个测试根 rc 0 与条数：`packs`（**先 build + 设 `KEFU_HEAT_YAML`**）、`adapters`、`trigger`；
    并报十一根合计条数。**退出码单独确认**（`cmd >out 2>&1; echo $?`，不得接管道读 `$?`）。
 8. `.gitignore` 验证：`git check-ignore -v packs/heat_kefu_build/heat-kefu-1/manifest.json` 有输出。

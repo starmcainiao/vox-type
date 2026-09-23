@@ -30,6 +30,11 @@ assets/audio/
 !.zcode/workflows/
 .hermes/
 
+# ZCode 自身的排除清单（工具级配置，随机器生成，非项目产物）——
+# 不入库：它是 ZCode 默认规则集 + 工具提示文本，克隆者不需要；
+# 不 ignore 的代价：它永远挂在 `git status` 里，`git add -A` 会顺手扫进去。
+.zcodeignore
+
 # 云端评测凭据（本地专有，永不入库）
 labs/cloud-bench/.env.local
 *.env.local

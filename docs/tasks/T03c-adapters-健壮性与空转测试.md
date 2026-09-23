@@ -99,7 +99,7 @@ adapter 的临时文件建在**系统临时目录根部**（实测 `/var/folders
 
 ## 验收标准（我会逐条核对）
 
-1. **缺陷 1**：`env PATH= /opt/homebrew/bin/python3 -m unittest discover -s adapters` → **不再出现 ERROR**（应为 `skipped` 计数增加、`OK`）；`. /Volumes/.../python3 -m unittest discover -s adapters -v`（本机有 say）仍全绿；
+1. **缺陷 1**：`env PATH= /opt/homebrew/bin/python3 -m unittest discover -s adapters` → **不再出现 ERROR**（应为 `skipped` 计数增加、`OK`）；`<带 say 的解释器> -m unittest discover -s adapters -v`（本机有 say）仍全绿；
 2. **缺陷 2**：`synthesize('测试', <已存在目录>)` → 抛 `TtsError`（消息含该路径），且该目录内**没有**多出任何文件（我会实测）；
 3. **缺陷 3**：`adapter.py` 里 `subprocess.run(...)` 带 `timeout=`；我用 `unittest.mock` 让 `subprocess.run` 抛 `subprocess.TimeoutExpired` → `synthesize()` 抛 `TtsError` 且消息含超时值；
 4. **缺陷 4**：`test_whitespace_only_text_is_allowed`（或改名后的对应用例）的 except 分支里有**真断言**（我 grep 核对无 `except ...: pass`）；
