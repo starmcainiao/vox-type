@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" role="img" aria-label="vox-type 架构图">
+  <!-- 颜色：深板岩 #1F2937 / 浅板岩 #E7EBF0 / 强调 #B35A2B（文字 #111827 / #4B5563） -->
+  <rect x="0" y="0" width="960" height="420" fill="#FFFFFF"/>
+  <g font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <text x="40" y="36" font-size="19" font-weight="700" fill="#111827">vox-type · 预铸语音资产层 + 双工行为控制器</text>
+    <text x="40" y="58" font-size="12" fill="#6B7280">编译期把流程决定的话术铸成可审核资产；运行期命中即拼接播出，未命中 fail-closed 回宿主 TTS</text>
+
+    <!-- 阶段标签 -->
+    <text x="40" y="84" font-size="11" font-weight="700" fill="#4B5563">编译期（离线，一次）</text>
+    <text x="524" y="84" font-size="11" font-weight="700" fill="#4B5563">运行期（每轮）</text>
+
+    <!-- 箭头标记 -->
+    <defs>
+      <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#4B5563"/>
+      </marker>
+      <marker id="arx" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#B35A2B"/>
+      </marker>
+    </defs>
+
+    <!-- box 1: packs -->
+    <rect x="40" y="100" width="176" height="126" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="58" y="126" font-size="14" font-weight="700" fill="#111827">packs/&lt;业务&gt;/</text>
+    <text x="58" y="146" font-size="12" fill="#4B5563">（源，扩展区）</text>
+    <text x="58" y="172" font-size="12" fill="#111827">phrases.json · script.json</text>
+    <text x="58" y="192" font-size="12" fill="#111827">话术与剧本，纯文本</text>
+    <text x="58" y="212" font-size="11" fill="#6B7280">业务侧只碰这里，内核一行不改</text>
+
+    <!-- box 2: bin/vox -->
+    <rect x="280" y="100" width="176" height="126" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="298" y="126" font-size="14" font-weight="700" fill="#111827">bin/vox</text>
+    <text x="298" y="146" font-size="12" fill="#4B5563">（校验 / 预铸）</text>
+    <text x="298" y="172" font-size="12" fill="#111827">check · build · bench</text>
+    <text x="298" y="192" font-size="12" fill="#111827">verify · run</text>
+    <text x="298" y="212" font-size="11" fill="#6B7280">五类规则 + 四属性校验</text>
+
+    <!-- box 3: assets 包（强调） -->
+    <rect x="520" y="100" width="212" height="126" rx="10" fill="#FBEEE7" stroke="#B35A2B" stroke-width="2"/>
+    <text x="538" y="126" font-size="14" font-weight="700" fill="#111827">assets 包</text>
+    <text x="538" y="146" font-size="12" fill="#4B5563">key → 音频 + 指纹 + TTL</text>
+    <text x="538" y="172" font-size="12" fill="#111827">+ 变体池 + 语速档</text>
+    <text x="538" y="192" font-size="12" fill="#111827">16k 单声道 16-bit</text>
+    <text x="538" y="212" font-size="11" fill="#6B7280">文本指纹防「文音不符」，过期拒播</text>
+
+    <!-- 箭头 A→B→C -->
+    <line x1="216" y1="163" x2="276" y2="163" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="456" y1="163" x2="516" y2="163" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="222" y="156" font-size="10" fill="#6B7280">包源</text>
+    <text x="462" y="156" font-size="10" fill="#6B7280">预铸</text>
+
+    <!-- box 4: runtime -->
+    <rect x="520" y="258" width="212" height="110" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="538" y="284" font-size="14" font-weight="700" fill="#111827">runtime</text>
+    <text x="538" y="304" font-size="12" fill="#4B5563">state → plan → 播</text>
+    <text x="538" y="330" font-size="12" fill="#111827">命中即拼接读出（约 0.2 ms）</text>
+    <text x="538" y="350" font-size="12" fill="#111827">槽位现场合成后接段</text>
+    <text x="538" y="366" font-size="11" fill="#6B7280">双工：耐心窗 / 打断 / 语速收敛</text>
+
+    <!-- assets → runtime -->
+    <line x1="626" y1="226" x2="626" y2="254" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="636" y="244" font-size="10" fill="#6B7280">读包</text>
+
+    <!-- box 5: adapters（回路，强调） -->
+    <rect x="786" y="258" width="144" height="110" rx="10" fill="#FBEEE7" stroke="#B35A2B" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="804" y="284" font-size="14" font-weight="700" fill="#111827">adapters/&lt;宿主&gt;</text>
+    <text x="804" y="304" font-size="12" fill="#4B5563">（扩展区钩子）</text>
+    <text x="804" y="330" font-size="12" fill="#111827">未命中回走宿主</text>
+    <text x="804" y="350" font-size="12" fill="#111827">原 TTS（秒级）</text>
+    <text x="804" y="366" font-size="11" fill="#6B7280">换宿主 = 新写适配器</text>
+
+    <!-- runtime → adapters -->
+    <line x1="732" y1="313" x2="782" y2="313" stroke="#B35A2B" stroke-width="1.6" marker-end="url(#arx)"/>
+    <text x="740" y="306" font-size="10" fill="#B35A2B">未命中</text>
+
+    <!-- 三件核心抽象 -->
+    <line x1="40" y1="392" x2="930" y2="392" stroke="#E7EBF0" stroke-width="1"/>
+    <text x="40" y="408" font-size="11" fill="#4B5563"><tspan font-weight="700" fill="#111827">三件核心抽象</tspan>：plan（控制面，JSON） · asset registry（数据面，key→音频+版本+TTL+变体池+语速档） · duplex controller（行为面，配置+策略）</text>
+  </g>
+</svg>

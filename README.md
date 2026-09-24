@@ -15,6 +15,9 @@
 > 让语音链路里**流程决定的那部分话术**零延迟、零成本、可审核；不确定的部分才动用模型。
 > 定位：**可短路语音栈的覆盖层**——级联链路（ASR→LLM→TTS）里坐在 LLM 与 TTS 之间，
 > 端到端 S2S 模型里做整轮旁路。
+>
+> **第一次来？→ 先读 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**（clone 到听见声音，全真值输出）·
+> 想看可跑的示例 → [`examples/`](examples/README.md) · 想加一个 TTS 引擎 → [`docs/23`](docs/23-如何新增一个TTS引擎.md)
 
 **English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
 dialogue into audited, versioned audio assets, and plays them in ~0.2 ms when the upstream model
@@ -58,24 +61,31 @@ traced). Zero third-party dependencies.
 | **asset registry** | 数据面：`key → 音频 + 版本 + TTL + 变体池 + 语速档`，文本指纹防「文音不符」 | 端上 SQLite+文件 / 服务端 KV |
 | **duplex controller** | 行为面：耐心窗、语速档收敛、留白/背景回应、打断策略 | 配置 + 策略代码 |
 
-## Status（全部实测，口径见 `docs/09` / `docs/13`）
+![vox-type 架构图](docs/media/architecture.svg)
 
-- **十一个测试根 1,547 条全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）——2026-09-23 清掉 T18 遗留的 4 条 TTL 用例（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 `docs/13 §五#22`）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
+（架构图源文件 [`docs/media/architecture.svg`](docs/media/architecture.svg) 是纯文本 SVG，可直接 diff 与审阅；上方 ASCII 版是它的文字等价物。）
+
+## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
+
+- **十一个测试根 1,547 条全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）——2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
   命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
-- **多分句整段也能走快路**（T33：拆句铸入 + 逐字覆盖序列命中，`docs/10 §10.7`）：
+- **多分句整段也能走快路**（拆句铸入 + 逐字覆盖序列命中，[`docs/10 §10.7`](docs/10-接入取景与命中口径.md)）：
   14 条多分句预设话术 **14/14** 序列命中、命中臂拼接 **P50 ≈ 5 ms**（冷缓存首跑 ~22 ms）vs 慢路合成
   **≈ 575 ms**、零 TTS 调用（数字以 `labs/heat-kefu-seq/report.json` 为准）；
 - 回读 CER 基准可复现（本地 ASR 回读，真机闭环 CER 0.0）；方言域 ASR 边界已实测
   （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）；
-- **双工与失效已落地**：四参数各有可观测行为（T19）+ 双工质量三指标可复现（T20，`labs/duplex-quality/`）
-  + 资产 TTL 过期拒播（T18）；预铸查找热路径索引化（T27，10k 条下 0.5–0.8 µs，旧 61–2115 µs）。
+- **双工与失效已落地**：四参数各有可观测行为 + 双工质量三指标可复现（`labs/duplex-quality/`）
+  + 资产 TTL 过期拒播；预铸查找热路径索引化（10k 条下 0.5–0.8 µs，旧 61–2115 µs）。
+  （以上能力的任务级验收记录见 [`docs/tasks/`](docs/tasks/)）
 
 ## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
 
 > **第一次来？先看 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**——那份从 clone 到听见声音，
 > 每条命令都贴了**实机跑出来的真值输出**，并如实列出当前还不好用的地方。下面是最短版本。
+> 示例 plan 与示例语料已落成真文件：[`examples/plan.json`](examples/plan.json)、
+> [`examples/bench-corpus.json`](examples/bench-corpus.json)（逐条命令见 [`examples/README.md`](examples/README.md)）。
 
 ```sh
 git clone https://github.com/starmcainiao/vox-type && cd vox-type
@@ -113,12 +123,23 @@ done
 > （`VOX_TTS_ENDPOINT` 缺省就是 `http://127.0.0.1:10099`——本机 oMLX；音色可用 `VOX_TTS_VOICE`
 > 指定，缺省 `default`。端点必须是 http/https：写错会**响亮地**抛 `ValueError`，**不会**替你悄悄
 > 换一个地址。**要免掉 `--adapter` 这个 flag 得改冻结区 `cli/`，需开批**——见 `docs/13` 未完成清单。）
-> ② `bench` 另需一份 `--corpus` 语料文件，**仓内暂无示例**。
-> 两件事都能照 [`docs/22`](docs/22-五分钟跑起来.md) 抄一份，缺口清单也在那份文档的 §5。
+> ② `bench` 另需一份 `--corpus` 语料文件——**现在仓内有了一份**：[`examples/bench-corpus.json`](examples/bench-corpus.json)
+> （`sh bin/vox bench /tmp/vox-demo/heat-kefu --corpus examples/bench-corpus.json`）。
+> 端点与音色的写法照 [`docs/22`](docs/22-五分钟跑起来.md) 抄，其余缺口清单也在那份文档的 §5。
 
 可选评测组件（不装也能跑全量测试）：本机模型服务 oMLX（回读 CER 与 ASR 实测用，
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
 `adapters/framework_kefu/`（环境变量 `KEFU_AGENT_ROOT` 指向其仓根）。
+
+## 演示素材（可直接看 / 直接听）
+
+| 素材 | 是什么 | 怎么复现 |
+|---|---|---|
+| 🎧 [demo.wav](docs/media/demo.wav) | 一段真人耳朵能听差的快路播报——**由 [`packs/heat_kefu`](packs/heat_kefu/) 的自造话术经 `sh bin/vox run` 生成**（`hit` 命中、`tts_calls=0`，是磁盘读不是合成） | 复现命令写在 [`examples/README.md`](examples/README.md)；输出即本文件 |
+| 🗺️ [architecture.svg](docs/media/architecture.svg) | 架构图（纯文本 SVG，可 diff、可离线打开，无外链图片） | 上方 Architecture 一节的 ASCII 图是它的文字等价物 |
+
+数据口径：`demo.wav` 的文本全部来自 `packs/heat_kefu/` 的自造 demo 文案，
+不含任何用户录音或真实会话（分级见 `packs/heat_kefu/admission.md`）。
 
 ## Documentation
 
@@ -132,6 +153,9 @@ done
 | **开源语音栈坐标与前置包适配判断**（能插在哪、接缝在哪；含未核实清单） | [`docs/21`](docs/21-开源语音栈坐标与前置包适配判断-2026-09.md) |
 | **合规自审记录**（预铸准入 + 数据许可，拍板人已签字） | [`docs/20`](docs/20-合规自审记录.md) |
 | 前置包定位 / 未完成清单（单一事实源） | [docs/12](docs/12-前置包-定位与任务清单.md) · [`docs/13`](docs/13-未完成清单.md) |
+| **五分钟跑起来**（唯一一份上手指南，clone → 听见声音） | [`docs/22`](docs/22-五分钟跑起来.md) |
+| **如何新增一个 TTS 引擎**（新人 how-to：契约项 / 接口 / 测试） | [`docs/23`](docs/23-如何新增一个TTS引擎.md) |
+| **示例 plan 与示例语料**（可跑，含演示音频复现命令） | [`examples/`](examples/README.md) |
 | 全部任务卡与逐卡验收记录 / 实验区 | `docs/tasks/` · `labs/` |
 
 ## Roadmap

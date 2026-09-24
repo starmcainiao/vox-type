@@ -44,6 +44,8 @@ bin/vox          CLI 入口（POSIX sh 薄壳，仓库内可直接跑，不依�
 labs/    [实验]  一次性实验与外部对拍（**不进任何层的契约**）；产物自带口径与原始数据，
                 例如 labs/chain-bench/（链路级语音对拍，见 docs/09）
 tools/   [扩]    仓外数据获取与派生（只写仓外，不进任何层契约）
+examples/[扩]    新人示例：plan 与语料真文件（`plan.json` / `bench-corpus.json`），
+                `README.md` 与 `docs/22` 指向这里（T42，2026-09-23）
 ```
 
 ## 四、CLI 约定（命令名冻结；`docs/08-CLI口径.md` 定行为、退出码与错误分类）
