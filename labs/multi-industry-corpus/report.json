@@ -1,0 +1,319 @@
+{
+  "rows": [
+    {
+      "dataset": "thu-coai/CrossWOZ（系统侧 sys，中文五域）",
+      "metric": "flow_decided_rate",
+      "rate": 0.1186,
+      "n": 50813,
+      "side": "system",
+      "method_strength": "强（标注驱动）",
+      "method": "系统侧 dialog_act 的 intent ∈ {welcome, greet, thank, bye, reqmore} 计为流程决定；口径强弱分档见 provenance.method_strength",
+      "side_detail": "标注驱动（intent），分母不含 action 埋点轮。"
+    },
+    {
+      "dataset": "ASAPPresearch/ABCD（agent 侧，英文电商客服）",
+      "metric": "flow_decided_rate",
+      "rate": 0.5837,
+      "n": 131611,
+      "side": "system(agent) + action(36482 turns)",
+      "method_strength": "中（action 埋点是强证据；agent 部分仍是文本启发式）",
+      "method": "分母含 `action` 角色（业务动作埋点 36482 轮，占分母 27.7%，直接计为流程决定）+ agent 话轮 95129 按 EN_FLOW_PATTERNS 文本形态判（命中 40334 轮）；合计 flow_decided_turns=76816。agent-only 值 0.4240 在 out/occ_a.json 的 agent_flow_rate_text_only 字段可查，机器产物 side 写法为 'system(agent) + action'",
+      "side_detail": "分母 n=131611 = agent 话轮 95129 + action 话轮 36482。action = 业务动作埋点，直接计为流程决定，占分母 36482/131611 = 27.7%——即本行 0.5837 里约 27.7pp 来自埋点轮、只有约 0.4240 来自 agent 文本形态命中（agent-only = 40334/95129；含 action 后 = 76816/131611）。只看 side 粗写法的读者会误以为 58.37% 全是 agent 侧话轮占比。"
+    },
+    {
+      "dataset": "budzianowski/multiwoz 2.2（SYSTEM 侧，英文七域）",
+      "metric": "flow_decided_rate",
+      "rate": 0.1594,
+      "n": 71522,
+      "side": "system",
+      "method_strength": "弱（无标注，只能读作下界）",
+      "method": "无对话行为标注，纯 EN_FLOW_PATTERNS 文本形态启发式",
+      "side_detail": "该域分母不含 action 埋点轮——ABCD 的 27.7pp 埋点成分在本行不存在，跨集横比时先读 side。"
+    },
+    {
+      "dataset": "budzianowski/multiwoz 2.1（SYSTEM 侧，含 SYSTEM-* 对话行为）",
+      "metric": "flow_decided_rate",
+      "rate": 0.6464,
+      "n": 71524,
+      "side": "system",
+      "method_strength": "中（SYSTEM-* act 是行为标签，语义粒度粗于 CrossWOZ 的 intent）",
+      "method": "按 SYSTEM-* act 名（*-request/-offer/-book 等）判为流程决定；与上一行是**同一批话轮**的另一种口径（见 comparison_note 第 3 点）",
+      "side_detail": "该域分母不含 action 埋点轮——ABCD 的 27.7pp 埋点成分在本行不存在，跨集横比时先读 side。"
+    },
+    {
+      "dataset": "google-research-datasets/Taskmaster TM-1（ASSISTANT 侧，英文六域）",
+      "metric": "flow_decided_rate",
+      "rate": 0.1545,
+      "n": 156971,
+      "side": "system(assistant)",
+      "method_strength": "弱（无标注，只能读作下界）",
+      "method": "无对话行为标注，纯 EN_FLOW_PATTERNS 文本形态启发式（self-dialogs + woz-dialogs 合并）",
+      "side_detail": "分母全是 ASSISTANT 话轮，无 action 埋点轮；与 ABCD 的混合分母不可直接横比。"
+    },
+    {
+      "dataset": "thu-coai/CrossWOZ（系统侧 sys，中文五域）",
+      "metric": "instruction_template_rate",
+      "rate": 0.2758,
+      "n": 50813,
+      "side": "system",
+      "method_strength": "强（同源判据，非口径近似）",
+      "method": "骨架=去实体值后的文本；可复用=同语料内骨架出现≥5次。与客服 1.8% 同一判据，可直接对照",
+      "side_detail": "标注驱动（intent），分母不含 action 埋点轮。"
+    },
+    {
+      "dataset": "ASAPPresearch/ABCD（agent 侧原始口径）",
+      "metric": "instruction_template_rate",
+      "rate": 0.7623,
+      "n": 131611,
+      "side": "system(agent)",
+      "method_strength": "口径可比性参考项（非独立结论）",
+      "method": "同骨架判据。高值部分来自该语料本身已高度模板化的电商客服话术"
+    },
+    {
+      "dataset": "ASAPPresearch/ABCD（agent 侧 delexed 口径，同数据的去实体化版本）",
+      "metric": "instruction_template_rate",
+      "rate": 0.7615,
+      "n": 95129,
+      "side": "system(agent)",
+      "method_strength": "口径可比性修正项，不是独立结论",
+      "method": "同一份 ABCD 数据的 delexed 版本，用于检验「高模板化」是否只是实体值归一化造成的假象——0.7623 vs 0.7615，差 0.08pp，说明**不是**"
+    },
+    {
+      "dataset": "budzianowski/multiwoz 2.2（SYSTEM 侧）",
+      "metric": "instruction_template_rate",
+      "rate": 0.4706,
+      "n": 71522,
+      "side": "system",
+      "method_strength": "强（同源判据）",
+      "method": "同骨架判据"
+    },
+    {
+      "dataset": "budzianowski/multiwoz 2.1（SYSTEM 侧）",
+      "metric": "instruction_template_rate",
+      "rate": 0.4448,
+      "n": 71524,
+      "side": "system",
+      "method_strength": "强（同源判据）",
+      "method": "同骨架判据"
+    },
+    {
+      "dataset": "google-research-datasets/Taskmaster TM-1（ASSISTANT 侧）",
+      "metric": "instruction_template_rate",
+      "rate": 0.72,
+      "n": 156971,
+      "side": "system(assistant)",
+      "method_strength": "强（同源判据）",
+      "method": "同骨架判据",
+      "side_detail": "分母全是 ASSISTANT 话轮，无 action 埋点轮；与 ABCD 的混合分母不可直接横比。"
+    },
+    {
+      "dataset": "AmazonScience/MASSIVE zh-CN（用户侧，原始转写 utt，18 场景）",
+      "metric": "instruction_template_rate",
+      "rate": 0.0168,
+      "n": 16521,
+      "side": "user",
+      "method_strength": "强（同源判据，原始转写）",
+      "method": "读的是用户的指令文本，**不是系统话术**；n=16521 = train 11514 + dev 2033 + test 2974（各分区单独算：train 0.0106 / dev 0.0 / test 0.0024）"
+    },
+    {
+      "dataset": "xliuhw/NLU-Evaluation-Data HWU64（用户侧，answer 列=数据集自带的已归一化规范写法）",
+      "metric": "instruction_template_rate",
+      "rate": 0.8579,
+      "n": 25685,
+      "side": "user",
+      "method_strength": "强（同源判据），但**输入已被预归一化**，不可与原始转写直接横比",
+      "method": "HWU64 的 answer 列是数据集自带的规范写法，骨架高频项形如 `@ @ @ @ @`（实体值已被替换为英文占位）；换成原始用户文本 `question` 列是 0.9996（n=20818，骨架几乎全是同一句模板提示语）——两列的高值都来自**归一化/提示语结构**，不是「用户话术天然模板化」"
+    },
+    {
+      "dataset": "AmazonScience/MASSIVE zh-CN（用户侧，annot_utt 列=已加方括号实体标注的写法）",
+      "metric": "instruction_template_rate",
+      "rate": 0.1193,
+      "n": 16521,
+      "side": "user",
+      "method_strength": "口径对照项，不是结论",
+      "method": "同一份 MASSIVE zh-CN，换成 annot_utt 列（实体被 [date : …] 之类方括号包住，正好命中骨架判据的第一条替换规则）→ 0.0168 涨到 0.1193。用于证明**列选择本身就能把模板化率放大 7 倍**，与 HWU64 的高值同源"
+    }
+  ],
+  "comparison_note": "主指标=系统/助手侧「流程决定话轮」占比；辅指标=「指令模板化率」（去实体值后的句式骨架在同语料内出现≥5次的话轮占比）。两者测的不是同一件事，**不能横比数值**。\n\n（1）与客服 23.0% 的对照（基线 n=25810，出处 labs/corpus-harvest/README.md:155，1855 通真实电话）：唯一一对**口径真正可比**的对是 CrossWOZ 11.86%（n=50813）对客服 23.0%（n=25810）——都是中文、都是对话行为标注驱动。CrossWOZ **低 11.14pp**，原因是 CrossWOZ 的系统侧是任务对话助手，仪式 intent 只有 5 类（welcome/greet/thank/bye/reqmore），而客服那 23.0% 的七类词表还含合规提示/转人工等客服专属流程轮。也就是说：换到另一个中文任务对话域，预铸可行空间**只缩不涨**——这是本批最保守也最硬的结论。\n\n（2）偏高不能反推客服偏低。ABCD 58.37% 与 MultiWOZ 2.1 64.64% 都远高于 23.0%，但这两族的口径把「业务动作埋点」（ABCD 的 action 角色，直接计流程决定）和「系统反问/提议确认」（MultiWOZ 2.1 的 *-request/-offer/-book）也算作流程决定——这两族在客服七类词表里没有对应项，属于**口径更宽**，只能说它们那 58%/65% 里有一部分不是客服意义上的流程轮，不能据此说客服 23.0% 偏低。\n\n（3）占比数字完全由口径决定，本表自己就是证据：MultiWOZ 2.2（15.94%，纯文本启发式）与 MultiWOZ 2.1（64.64%，按 SYSTEM-* act 标注）是**同一批 71522/71524 轮话轮**，两种口径差 **48.7pp**。任何跨集横比，必须先读 rows[].method_strength / provenance.method_strength，再读数值。\n\n（4）无标注集只能当下界。MultiWOZ 2.2（15.94%）与 Taskmaster TM-1（15.45%）都没有对话行为标注，判据是 EN_FLOW_PATTERNS（labs/multi-industry-corpus/common.py:66-107）——这是中文客服词的**英译近似**，不是同源标注。它们的数值只能读作下界，不能当「该域占比低」的证据。\n\n（5）主指标与辅指标的区别（本卡明令不可混用）：主指标读的是**系统（助手）说的话**，回答「预铸能覆盖多少系统话术」；辅指标读的是**用户怎么说**（MASSIVE / HWU64），回答「用户输入端的离散度」，对预铸只有间接意义。落地约束可审：analyze_flow_occupancy.py:499-515 把用户侧集放在独立顶层键 user_side_instruction_sets，不在 corpora 里；common.verify_occupancy（common.py:121-153）只遍历 corpora，所以用户侧集在结构上不可能被当成系统侧占比参与判定。本 report 的 rows 里三条 user 侧条目（MASSIVE utt / MASSIVE annot_utt / HWU64 answer）**只有 instruction_template_rate，没有一条 flow_decided_rate**。\n\n（6）辅指标侧的同档对照与一个重要的口径陷阱。同档可比的唯一一对是 MASSIVE zh-CN（原始转写 utt，1.68%，n=16521）与客服基线 1.8%（n=25810）：同量级、没有翻转，支持 labs/corpus-harvest/README.md:144 的结论「句式可复用率低是跨语料成立的」——换成 52 语种语料里的中文，结论仍然成立。反例陷阱是 HWU64 的 85.79%：它的 answer 列是数据集**自带的已归一化规范写法**（骨架高频项是 `@ @ @ @ @` 这种占位结构），换成原始用户文本 question 列是 99.96%（骨架几乎全是同一句任务提示语）。同一份 MASSIVE zh-CN 换成 annot_utt 列，模板化率从 1.68% 涨到 11.93%（7 倍）。所以 HWU64 的高值不是「用户话术更模板」，是**列被预归一化**造成的；跨集比辅指标必须先确认读的是原始转写还是归一化文本，否则数字可以差一个数量级。",
+  "replay_candidates": 737,
+  "boundaries": [
+    "导航播报 = 公开数据真空：无许可干净、可验证的导航 TTS 播报语料（Angeriod/in_car_commands 为空集，已入 corpus_ledger.json rejected_sources）。该场景**无法用公开语料验证**。",
+    "机场车站广播 = 公开数据真空：侦察未见任何可取的广播语音/转写数据集。**无法用公开语料验证**。",
+    "工业设备 = 公开数据真空：无机器人/PLC/设备语音播报的公开标注语料。**无法用公开语料验证**。",
+    "政务热线 = 公开数据真空：政务对话非公开，或无许可干净来源。**无法用公开语料验证**。",
+    "快递通知 = 公开数据真空：无快递/物流语音通知的公开语料。**无法用公开语料验证**。",
+    "以上 5 类不得用近似场景（车机指令集 / 家居 NLU 集 / 任务对话集）冒充。本批入选集覆盖的是「任务对话」「电商客服」「用户侧指令」，不是这 5 类播报场景。",
+    "跨行业结论的适用范围只有「公开数据能触达的四个对话域」（任务对话中文 CrossWOZ / 电商客服 ABCD / 英文任务对话 MultiWOZ+Taskmaster）。导航/广播/工业/政务/快递这五类**没有任何一行数字**能支撑预铸适用性结论。",
+    "修订版已更正（revision.json items[1]）：MASSIVE zh-CN = 16521 条 = train 11514 + dev 2033 + test 2974（逐位相加一致）。上一版 corpus_ledger.json 记的 11514 只计了 train 分区，台账已同步为 16521 并附三分区明细。",
+    "修订版已更正（revision.json items[0]）：AmazonScience/massive 本体（amazon-massive-dataset-1.1.tar.gz）实测可下载（HTTP 200，40251390 bytes，tar 内 58 项含 52 语种 jsonl），**不是「取不到」**；未取本体入库的原因是本管道三个平台适配器（modelscope / hf-mirror / github-archive）不覆盖 S3 直链。corpus_ledger.json 的 entries 条目与 rejected_sources 同名条目已按此改写（上一版「本体取不到」属过期表述）。",
+    "babylonhealth/primock57 只有文本转录与临床记录，音频波形是 114 个 Git LFS 指针文件（合计 15160 字节），音频不可得 → 医疗行业只有文本口径，无音频口径。",
+    "修订版已同步（revision.json items[2]）：台账 sha256 是 manifest 指纹（kind=\"manifest_digest\"），不是 zip 本体哈希——照字面跑 shasum 会误判「语料被改动」。corpus_ledger.json 已新增 sha256_semantics 节（口径说明 + 可照抄复算命令 + 已复算自校）。已抽 CrossWOZ / ABCD 两份实测复算，与台账逐字一致。",
+    "英文文本启发式（EN_FLOW_PATTERNS）是中文客服词的英译近似，不是同源标注 → MultiWOZ 2.2 与 Taskmaster TM-1 的占比只能读作**下界**。",
+    "MASSIVE zh-CN 是本轮补跑取的（S3 直链下载，非管道落盘），不来自 tools/corpus_fetch 管道；台账里 MASSIVE 仍只登记了元数据（README.md）。",
+    "回流实验的产出面很窄：737 条候选覆盖 10.18% 的系统话轮，且集中在「系统确认/回显某个槽的值」这一类（数据库查询回显），不是通用话术生成。M3「日志挖掘→话术建议」的最保守路径在公开数据上走得通，但产出面就是这个窄场景。",
+    "修订版已更正（revision.json items[5]）：mine_candidates.py 的 state_signatures() 已修复并复跑，n_candidates=737（不再是 0），与 mine_recompute.py 的全部共享数值字段逐字一致、前 8 条候选逐字段一致。差异仅两项且均非口径差异：① 本脚本记 n_state_signatures_eligible=237、mine_recompute.py 记 n_state_signatures_with_candidate=212——两个**不同定义**（前者=出现≥50 轮的状态签名数，后者=带候选的状态签名数），不可互相当同一字段读；② 本脚本多记 n_signature_skeleton_pairs=25830 与 run_at/_schema/corpus/method 等报告壳字段。脚本已加零结果告警（n_candidates=0 或无话轮带签名时显式告警），同类静默失败下次不再无声。本条原「误导性产物，勿引用」的说法已过时，予以更正。",
+    "修订版已关闭（revision.json items[0..5]）：台账 sha256 口径标注+复算命令、MASSIVE 两条过期条目、rows 的 side 字段精度这四项已知不一致均已同步修正，处置逐项见 revision.json。上一版本条写「未在本轮修正 ledger（属收集方产物）」已过时，予以更正。",
+    "报告自述的产物名过时已在此更正（不改任何数值）：out/ 实际含 occ_a.json、occ_b.json、report_occ.json、report_inject.json；provenance.commands_run 里写过的 occ_inj.json 并不存在，对应物是 report_inject.json。三份 occ 产物 ABCD 数值一致（0.5837），不构成数值差异。",
+    "独立验证员的 ABCD 差异结论本身算错了，本批不采纳（详见 verify.json 与 README 第八节第 1 条）：其自报命中数 agent 40423 + action 36482 = 76905，而 76905/131611 = 0.5843，与报告主值 0.5837 只差 0.0006，**不是它自己写出的 27.66pp**——它自己的分子算对了，写出的比值对不上自己的分子。「action 双计」判据也不成立：双计需 flow_decided_turns=76482 而非 76816，差 334。真正成立的描述是本报告一直在说的：action 埋点 36482 轮占分母 27.7%（36482/131611 = 0.2772），agent 侧文本形态命中只有约 0.4240（40334/95129）——这不是「双计」，是分母构成不同。修订轮已按此把 rows 的 side 字段细化（revision.json items[4]）。"
+  ],
+  "provenance": {
+    "criteria_source": [
+      "labs/corpus-harvest/cross_check_template_rate.py:31  REPEAT_MIN = 5（可复用 = 同语料内骨架出现 ≥5 次）",
+      "labs/corpus-harvest/cross_check_template_rate.py:34-39  skeleton() 三条替换：\\[[^\\]]+\\]→□ / \\d+(\\.\\d+)?→# / [A-Za-z]+→@",
+      "labs/corpus-harvest/cross_check_template_rate.py:42-54  stats()（n_turns / n_skeletons / compress_ratio / reusable_turns / reusable_rate）",
+      "labs/corpus-harvest/README.md:155  流程决定七类词表（问候/确认身份/告别/合规提示/请稍等/未听清重试/转人工）与 23.0% 基线",
+      "labs/corpus-harvest/README.md:144  客服句式可复用率 1.8%（n=25810，去实体值后比对句式骨架）",
+      "labs/multi-industry-corpus/common.py:25-50  上述判据的逐字移植（skeleton/REPEAT_MIN/template_stats）；本轮已逐字比对 harvest 版与 common 版 body 完全一致、REPEAT_MIN 同为 5",
+      "labs/multi-industry-corpus/common.py:61  CN_FLOW_INTENTS = {welcome, greet, thank, bye, reqmore}（CrossWOZ 标注对齐七类词表）",
+      "labs/multi-industry-corpus/common.py:66-107  EN_FLOW_PATTERNS（英文文本形态近似，弱口径，逐条可删、无 catch-all）",
+      "labs/multi-industry-corpus/analyze_flow_occupancy.py:40-46  KEFU_BASELINE 常量（23.0% / 1.8% / 1.03x / 25810 轮）",
+      "labs/multi-industry-corpus/analyze_flow_occupancy.py:499-515  用户侧集放在独立顶层键 user_side_instruction_sets（不进 corpora）",
+      "labs/multi-industry-corpus/common.py:121-153  verify_occupancy 只遍历 corpora → 用户侧集结构上不可能被当系统侧占比",
+      "labs/multi-industry-corpus/mine_recompute.py:33-36  SEED=20260922 / MIN_GROUP_HITS=3 / MIN_SIGN_STATE_TURNS=50",
+      "labs/multi-industry-corpus/mine_recompute.py:47-68  state_signatures()（按实测 dialog_act 4 元组 [类别,域,槽名,值]，取 Inform 且值非空的 (槽名/域=值)）"
+    ],
+    "commands_run": [
+      "python3 labs/multi-industry-corpus/analyze_flow_occupancy.py --out /tmp/oc_verify_a.json  → exit 0；n=50813 / 131611 / 95129 / 71522 / 71524 / 156971；verification_gate.status=pass, problems=[]",
+      "python3 labs/multi-industry-corpus/analyze_flow_occupancy.py --out /tmp/oc_verify_b.json → 与 a 剔除 run_at 后 diff 无输出（OCC_DETERMINISM_OK）",
+      "比对 /tmp/oc_verify_a.json 与 labs/multi-industry-corpus/out/report_occ.json（剔 run_at）→ 逐字一致，即本次复跑重现了仓内已验收产物",
+      "python3 labs/multi-industry-corpus/analyze_flow_occupancy.py --out /tmp/oc_inj.json --inject-all-flow → 5 份可判集占比全为 100.0%（注入生效）；再用 expect_not_all=True 复跑 verify_occupancy 得到 5 条『≈100% 疑似退化』失败（判红成立）。注意：注入产物自身 gate 记 status=pass，是因为注入跑法把 expect_not_all 置为 False（analyze_flow_occupancy.py:570），该产物是留存证据而非通过的产物",
+      "python3 -c \"...common.verify_occupancy(r,key='flow_decided_rate',expect_not_all=True)\" on 正常产物 → 仅 1 条告警：ABCD delexed 条目缺 flow_decided_rate（该条本来就不出流程占比，是口径可比性修正项；gate 产物内记录为 pass，这条需要 skip 参数跳过，见 provenance.notes）",
+      "curl -sS -L -o /tmp/massive.tar.gz -w 'http=%{http_code} bytes=%{size_download} time=%{time_total}s' -m 240 https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz  → http=200 bytes=40251390 time=50.37s",
+      "tar tzf /tmp/massive.tar.gz | wc -l  → 58（含 52 个语种 jsonl）；tar xzf 后 wc -l 1.1/data/zh-CN.jsonl → 16520 行（末行无换行，json 解析后 16521 条）",
+      "python3 内联脚本：common.template_stats 分别算 CrossWOZ sys(50813)、HWU64 answer(25685)、HWU64 question(20818)、MASSIVE utt(16521)、MASSIVE annot_utt(16521) → 0.2758 / 0.8579 / 0.9996 / 0.0168 / 0.1193",
+      "python3 labs/multi-industry-corpus/mine_recompute.py --out /tmp/mine_v1.json  → exit 0，n_candidates=737，determinism_same_seed_twice_identical_examples=True",
+      "python3 labs/multi-industry-corpus/mine_recompute.py --out /tmp/mine_v2.json && diff -q /tmp/mine_v1.json /tmp/mine_v2.json → 无输出（两次逐字节一致）",
+      "diff -q /tmp/mine_v1.json labs/multi-industry-corpus/out/mine_recomputed.json → 无输出（重现仓内已验收产物）",
+      "python3 - 内联脚本逐字比对 harvest 版与 common 版 skeleton() body → IDENTICAL_BODY；REPEAT_MIN 两处同为 5",
+      "修订轮：python3 labs/multi-industry-corpus/mine_candidates.py --out /tmp/mine_fixed_v1.json → exit 0，n_candidates=737（修复前 0），同种子两次跑样例一致=True",
+      "修订轮：同一脚本连跑三次（/tmp/mine_fixed_v1.json、v2、v3），剔 run_at 后逐字段一致 → 确定性成立",
+      "修订轮：逐字段对照 /tmp/mine_fixed_v1.json 与 out/mine_recomputed.json → 全部共享数值字段一致（n_candidates 737 / n_state_signatures 8904 / n_sys_turns 50813 / 带签名 40657 / 无签名 10156 / 覆盖 5173 / 0.1018 / 0.1272 / candidates_by_group_hits {>=50:10,>=20:58,>=10:208,>=3:737} / top_states_by_candidate_count），前 8 条候选（状态/骨架/group_hits/sign_total_turns/examples）逐字段一致",
+      "修订轮：python3 -m unittest discover -s tools → exit 0，Ran 119 tests in 0.282s, OK",
+      "修订轮：python3 -m tools.structure_budget.check → exit 0，合计 50 个 .py 文件 / 5070 可执行行，结构预算：全部合规"
+    ],
+    "corpus_root_out_of_repo": "~/corpus（语料本体未入库；本轮 MASSIVE 走 S3 直链下载至 /tmp，未写入 ~/corpus，属仓外临时件）",
+    "kefu_baseline": {
+      "n_turns": 25810,
+      "flow_decided_rate": 0.23,
+      "reusable_rate": 0.018,
+      "compress_ratio": 1.03,
+      "zero_hit_dialog_rate": 0.757,
+      "source": "labs/corpus-harvest/README.md:155 / :144（1855 通真实催收/账户服务电话）"
+    },
+    "method_strength": {
+      "CrossWOZ": "强（对话行为标注 intent 驱动）",
+      "ABCD": "中（action 业务动作埋点是强证据 + agent 部分文本启发式）",
+      "MultiWOZ 2.1": "中（SYSTEM-* act 是行为标签，语义粒度粗于 CrossWOZ intent）",
+      "MultiWOZ 2.2": "弱（无标注，纯文本启发式，只能读作下界）",
+      "Taskmaster TM-1": "弱（无标注，纯文本启发式，只能读作下界）",
+      "辅指标（全部集）": "强（skeleton/REPEAT_MIN 与 harvest 版逐字同源）——但**输入列**是否为原始转写是独立变量，HWU64 answer 列已被预归一化，不可与原始转写横比"
+    },
+    "mining_method": {
+      "script": "labs/multi-industry-corpus/mine_recompute.py",
+      "seed": 20260922,
+      "state_signature": "系统话轮 dialog_act 里 Inform 且值非空的 (槽名/域=值)；dialog_act 实测为 4 元组 [类别,域,槽名,值]",
+      "skeleton": "与 labs/corpus-harvest/cross_check_template_rate.py 同源的三条替换",
+      "candidate_rule": "同一状态签名下同一骨架出现 ≥3 次（MIN_GROUP_HITS=3）",
+      "significance_floor": "状态签名自身出现 ≥50 轮（MIN_SIGN_STATE_TURNS=50）",
+      "inputs": {
+        "n_dialogues": 6012,
+        "n_sys_turns": 50813,
+        "n_sys_turns_with_state_signature": 40657,
+        "n_sys_turns_without_state_signature": 10156,
+        "n_state_signatures": 8904,
+        "n_state_signatures_with_candidate": 212
+      },
+      "outputs": {
+        "n_candidates": 737,
+        "candidates_by_group_hits": {
+          ">=50": 10,
+          ">=20": 58,
+          ">=10": 208,
+          ">=3": 737
+        },
+        "n_sys_turns_covered_by_a_candidate": 5173,
+        "coverage_of_all_sys_turns": 0.1018,
+        "coverage_of_stateful_sys_turns": 0.1272,
+        "top_states_by_candidate_count": {
+          "车牌/出租=<车牌>": 33,
+          "车型/出租=<车型>": 30,
+          "周边景点/酒店=无": 28,
+          "周边酒店/景点=北京天伦王朝酒店": 18,
+          "周边餐馆/酒店=无": 17,
+          "酒店类型/酒店=高档型": 16
+        }
+      },
+      "artifact": "labs/multi-industry-corpus/out/mine_recomputed.json（本轮复跑逐字节重现）"
+    },
+    "secondary_indicator_method": {
+      "metric": "instruction_template_rate",
+      "definition": "去实体值后的句式骨架在同语料内出现 ≥5 次的话轮数 / 总话轮数",
+      "criteria_source": "labs/corpus-harvest/cross_check_template_rate.py:31,34-39,42-54（经 common.py:25-50 逐字移植）",
+      "user_side_sets": {
+        "AmazonScience/MASSIVE zh-CN (utt 原始转写)": {
+          "n": 16521,
+          "rate": 0.0168,
+          "compress_ratio": 1.058,
+          "n_skeletons": 15613,
+          "per_partition": {
+            "train": [
+              11514,
+              0.0106
+            ],
+            "dev": [
+              2033,
+              0.0
+            ],
+            "test": [
+              2974,
+              0.0024
+            ]
+          },
+          "scenarios": 18
+        },
+        "xliuhw/NLU-Evaluation-Data HWU64 (answer 列，已归一化)": {
+          "n": 25685,
+          "rate": 0.8579,
+          "compress_ratio": 8.123,
+          "n_skeletons": 3162,
+          "top_skeleton": [
+            "@ @ @ @ @",
+            "@ @ @ @",
+            "@ @ @ @ @ @"
+          ]
+        },
+        "HWU64 (question 列，原始任务提示语) — 仅作口径对照": {
+          "n": 20818,
+          "rate": 0.9996,
+          "note": "骨架几乎全是同一句任务提示语，属结构假象，不是用户话术模板化"
+        },
+        "MASSIVE zh-CN (annot_utt 列，含方括号实体标注) — 仅作口径对照": {
+          "n": 16521,
+          "rate": 0.1193,
+          "compress_ratio": 1.22,
+          "note": "方括号恰好命中骨架判据第一条替换规则 → 同一语料比 utt 高 7 倍"
+        }
+      }
+    },
+    "anti_laziness": {
+      "requirement": "把分类判据改成「全判为流程决定」→ 占比应≈100%，用例必须失败",
+      "ran": "analyze_flow_occupancy.py --inject-all-flow → 5 份可判集全为 100.0%",
+      "red_check": "再用 expect_not_all=True 调 common.verify_occupancy 得 5 条『≈100% 疑似退化』失败",
+      "normal_artifact": "正常产物 verification_gate.status=pass, problems=[]"
+    },
+    "determinism": true,
+    "notes": [
+      "本轮所有数字由脚本现场复跑得出，未抄录仓内 report.json 旧值；复跑结果与 out/report_occ.json、out/mine_recomputed.json 逐字/逐字节一致。",
+      "旧版 report.json 的 side 字段比机器产物粗：ABCD flow_decided_rate 的分母含 action 埋点话轮，机器产物记 'system(agent) + action'；本轮 rows 里已改为与机器产物一致的精确写法。",
+      "ABCD delexed 口径那一条不产出 flow_decided_rate（它是口径可比性修正项，用于检验『高模板化是否只是实体值归一化造成的假象』）；因此直接用 expect_not_all=True 全表跑 verify_occupancy 会把它报成『缺 flow_decided_rate』。正确用法是给它传 skip（common.verify_occupancy 的 skip 参数，common.py:124-135 与 common.py:139-140），本轮如实记录而不隐藏这条告警。",
+      "本报告的 737 与仓内 out/mine_candidates.json 的 0 不同源，勿混用（见 boundaries 第 15 条）。",
+      "修订轮（2026-09-22）处置记录见 revision.json（items[0..5]：六项收口 + 亲跑两项零回归门禁）。"
+    ],
+    "zero_regression": {
+      "unittest_tools": "本轮已亲跑（修订轮）：python3 -m unittest discover -s tools → exit 0，Ran 119 tests in 0.282s，OK（与上轮验收记录的 119 passed 一致）",
+      "structure_budget": "本轮已亲跑（修订轮）：python3 -m tools.structure_budget.check → exit 0，合计 50 个 .py 文件 / 5070 可执行行，结构预算：全部合规"
+    }
+  },
+  "revised_at": "2026-09-22",
+  "corrections": "corrections.json（验收方 2026-09-22：两条指控/归因的独立复核结论，不改写原始结论）"
+}

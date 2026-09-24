@@ -1,0 +1,284 @@
+{
+  "probe": "e2e-vs-cascade-dashscope",
+  "generated_at_utc": "2026-09-22T06:16:22+00:00",
+  "purpose": "立项差异化论证最后一格：组合版（ASR→预铸/LLM→TTS）vs 端到端 S2S 的延迟/可控性/可审核性三维对照",
+  "fixtures": {
+    "arm_a_user_turns": [
+      "我要查一下账单",
+      "转人工",
+      "帮我报修",
+      "怎么缴费",
+      "供暖温度标准是多少"
+    ],
+    "arm_b_user_turn": "我要查一下账单",
+    "arm_b_user_turn_audio": {
+      "bytes": 76458,
+      "rate": 22050,
+      "frames": 36181,
+      "duration_s": 1.6409,
+      "synth": "macOS say -v Tingting（仅用于生成音频输入，不测其质量）"
+    },
+    "arm_a_hit_query": "命中支路：say 合成包内话术 → oMLX 转写 → find_hit 文本档（上游是语音，查询文本必来自 ASR 转写，不假设上游给逐字文本）",
+    "arm_a_precast_query_text": "您好，我是供热智能客服小暖。",
+    "precast_pack": {
+      "src": "packs/heat_kefu",
+      "entries": 69
+    },
+    "n_samples": 10
+  },
+  "caliber": {
+    "arm_a_first_audio": "预铸命中路径 = 读包内音频文件到内存的时间（零合成、零网络，微秒级）；ASR 段独立计 asr_s，不计入 first_audio_s（ASR 为流式段，形态不同）",
+    "arm_a_miss": "未命中时走 cloud-bench 的 arm_a_llm（qwen-turbo stream）+ arm_b_tts（qwen-tts REST），调用实现导入自 labs/cloud-bench/run_cloud_bench.py，不重写",
+    "arm_b": "qwen-omni-turbo stream=true，SSE 手写解析（标准库 urllib，无第三方依赖）；first_audio_s = 第一个 delta.audio 块的到达时刻；total_s = 至 [DONE]",
+    "arm_b_audio_valid": "字节数 >= 16000 + 偶数字节 + 非零样本占比 >= 0.001；HTTP 200 不算过",
+    "arm_b_audio_format": "厂商未在响应中声明格式（chunk 仅 data/expires_at/id）；按 24000Hz/1ch/int16 假设做字节数→时长换算，仅为记账，不对外引用",
+    "arm_b_controllability": "臂 B 输出用本机 oMLX ASR 回转写后与参照话术逐字比对（同源 eval.cer.normalize_for_cer）；回转写质量本身有误差，故该比率是「端到端不保证逐字」的下界证据",
+    "controllability_metric": "exact_match_rate = 归一化文本两两全等的采样对占比（分母 C(N,2)）；两臂统一走 eval.cer.normalize_for_cer（去全部标点与空白）做逐字比对",
+    "latency_scope": "两臂均含网络往返（本机直连）；无并发、无排队；单账号单进程，含 429 退避（等待不计入延迟）",
+    "credentials": "Key 从 gitignored .env.local 读取（亦可由环境变量 DASHSCOPE_API_KEY 覆盖）；本报告不含任何凭据内容"
+  },
+  "armA_cascade": {
+    "asr_s": {
+      "n": 10,
+      "mean": 0.2178,
+      "P50": 0.2147,
+      "min": 0.2079,
+      "max": 0.2438
+    },
+    "first_audio_s": {
+      "n": 10,
+      "mean": 0.0008,
+      "P50": 0.0001,
+      "min": 0.0001,
+      "max": 0.0065
+    },
+    "hits": 10,
+    "n": 10,
+    "exact_match_rate": 1.0,
+    "exact_match_basis": "命中条目原文（预铸资产层文本，命中路径必然逐字相同）",
+    "asset_audio_bytes": [
+      94270,
+      94270,
+      94270,
+      94270,
+      94270,
+      94270,
+      94270,
+      94270,
+      94270,
+      94270
+    ],
+    "asset_duration_ms": [
+      2818,
+      2818,
+      2818,
+      2818,
+      2818,
+      2818,
+      2818,
+      2818,
+      2818,
+      2818
+    ],
+    "audio_found_all": true,
+    "note": "命中支路：同一段包内话术音频 ×N，ASR 转写逐字喂 find_hit 文本档"
+  },
+  "armA_miss_lane_asr": {
+    "note": "真实用户轮次经 say→oMLX 转写后走 find_hit 文本档；miss 是预期结果（用户措辞与包内话术措辞不同，命中上限由上游表示形态决定——见 docs/10 裁定 2）",
+    "hits": 0,
+    "n": 10,
+    "miss_reasons": [
+      "text_not_prebaked"
+    ],
+    "asr_s": {
+      "n": 10,
+      "mean": 0.1746,
+      "P50": 0.1699,
+      "min": 0.1512,
+      "max": 0.2123
+    }
+  },
+  "armA_miss_fallback": {
+    "note": "未命中支路：LLM/TTS 调用实现导入自 labs/cloud-bench/run_cloud_bench.py，口径与其 report.json 一致（llm_ttft=首个 delta chunk；tts=非流式 REST 上界）",
+    "llm_ttft_s": {
+      "n": 10,
+      "mean": 0.2742,
+      "P50": 0.2755,
+      "min": 0.1949,
+      "max": 0.3511
+    },
+    "llm_total_s": {
+      "n": 10,
+      "mean": 0.4434,
+      "P50": 0.4326,
+      "min": 0.3543,
+      "max": 0.5467
+    },
+    "tts_total_s": {
+      "n": 10,
+      "mean": 3.4141,
+      "P50": 3.7572,
+      "min": 1.4845,
+      "max": 5.4616
+    },
+    "chain_total_s": {
+      "n": 10,
+      "mean": 3.8575,
+      "P50": 4.2562,
+      "min": 1.8388,
+      "max": 5.9443
+    },
+    "tts_bytes": [
+      498284,
+      402284,
+      337004,
+      193004,
+      447404,
+      184364,
+      338924,
+      454124,
+      417644,
+      134444
+    ],
+    "errors": 0,
+    "n": 10
+  },
+  "armB_e2e": {
+    "first_audio_s": {
+      "n": 10,
+      "mean": 0.7212,
+      "P50": 0.7167,
+      "min": 0.6778,
+      "max": 0.7773
+    },
+    "first_text_s": {
+      "n": 10,
+      "mean": 0.4065,
+      "P50": 0.3783,
+      "min": 0.3409,
+      "max": 0.6669
+    },
+    "total_s": {
+      "n": 10,
+      "mean": 1.6916,
+      "P50": 1.681,
+      "min": 1.6355,
+      "max": 1.7705
+    },
+    "audio_bytes": {
+      "n": 10,
+      "mean": 258240,
+      "P50": 259200.0,
+      "min": 243840,
+      "max": 268800
+    },
+    "audio_valid_runs": 10,
+    "audio_invalid_runs": 0,
+    "errors": 0,
+    "n": 10,
+    "audio_format": {
+      "assumed_rate": 24000,
+      "assumed_channels": 1,
+      "assumed_sampwidth": 2,
+      "declared_by_vendor": false
+    },
+    "b_asr_s": {
+      "n": 10,
+      "mean": 0.3499,
+      "P50": 0.3454,
+      "min": 0.3245,
+      "max": 0.3752
+    },
+    "exact_match_rate": 1.0,
+    "exact_match_basis": "回转写文本（arm B 的真实音频输出经 oMLX ASR 转写）",
+    "raw_audio_bytes_all_equal": false,
+    "raw_audio_bytes_unique": 8,
+    "raw_audio_bytes_variability_note": "N 次输出音频字节数出现 8 种不同取值（min/max 见 audio_bytes）——输出音频长度并不逐次相同，这与「端到端不保证逐字」一致；但字节数不等于内容，逐字结论仍看 exact_match_rate 及其 caveat"
+  },
+  "controllability": {
+    "metric": "exact_match_rate（归一化文本两两全等占比，分母 C(N,2)）",
+    "arm_a_precast": {
+      "exact_match_rate": 1.0,
+      "n": 10,
+      "conclusion": "N 次采样逐字一致（预铸路径：命中即固定条目原文）",
+      "basis": "命中条目原文"
+    },
+    "arm_a_miss_path": {
+      "exact_match_rate": 0.0,
+      "n": 10,
+      "conclusion": "N 次 LLM 自由文本不全部一致——该口径确实能测出「非固定路径不逐字」",
+      "basis": "cloud-bench LLM 臂（qwen-turbo）自由生成文本",
+      "note": "臂 A 的可控性结论是「分支决定」：预铸命中 → 逐字 100%；未命中走 LLM → 不逐字。该分支结构本身是可审核的（命中判定走 find_hit，非模型判据）。"
+    },
+    "arm_b_e2e": {
+      "exact_match_rate": 1.0,
+      "n": 10,
+      "conclusion": "N 次回转写两两全等——本次条件下未复现出逐字差异（如实记录，且回转写误差会把真实差异掩盖，故不等于端到端保证逐字）",
+      "basis": "臂 B 输出音频经 oMLX 回转写"
+    },
+    "arm_b_caveat": "臂 B 的比对经「音频→oMLX 回转写」这一环，回转写误差会把真实差异掩盖掉；故该比率是下界证据（实测到的差异是真差异，未实测到的差异不排除存在）。本次 N 次回转写全等，属该下界情形的如实记录。",
+    "normalizers": {
+      "arm_a": "eval.cer.normalize_for_cer（去全部标点与空白）",
+      "arm_b": "eval.cer.normalize_for_cer（去全部标点与空白）",
+      "note": "两臂同一归一化函数；arm A 的命中判定本身另走 adapters.framework_kefu.normalize_text（产品同源归一化）"
+    }
+  },
+  "auditability": {
+    "arm_a": "可审计：命中判定走 find_hit（文本归一化逐字相等，无模型判据）；资产带 16 位指纹 + 音频存在性校验（assets 层保险丝）；四属性校验与准入判据在包级；事件留痕可复核。同一输入必得同一音频。",
+    "arm_b": "黑盒：单次调用即返回音频，无准入判据、无逐字保证、无资产指纹、无事件留痕；同一输入的输出音频不保证逐字相同（本次实测见 armB_e2e.exact_match_rate）。本项为定性描述，不做主观评分。"
+  },
+  "env": {
+    "omni_model": "qwen-omni-turbo",
+    "modalities": [
+      "text",
+      "audio"
+    ],
+    "asr_engine": "oMLX",
+    "asr_model": "Qwen3-ASR-0.6B-8bit",
+    "asr_base_url": "http://127.0.0.1:10099",
+    "cascade_llm": "qwen-turbo",
+    "cascade_tts": "qwen-tts",
+    "cascade_tts_voice": "Cherry",
+    "python": "3.14.6"
+  },
+  "latency_compare": {
+    "arm_a_precast_first_audio_s": {
+      "n": 10,
+      "mean": 0.0008,
+      "P50": 0.0001,
+      "min": 0.0001,
+      "max": 0.0065
+    },
+    "arm_a_precast_note": "零合成、零网络；读包内音频文件到内存",
+    "arm_a_miss_chain_total_s": {
+      "n": 10,
+      "mean": 3.8575,
+      "P50": 4.2562,
+      "min": 1.8388,
+      "max": 5.9443
+    },
+    "arm_b_first_audio_s": {
+      "n": 10,
+      "mean": 0.7212,
+      "P50": 0.7167,
+      "min": 0.6778,
+      "max": 0.7773
+    },
+    "arm_b_total_s": {
+      "n": 10,
+      "mean": 1.6916,
+      "P50": 1.681,
+      "min": 1.6355,
+      "max": 1.7705
+    },
+    "arm_a_asr_s": {
+      "n": 10,
+      "mean": 0.2178,
+      "P50": 0.2147,
+      "min": 0.2079,
+      "max": 0.2438
+    },
+    "cross_ref": "labs/cloud-bench/report.json：云端未命中链 P50 ≈ 2.87 s、qwen-turbo TTFT P50 226 ms",
+    "caveat": "两臂延迟不可直接相减对比：臂 A 命中路径无网络、臂 B 含完整往返；臂 B 的 first_audio 为「首个音频块到达」，臂 A 未命中支路的链长按 TTFT/整链分别给。"
+  }
+}

@@ -1,0 +1,4 @@
+[
+  {"key": "greeting_welcome", "rate": "normal"},
+  {"action": "SAY", "text": "这是一段临时拼凑的话术，假装是从资产库来的", "rate": "normal"}
+]

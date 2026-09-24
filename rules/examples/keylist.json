@@ -1,0 +1,11 @@
+{
+  "keys": [
+    "greeting_welcome",
+    "step_verify_identity",
+    "step_confirm_amount",
+    "step_read_address",
+    "step_final_summary",
+    "closing_thank_you",
+    "error_retry"
+  ]
+}

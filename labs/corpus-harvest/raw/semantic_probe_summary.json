@@ -1,0 +1,32 @@
+{
+  "_schema": "vox-semantic-probe/1",
+  "golden": "<仓库根>/packs/fin-cs/golden/corpus_derived.jsonl",
+  "pack": "<仓库根>/packs/fin-cs",
+  "embed_model": "bge-m3-mlx-fp16",
+  "n_cases": 2433,
+  "n_evaluated": 2064,
+  "n_unspecified": 369,
+  "run_at": "2026-09-18T23:00:27+08:00",
+  "arms": {
+    "A_prototype_prebaked_variant": "匹配对象 = 预铸 variant 原文",
+    "B_prototype_key_intent": "匹配对象 = key 功能描述（我们写的，不在链路上）"
+  },
+  "accuracy": {
+    "A_top1": {
+      "hits": 244,
+      "rate": 0.1182170542635659
+    },
+    "A_top3": {
+      "hits": 608,
+      "rate": 0.29457364341085274
+    },
+    "B_top1": {
+      "hits": 183,
+      "rate": 0.08866279069767442
+    },
+    "B_top3": {
+      "hits": 498,
+      "rate": 0.24127906976744187
+    }
+  }
+}

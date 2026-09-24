@@ -1,0 +1,40 @@
+# 跨平台
+.DS_Store
+Thumbs.db
+
+# Python（代码开工后用）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地数据（永不入库）
+data/
+packs/*_build/
+assets/audio/
+*.wav
+*.opus
+*.mp3
+!docs/**/*.wav
+
+# 日志与临时
+*.log
+/tmp/
+.idea/
+.vscode/
+
+# 工具链会话/计划产物（不进仓：ZCode 会话计划、OpenCode 计划目录）
+.zcode/*
+# 例外：项目工作流是可复用资产（corpus-intake-analysis 等）——
+# 注意 gitignore 不支持行尾注释，注释必须独立成行（本次踩过）
+!.zcode/workflows/
+.hermes/
+
+# ZCode 自身的排除清单（工具级配置，随机器生成，非项目产物）——
+# 不入库：它是 ZCode 默认规则集 + 工具提示文本，克隆者不需要；
+# 不 ignore 的代价：它永远挂在 `git status` 里，`git add -A` 会顺手扫进去。
+.zcodeignore
+
+# 云端评测凭据（本地专有，永不入库）
+labs/cloud-bench/.env.local
+*.env.local

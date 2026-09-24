@@ -1,0 +1,19 @@
+{
+  "pack_id": "repair",
+  "pack_version": "1",
+  "protocol_version": "0.1",
+  "ruleset_version": "v1",
+  "voice": "Tingting",
+  "model_version": "macos-say",
+  "rates": ["normal", "slow", "fast"],
+  "locale": "zh-CN",
+  "duplex": {
+    "patience_ms": 900,
+    "rate_band": 0.15,
+    "backchannel": "on",
+    "barge_in": "allow",
+    "silence_pad_ms": 200,
+    "slot_pad_ms": 80,
+    "fade_ms": 5
+  }
+}

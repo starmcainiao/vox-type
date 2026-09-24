@@ -1,0 +1,271 @@
+{
+  "_schema": "vox-multi-industry-corpus-ledger/1",
+  "_note": "T22 多行业语料台账。语料本体一律落仓外（~/corpus/<id>），仓内只记台账——本文件不含任何绝对路径。许可与 sha256 均为 tools/corpus_fetch/fetch.py 实测并交叉核对（fail-closed 审计，未放宽判据）；sha256 为整份语料的 manifest 指纹（对 files 的 path/size/sha256 求 sha256），非单文件哈希——口径标注与可照抄的复算命令见下方 sha256_semantics。rejected_sources 含侦察清单拒收项与本次联网取证暴露的新增拒收项，均带理由与证据位置。",
+  "sha256_semantics": {
+    "kind": "manifest_digest",
+    "meaning": "本台账每个 entries[].sha256 是整份语料的 manifest 指纹，**不是任何单个文件的哈希**。照字面跑 `shasum -a 256 <下载文件>` 得到的值必然与台账不符——这不是「语料被改动」，而是口径不同。",
+    "formula": "对下载得到的每个文件取 sha256 与字节数，按 path 字典序排序，逐条把 `path\\tsize_bytes\\tsha256\\n` 追加进 sha256 累加器，输出 hexdigest。真源实现：tools/corpus_fetch/fetch.py 的 manifest_digest()（`for f in sorted(files, key=lambda x: x['path']): h.update(f\"{path}\\t{size_bytes}\\t{sha256}\\n\".encode('utf-8'))`）。",
+    "formula_note": "即「对 (path, size_bytes, sha256) 三元组再哈希一次」——输入是**文件的哈希与大小**，不是文件内容本身。因此 manifest 值与文件本体字节数解耦：文件内容一变，文件哈希变，manifest 随之变；但 manifest 本身永远不等于文件哈希。",
+    "recompute_commands": [
+      "SINGLE_FILE_CORPUS=\"~/corpus/thu-coai__CrossWOZ/archive.zip\"  # 或 .../ASAPPresearch__ABCD/archive.zip",
+      "FILE_SHA=$(shasum -a 256 \"$SINGLE_FILE_CORPUS\" | awk '{print $1}')",
+      "FILE_BYTES=$(wc -c < \"$SINGLE_FILE_CORPUS\" | tr -d ' ')",
+      "printf 'archive.zip\\t%s\\t%s\\n' \"$FILE_BYTES\" \"$FILE_SHA\" | sha256sum",
+      "多文件语料：把每行换成该文件自己的 path/size/sha256，按 path 排序后用 xargs -0 sha256sum 或对拼接文本一次性求 sha256sum。"
+    ],
+    "self_check": "对 thu-coai/CrossWOZ 与 ASAPPresearch/ABCD 两份已实测复算：文件哈希 035a55de…/c436f239…、字节数 20666888/39075698（与台账 n_rows_or_size.bytes 逐位一致），按上面命令复算的 manifest 值为 779ca2d5…/46528e82…，与台账 entries[].sha256 逐字一致。证据：verify.json.checked[0..1]。",
+    "platform_crosscheck": "github-archive 来源的 sha256 为实测值，平台侧无可交叉核对的哈希（verified_against_platform=false，如实记录）；hf-mirror / modelscope 来源同理。",
+    "do_not": "不要把台账 sha256 与 `shasum -a 256 <zip>` 的输出直接比对来判定语料是否被改动；那是把 manifest 指纹当文件哈希用。"
+  },
+  "collected_at": "2026-09-22",
+  "fetch_pipeline": {
+    "sources_config": "tools/corpus_fetch/sources.json",
+    "source_of_selection": "labs/multi-industry-corpus/sources.json",
+    "pipeline_ledger_out_of_repo": "corpus/corpus.lock.json",
+    "command": "python3 tools/corpus_fetch/fetch.py --sources tools/corpus_fetch/sources.json --lock ~/corpus/corpus.lock.json",
+    "audit_checks_run": [
+      "平台 license 字段",
+      "README front-matter",
+      "正文证据文件（readme_source + license_body_ack）",
+      "商业语料警示词（无 ack 即拒）",
+      "禁商用/禁演绎词（无逃生口）",
+      "expect_license 核对"
+    ],
+    "out_of_repo_note": "管道台账（~/corpus/corpus.lock.json）属仓外数据，不入库；本文件是仓内镜像，路径一律相对 ~/corpus/。T36 更正（2026-09-23）：管道台账自本次起也**只记 ${CORPUS_ROOT}/<相对>**、不再记机器绝对路径（发布树六类扫描要求机器盘位与家目录路径零命中，类别见 docs/18 §一）；此前那句「带绝对路径」已不成立。"
+  },
+  "entries": [
+    {
+      "name": "thu-coai/CrossWOZ",
+      "license": "apache-2.0",
+      "evidence": "https://github.com/thu-coai/CrossWOZ/blob/master/LICENSE（仓库根 LICENSE，Apache License, Version 2.0）；同向证据：https://huggingface.co/datasets/GEM/CrossWOZ README front-matter `license: - apache-2.0`，正文 `licenses: [open license - commercial use allowed]`、`data-copyright: [open license - commercial use allowed]`（见仓根 cwz.json 的 /overview/languages/license 与 /considerations/licenses/*）",
+      "evidence_path": "https://github.com/thu-coai/CrossWOZ/blob/master/README.md",
+      "path_out_of_repo": "corpus/thu-coai__CrossWOZ",
+      "sha256": "779ca2d5e5a26f05ccc873428d208147dc3e2a3af829a65a4c59ab659d7e729a",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 20666888,
+        "n_rows": 101626,
+        "unit": "utterances"
+      },
+      "notes": "train 5012 / val 500 / test 500 通；五域 hotel/restaurant/attraction/metro/taxi；系统侧带 dialog_act 标注（welcome/bye/greet/reqmore/thanks/Inform/Recommend/General/NoOffer）；整包内语料在 data/crosswoz/*.json.zip（zip 里再包 json）"
+    },
+    {
+      "name": "ASAPPresearch/ABCD",
+      "license": "mit",
+      "evidence": "https://github.com/ASAPPresearch/ABCD/blob/master/LICENSE（仓库根 LICENSE，MIT License / Copyright (c) 2021 ASAPP Research）；README 正文无许可 front-matter，许可证据仅来自根 LICENSE 文件，即卡面「仓库有 LICENSE 文件即视为正文证据」（docs/tasks/T22-多行业语料收集与适用性验证.md:42）",
+      "evidence_path": "https://github.com/ASAPPresearch/ABCD/blob/master/README.md",
+      "path_out_of_repo": "corpus/ASAPPresearch__ABCD",
+      "sha256": "46528e8291a62f12fee197df1eda61a26bd3e45c05f0aeea84b2ac6a1079a72b",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 39075698,
+        "n_rows": 220983,
+        "unit": "utterances"
+      },
+      "notes": "10042 通对话，96 个 flow/subflow；语料本体在包内 data/abcd_v1.1.json.gz（gzip）"
+    },
+    {
+      "name": "budzianowski/multiwoz",
+      "license": "mit",
+      "evidence": "https://github.com/budzianowski/multiwoz/blob/master/README.md 第 345-347 行（卡面指定位置）「# License / It is released by Paweł Budzianowski from Cambridge Dialogue Systems Group under the MIT License.」；同向：https://github.com/budzianowski/multiwoz/blob/master/LICENSE（MIT License, Copyright 2019 Paweł Budzianowski）",
+      "evidence_path": "https://github.com/budzianowski/multiwoz/blob/master/README.md",
+      "path_out_of_repo": "corpus/budzianowski__multiwoz",
+      "sha256": "5fc85d91be07d03108e38b9dd8f974d3416734c0dee1f907abbcfc70fc61fa74",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 60601152,
+        "n_rows": 10438,
+        "unit": "dialogues"
+      },
+      "notes": "MultiWOZ 2.1/2.2，七域 hotel/restaurant/attraction/train/bus/taxi/police/hospital；带 system_acts 对话行为标注"
+    },
+    {
+      "name": "google-research-datasets/Taskmaster",
+      "license": "cc-by-4.0",
+      "evidence": "https://github.com/google-research-datasets/Taskmaster/blob/master/TM-1-2019/README.md 第 325 行等（卡面指定位置）：`made available under the Creative Commons Attribution 4.0 License`；同向：https://huggingface.co/datasets/google-research-datasets/taskmaster1 README front-matter `license: - cc-by-4.0`",
+      "evidence_path": "https://github.com/google-research-datasets/Taskmaster/blob/master/README.md",
+      "path_out_of_repo": "corpus/google-research-datasets__Taskmaster",
+      "sha256": "0ea7ab5ea94af3803bd7086cbc830469a34346dfb295de9942cfa7ca70102765",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 138699973,
+        "n_rows": 13215,
+        "unit": "dialogues"
+      },
+      "notes": "TM-1 六域 pizza-ordering/coffee-ordering/restaurant-table/movie-tickets/auto-repair-appt/uber-lyft；说话人标签 ASSISTANT（系统侧）/ USER。卡面写法是 google-research-datasets/taskmaster1，实际仓库/平台 id 为 google-research-datasets/Taskmaster（数据集 TM-1 在该仓库内）"
+    },
+    {
+      "name": "AmazonScience/massive",
+      "license": "cc-by-4.0",
+      "evidence": "https://huggingface.co/datasets/AmazonScience/massive/raw/main/README.md 第 432/437 行（卡面指定位置）`### Licensing Information` 段：`Attribution 4.0 International` 与 `Copyright Amazon.com Inc. or its affiliates.`；同向 front-matter `license: - cc-by-4.0`。注：卡面写的是 facebook/massive 正文同位置，此处 URL 取许可正文实际所在页面的直链",
+      "evidence_path": "https://hf-mirror.com/datasets/AmazonScience/massive/blob/main/README.md",
+      "path_out_of_repo": "corpus/AmazonScience__massive",
+      "sha256": "a88d6dabb0da450734cc3048b648c25754c248b2c6913953b4d668f274e3a66e",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 34420,
+        "unit": "metadata_bytes(README.md)"
+      },
+      "n_rows_detail": {
+        "unit": "utterances",
+        "note": "语料本体规模（zh-CN 分区），来自 amazon-massive-dataset-1.1.tar.gz 实测，非本管道落盘",
+        "zh_CN_total": 16521,
+        "zh_CN_by_partition": {"train": 11514, "dev": 2033, "test": 2974},
+        "zh_CN_by_partition_check": "11514 + 2033 + 2974 = 16521（逐位相加一致）"
+      },
+      "notes": "本批次只落许可证据与元数据（README.md，34420 字节）；语料本体（amazon-massive-dataset-1.1.tar.gz，52 语种）**实测可下载**（HTTP 200，40251390 bytes，50.37s），但本管道三个平台适配器（modelscope / hf-mirror / github-archive）都不覆盖 S3 直链 → **未取本体**入 ~/corpus。见 rejected_sources 同名条目。zh-CN 共 16521 条 = train 11514 + dev 2033 + test 2974；台账上一版记的「zh-CN 11514 条」只计了 train 分区，已更正。"
+    },
+    {
+      "name": "xliuhw/NLU-Evaluation-Data",
+      "license": "cc-by-4.0",
+      "evidence": "https://github.com/xliuhw/NLU-Evaluation-Data/blob/master/README.md 第 22-23 行（卡面指定位置）；同向：README 第 320-322 行 `### Licensing Information` → `Creative Commons Attribution 4.0 International License (CC BY 4.0)`",
+      "evidence_path": "https://github.com/xliuhw/NLU-Evaluation-Data/blob/master/README.md",
+      "path_out_of_repo": "corpus/xliuhw__NLU-Evaluation-Data",
+      "sha256": "daf93b24d3df8d7940cdcaa0aaa57440cb4c26c4f0ed0d34ed68d9bf2b0311a1",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 21527506,
+        "n_rows": 25715,
+        "unit": "annotated_rows"
+      },
+      "notes": "HWU64，21 域用户侧指令；标注 CSV 在包内 AnnotatedData/NLU-Data-Home-Domain-Annotated-All.csv"
+    },
+    {
+      "name": "babylonhealth/primock57",
+      "license": "cc-by-4.0",
+      "evidence": "https://github.com/babylonhealth/primock57/blob/master/LICENSE.md 第 1 行（卡面指定位置）：CC BY 4.0",
+      "evidence_path": "https://github.com/babylonhealth/primock57/blob/main/README.md",
+      "path_out_of_repo": "corpus/babylonhealth__primock57",
+      "sha256": "02ea979c6fd2573543b947171a75f1a9a4d4da335ba6ce921c345a564a643f93",
+      "status": "collected",
+      "n_rows_or_size": {
+        "archive_files": 1,
+        "bytes": 4073131,
+        "n_rows": 7108,
+        "unit": "utterances"
+      },
+      "notes": "57 通医患门诊模拟对话；transcripts/ 114 个 TextGrid（1725937 字节，逐话轮人工转录，7108 条非空 text 区间）；notes/ 57 个 JSON 临床记录；audio/ 为 114 个 Git LFS 指针（合计 15160 字节），音频波形不可得，见 rejected_sources 同名条目"
+    }
+  ],
+  "rejected_sources": [
+    {
+      "id": "RiSAWOZ",
+      "platform": "（未取镜像，侦察阶段拒收）",
+      "reason": "仓库/平台标签与正文冲突：仓库标签写 MIT，README 正文写 CC BY-NC（禁商用）→ 按「README 正文优先、禁商用一律拒收」处理，不下载。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:36「`RiSAWOZ`（仓库 MIT vs 正文 CC BY-NC）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "SLURP",
+      "platform": "hf-mirror",
+      "reason": "许可为 CC BY-NC 4.0（禁商用）→ 硬拒收，与 NONCOMMERCIAL_PATTERNS（BY-NC）口径一致。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`SLURP`（CC BY-NC）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "Fluent Speech Commands",
+      "platform": "（Google 官方渠道，非本管道平台）",
+      "reason": "许可 CC BY-NC-ND 4.0 且声明仅限学术使用（禁商用 + 禁衍生 + 用途限制）→ 硬拒收，无 ack 逃生口。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`Fluent Speech Commands`（CC BY-NC-ND + 仅学术）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "MagicData SLR68",
+      "platform": "hf-mirror",
+      "reason": "许可为 NC-ND（禁商用 + 禁衍生）→ 硬拒收。与既有台账中 MagicData 方言集同一事故形态（front-matter 写 apache-2.0、正文写 CC BY-NC-ND，见 labs/corpus-harvest/sources.json rejected_sources 首条）。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`MagicData SLR68`（NC-ND）」；事故形态对照 labs/corpus-harvest/sources.json:67-73",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "yangzailu/*（yangzailu/CarControl、yangzailu/smart_home 等全系）",
+      "platform": "github-archive",
+      "reason": "平台标签写 Apache 但正文写「仅学习研究」——标签与正文冲突，以正文为准；许可不明且限定非研究用途 → 拒收。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:38「`yangzailu/*`（标签 Apache vs 正文\"仅学习研究\"）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "market.aliyun/GBZET_*",
+      "platform": "（阿里云数据集市场，非本管道平台）",
+      "reason": "平台 license 字段为 other，无任何可识别的开放许可条款 → 证据不足，拒收（fetch.py 判据：平台与 front-matter 都无可识别许可 → 不得下载）。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:38「`market.aliyun/GBZET_*`（license=other）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "数据堂全系（DataTang）",
+      "platform": "modelscope",
+      "reason": "正文声明「商用数据」→ 命中 COMMERCIAL_WARNING_PATTERNS 硬拒绝；且本仓是要公开分发的仓，商业授权与开源许可是两回事，不下载。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:39「数据堂全系（正文\"商用数据\"）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "tor24/smart-home-voice-commands-v1",
+      "platform": "hf-mirror",
+      "reason": "许可不明，且规模不足（仅 10 行）——10 行不构成统计意义上的指令模板化率估计，即便许可干净也没有分析价值 → 拒收。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:39「`tor24/smart-home-voice-commands-v1`（仅 10 行）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "Angeriod/in_car_commands",
+      "platform": "hf-mirror",
+      "reason": "空集，无任何可用样本（同时说明「车机指令」在公开渠道无可用语料）→ 拒收。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:40「`Angeriod/in_car_commands`（空集）」",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "babylonhealth/primock57 的第三方镜像（sdialog/Primock-57、utsav2000/Primock57 等）",
+      "platform": "hf-mirror",
+      "reason": "只能找到第三方上传镜像，镜像的许可声明不能当作源仓库证据 → 许可不明，只认源仓库 babylonhealth/primock57，镜像拒收。源仓库本体已于本批次成功获取（见 entries）。",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:30 仅给源仓库 LICENSE.md 第 1 行作许可证据；本次未联网复核镜像，按「许可不明的源放 rejected」处理",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "GEM/CrossWOZ",
+      "platform": "hf-mirror",
+      "reason": "原计划作为 thu-coai/CrossWOZ 全量数据（data.zip 内 train/val/test 共 6012 通、101626 话轮）的**取数通道**，但该数据集的 data.zip 是 LFS 文件，本管道 hf-mirror 适配器的 download_url 走 /resolve/ 且 HTTP 180 s 超时不足以完成 200 MB 级 LFS 对象传输，实测无法下载 → 语料本体不可得。同数据集只留下非 LFS 的 CrossWOZ.json（56220 字节，内容为 GEM 论文的结构化元数据，overview/context/considerations/results/curation/gem 六个键，**不含任何对话话轮**，无法作为语料）与 README.md。主证据改走 thu-coai/CrossWOZ 的 github-archive 整包（见 entries），不取本条。",
+      "evidence": "实测（2026-09-22）：~/corpus/GEM__CrossWOZ/CrossWOZ.json 顶层键为 overview/context/considerations/results/curation/gem，按话轮统计为 0；与 thu-coai/CrossWOZ 的 data/crosswoz/*.json.zip（train 13.6 MB / val 1.4 MB / test 1.4 MB）对照，此文件无对话内容",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "facebook/massive",
+      "platform": "github-archive",
+      "reason": "T22 卡面指定的 MASSIVE 许可证据位置（正文第 432/437 行）在本机不可达 → 无法在卡面指定的位置取证，拒收该 URL，改走 HF 官方组织名下同名镜像 AmazonScience/massive（平台与 front-matter 双写 cc-by-4.0，见 entries）。",
+      "evidence": "实测（2026-09-22）：curl -s -o /dev/null -w '%{http_code}' https://github.com/facebook/massive → 000（连接失败，与 fetch.py 内对 raw.githubusercontent.com 的同类可达性注记一致）",
+      "rejected_at": "2026-09-22"
+    },
+    {
+      "id": "AmazonScience/massive 的音频与文本本体（amazon-massive-dataset-1.1.tar.gz）",
+      "platform": "（Amazon S3 直链，非本管道平台）",
+      "reason": "S3 直链**实测可下载**（HTTP 200，40251390 bytes，50.37s；tar 内 58 项含 52 个语种 jsonl，zh-CN 实测 16521 条 = train 11514 + dev 2033 + test 2974），**不是取不到**；拒收原因是本管道三个平台适配器（modelscope / hf-mirror / github-archive）都不覆盖 S3 直链 → **未取本体**入 ~/corpus，只登记许可证据与元数据。若后续要取本体需给管道加适配器（属于管道代码改动，超出本批收集范围）。注：本轮分析层为算辅指标曾走 S3 直链补跑取数，该件落仓外 /tmp，未写入 ~/corpus、未入库。",
+      "evidence": "实测（2026-09-22）：curl -sS -L -o /tmp/massive.tar.gz -w 'http=%{http_code} bytes=%{size_download} time=%{time_total}s' -m 240 https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.1.tar.gz → http=200 bytes=40251390 time=50.37s；tar tzf | wc -l → 58（含 52 个语种 jsonl）；zh-CN.jsonl 解析后 16521 条。对照：hf-mirror 文件树 tree/main 仅返回 .gitattributes / CITATION.cff / LICENSE / README.md / massive.py / test_massive.py 六个文件，无 tar.gz → 管道侧确不可得",
+      "rejected_at": "2026-09-22",
+      "revision": "2026-09-22 已更正：本条上一版写「本体取不到」，与实测不符（verify.json.discrepancies[4](a) 已指出台账过期）；拒收理由改为「管道适配器不覆盖 S3 直链」，与「取不到」区分开。"
+    },
+    {
+      "id": "primock57 的音频波形（audio/ 下 wav）",
+      "platform": "github-archive",
+      "reason": "源仓库 README 的 How-to-clone 声明音频用 Git LFS 存储，codeload 整包 zip 不含 LFS 对象 → 落盘的 audio/ 是 114 个 LFS 指针文件（合计 15160 字节），不是音频波形。语料本体（57 通对话的**文本**转录与临床记录）完整可用，音频波形缺失，如实记录，不冒充已获取音频。",
+      "evidence": "实测（2026-09-22）：~/corpus/babylonhealth__primock57/audio 共 114 个文件、合计 15160 字节；仓库 .gitattributes 声明 LFS 追踪；对照 transcripts/ 114 个 TextGrid（1725937 字节）与 notes/ 57 个 JSON（59354 字节）",
+      "rejected_at": "2026-09-22"
+    }
+  ],
+  "recheck": {
+    "command": "python3 tools/corpus_fetch/fetch.py --recheck --lock ~/corpus/corpus.lock.json",
+    "result": "巡检 9 个文件，异常 0 个（exit 0）"
+  },
+  "dependencies": {
+    "third_party_added": 0,
+    "note": "本批次未新增任何第三方依赖：fetch.py 与台账生成都只用 Python 标准库。primock57 的 .TextGrid 话轮统计用标准库正则，未用 pandas/pyarrow，故无需 ~/miniforge3。"
+  },
+  "honest_boundaries": [
+    "AmazonScience/massive 只有元数据入库（README.md 34420 字节）。音频/文本本体（amazon-massive-dataset-1.1.tar.gz，40251390 bytes）在 Amazon S3，**实测可下载**（HTTP 200），但本管道三个平台适配器都不覆盖 S3 直链 → 未取本体入库。zh-CN 实测 16521 条（train 11514 + dev 2033 + test 2974）；辅指标那两条 user 侧条目是分析层走 S3 直链补跑算的，落仓外 /tmp，不来自管道落盘。",
+    "babylonhealth/primock57 只有文本转录与临床记录入库，音频波形是 Git LFS 指针，codeload zip 不含 LFS 对象 → 音频不可得。",
+    "导航播报 / 机场车站广播 / 工业设备 / 政务热线 / 快递通知 = 公开数据真空（T22 侦察已确认），无公开语料可验证，不用近似场景冒充。",
+    "所有 sha256 为 manifest 指纹（kind=\"manifest_digest\"，对 (path,size,sha256) 再哈希），不是文件哈希；平台侧无可交叉核对的哈希（verified_against_platform=false）。复算命令见 sha256_semantics。"
+  ]
+}

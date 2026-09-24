@@ -1,0 +1,288 @@
+{
+  "script_version": 1,
+  "terminal_keys": [
+    "farewell"
+  ],
+  "live_whitelist": [
+    "detail_not_prebaked"
+  ],
+  "max_retry": 3,
+  "units": [
+    {
+      "key": "options",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_options",
+      "rate": "normal"
+    },
+    {
+      "key": "turn_limit_notice",
+      "rate": "normal"
+    },
+    {
+      "key": "turn_limit_notice_v2",
+      "rate": "normal"
+    },
+    {
+      "key": "faq_empty",
+      "rate": "normal"
+    },
+    {
+      "key": "fallback_route",
+      "rate": "normal"
+    },
+    {
+      "key": "channel_url_note",
+      "rate": "normal"
+    },
+    {
+      "key": "pay_ask_user_no",
+      "rate": "normal"
+    },
+    {
+      "key": "pay_verify_user_no",
+      "rate": "normal"
+    },
+    {
+      "key": "pay_no_bills",
+      "rate": "normal"
+    },
+    {
+      "key": "pay_due_hint",
+      "rate": "normal"
+    },
+    {
+      "key": "pay_error",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_hint",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_ask",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_empty",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_error",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_eta_unavailable",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_eta_guide",
+      "rate": "normal"
+    },
+    {
+      "key": "realtime_ask",
+      "rate": "normal"
+    },
+    {
+      "key": "realtime_empty",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_emergency",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_followup",
+      "rate": "normal"
+    },
+    {
+      "key": "off_hours_repair",
+      "rate": "normal"
+    },
+    {
+      "key": "off_hours_other",
+      "rate": "normal"
+    },
+    {
+      "key": "off_hours_urgent",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_userNo",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_contactPhone",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_address",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_problemType",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_desc",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_edit_ask",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_contactPhone",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_problemType",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_desc",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_error",
+      "rate": "normal"
+    },
+    {
+      "key": "collect_limit",
+      "rate": "normal"
+    },
+    {
+      "key": "transfer_suggest",
+      "rate": "normal"
+    },
+    {
+      "key": "transfer_ready",
+      "rate": "normal"
+    },
+    {
+      "key": "transfer_queued",
+      "rate": "normal"
+    },
+    {
+      "key": "opening__1",
+      "rate": "normal"
+    },
+    {
+      "key": "opening__2",
+      "rate": "normal"
+    },
+    {
+      "key": "chat_smalltalk__1",
+      "rate": "normal"
+    },
+    {
+      "key": "chat_smalltalk__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_work_order__1",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_work_order__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__1",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__2",
+      "rate": "normal"
+    },
+    {
+      "key": "clarify_repair__3",
+      "rate": "normal"
+    },
+    {
+      "key": "fallback_internal__1",
+      "rate": "normal"
+    },
+    {
+      "key": "fallback_internal__2",
+      "rate": "normal"
+    },
+    {
+      "key": "lifeboat_fallback__1",
+      "rate": "normal"
+    },
+    {
+      "key": "lifeboat_fallback__2",
+      "rate": "normal"
+    },
+    {
+      "key": "user_no_unknown__1",
+      "rate": "normal"
+    },
+    {
+      "key": "user_no_unknown__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_confirm_question__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_confirm_question__2",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_no_unknown__1",
+      "rate": "normal"
+    },
+    {
+      "key": "work_order_no_unknown__2",
+      "rate": "normal"
+    },
+    {
+      "key": "internal_chat_hint__1",
+      "rate": "normal"
+    },
+    {
+      "key": "internal_chat_hint__2",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_plan__1",
+      "rate": "normal"
+    },
+    {
+      "key": "stop_warm_plan__2",
+      "rate": "normal"
+    },
+    {
+      "key": "inject_refuse__1",
+      "rate": "normal"
+    },
+    {
+      "key": "inject_refuse__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_address__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_address__2",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_userNo__1",
+      "rate": "normal"
+    },
+    {
+      "key": "repair_ask_natural_userNo__2",
+      "rate": "normal"
+    },
+    {
+      "key": "farewell",
+      "rate": "normal"
+    }
+  ]
+}

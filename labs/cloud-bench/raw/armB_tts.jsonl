@@ -1,0 +1,50 @@
+{"arm": "B1_gen_tts", "text": "您可以通过我们的微信公众号或APP查询账单，具体步骤是：进入“我的账单”页面即可查看。需要帮助可以随时告诉我。", "gen_s": 4.3275, "download_s": 0.2335, "total_s": 4.561, "bytes": 493484, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您好，建议您先检查暖气片是否堵塞或阀门是否打开，如仍不热，请联系供热公司上门检查。", "gen_s": 3.6701, "download_s": 0.1236, "total_s": 3.7937, "bytes": 421484, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您好，您可以通过微信公众号或拨打客服电话报修，稍等为您转接人工服务。", "gen_s": 3.1112, "download_s": 0.1091, "total_s": 3.2204, "bytes": 337004, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您好，正在为您转接人工客服，请稍等。", "gen_s": 1.9082, "download_s": 0.1006, "total_s": 2.0088, "bytes": 198764, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您可以通过供热公司官网或手机APP在线缴费，也可以到指定营业厅办理。需要帮助可随时告知。", "gen_s": 4.5407, "download_s": 0.1189, "total_s": 4.6596, "bytes": 396524, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您好，请问您的工单号是多少？我帮您查询。", "gen_s": 1.8415, "download_s": 0.295, "total_s": 2.1365, "bytes": 188204, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您的户号是 NO20250001，请问需要办理什么业务？", "gen_s": 2.6911, "download_s": 0.1088, "total_s": 2.7999, "bytes": 297644, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "根据国家规定，住宅供暖温度应保持在18℃±2℃。具体以当地供热管理部门要求为准。", "gen_s": 3.6933, "download_s": 0.1076, "total_s": 3.8009, "bytes": 424364, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您可拨打供热公司服务热线，说明情况并提供户号，工作人员会为您办理报停手续。", "gen_s": 3.1692, "download_s": 0.1155, "total_s": 3.2847, "bytes": 361004, "head": "52494646"}
+{"arm": "B1_gen_tts", "text": "您好！有什么可以帮您的吗？", "gen_s": 1.405, "download_s": 0.0926, "total_s": 1.4976, "bytes": 127724, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "没太听清您的需求，请直接告诉我您要办什么，比如：我要报修、查账单、咨询供暖政策；需要人工服务请回复“转人工”。", "gen_s": 4.2196, "download_s": 0.1313, "total_s": 4.3508, "bytes": 498284, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "已为您转接人工坐席，请稍候。", "gen_s": 1.5508, "download_s": 0.1095, "total_s": 1.6602, "bytes": 151724, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "当前人工坐席繁忙，您已进入排队，稍后可回复「转人工」重试。", "gen_s": 2.41, "download_s": 0.0988, "total_s": 2.5088, "bytes": 267884, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "本次会话已较长，我可以继续为您办理；需要人工服务请回复「转人工」。", "gen_s": 2.7244, "download_s": 0.1119, "total_s": 2.8363, "bytes": 305324, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "这个会话有点长了，我先把刚才的关键信息简短核对一下，不影响继续办理；也可以回「转人工」。", "gen_s": 3.6772, "download_s": 0.127, "total_s": 3.8042, "bytes": 420524, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "没太听清您的需求，您可以点下方入口，或直接说明要办的业务。", "gen_s": 2.4587, "download_s": 0.0906, "total_s": 2.5493, "bytes": 274604, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "好的，再见，祝您生活愉快！", "gen_s": 1.3659, "download_s": 0.0993, "total_s": 1.4652, "bytes": 127724, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "这个问题我暂时答不了，您可以拨打客服热线，或回复「转人工」，我不乱猜答案。", "error": "HTTPError: HTTP Error 429: Too Many Requests"}
+{"arm": "B2_prebaked_tts", "text": "这个问题我在知识库暂时没找到答案，建议您回复「转人工」或拨打客服热线，我不编答案。", "gen_s": 3.3134, "download_s": 0.2035, "total_s": 3.517, "bytes": 379244, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供您的户号（供热用户编号），我帮您查账单。", "gen_s": 2.0493, "download_s": 0.0923, "total_s": 2.1416, "bytes": 210284, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "这个户号没查到，麻烦您核对一下户号再发给我一次，好吗？", "gen_s": 2.3392, "download_s": 0.1077, "total_s": 2.4469, "bytes": 248684, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "这个户号暂时没有账单记录。", "gen_s": 1.3606, "download_s": 0.0913, "total_s": 1.4519, "bytes": 137324, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请及时缴纳欠费，以免影响冬季供暖（缴费方式请回复「缴费方式」咨询）。", "gen_s": 3.1952, "download_s": 0.1153, "total_s": 3.3105, "bytes": 358124, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "账单系统暂时开小差，已为您转人工处理，请稍候。", "gen_s": 2.1288, "download_s": 0.0965, "total_s": 2.2253, "bytes": 233324, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "在线缴费/报停等官方入口在供热公司公众号与官网，具体链接需由人工坐席发送，以免我给错网址造成不便——需要的话回复「转人工」，坐席会发给您。", "gen_s": 6.0006, "download_s": 0.1408, "total_s": 6.1414, "bytes": 725804, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "哪一项要改？（户号/电话/地址/问题类型/描述）", "gen_s": 2.41, "download_s": 0.1222, "total_s": 2.5322, "bytes": 265004, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "以后回「查进度+户号」就能看师傅到哪了。", "gen_s": 2.0731, "download_s": 0.0965, "total_s": 2.1696, "bytes": 216044, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供户号或工单号（直接发户号或工单号即可），如「户号NO20250001」或「工单号WO20260001」。", "gen_s": 6.164, "download_s": 0.1644, "total_s": 6.3284, "bytes": 733484, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "暂无工单记录。", "gen_s": 1.0733, "download_s": 0.0866, "total_s": 1.1599, "bytes": 86444, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "工单查询暂时不可用，请稍后再试，或回复「转人工」让坐席跟进。", "gen_s": 2.6922, "download_s": 0.1062, "total_s": 2.7985, "bytes": 299564, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "暂无预计到达时间，师傅处理中会联系您。", "gen_s": 1.7995, "download_s": 0.0943, "total_s": 1.8938, "bytes": 186284, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "您可稍后回复「查进度 户号/工单号」看最新进展。", "gen_s": 2.365, "download_s": 0.095, "total_s": 2.46, "bytes": 256364, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "系统暂时开小差，已为您转人工处理，请稍候。", "gen_s": 1.9503, "download_s": 0.1017, "total_s": 2.0519, "bytes": 207404, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "信息一直没凑齐，已为您转人工处理，请稍候。", "gen_s": 2.0794, "download_s": 0.2322, "total_s": 2.3116, "bytes": 224684, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "这个问题建议转人工处理，您也可以直接回复「转人工」。", "gen_s": 2.407, "download_s": 0.0972, "total_s": 2.5042, "bytes": 273644, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供楼栋号或户号（如「10号楼现在供热参数多少」）。", "gen_s": 2.4725, "download_s": 0.1191, "total_s": 2.5916, "bytes": 271724, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "暂无该楼栋的实时供热数据，请稍后再试，或回复「转人工」让坐席跟进。", "gen_s": 3.0175, "download_s": 0.1674, "total_s": 3.1849, "bytes": 341804, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "非常抱歉，XX区域供热系统正在抢修中，公司已启动应急预案，预计恢复时间请关注官方通知；如需人工服务，回复「转人工」。", "gen_s": 5.0967, "download_s": 0.1266, "total_s": 5.2233, "bytes": 610604, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "刚才查过的工单进展，需要我继续帮您跟进吗？", "gen_s": 1.9141, "download_s": 0.1692, "total_s": 2.0833, "bytes": 205484, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "目前已过营业时间，我先把您的报修登记为「明日优先处理」，师傅上班后会第一时间联系您；也可回复「转人工」留存紧急诉求。", "gen_s": 4.6139, "download_s": 0.1274, "total_s": 4.7413, "bytes": 545324, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "已过营业时间，查询类我可正常帮您；如需人工服务请回复「转人工」。", "gen_s": 2.7242, "download_s": 0.1091, "total_s": 2.8333, "bytes": 302444, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "您反映的情况比较紧急，已为您转接值班处理，请稍候；值班师傅会尽快与您联系。", "gen_s": 3.3142, "download_s": 0.1355, "total_s": 3.4497, "bytes": 378284, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供户号（供热用户编号）。", "gen_s": 1.5401, "download_s": 0.1243, "total_s": 1.6644, "bytes": 153644, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供联系电话，方便维修师傅联系您。", "gen_s": 1.8395, "download_s": 0.1059, "total_s": 1.9455, "bytes": 183404, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请提供报修地址（小区、楼栋、单元、门牌）。", "gen_s": 2.319, "download_s": 0.1218, "total_s": 2.4408, "bytes": 244844, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请描述问题类型（如：供暖不热、管道漏水）。", "gen_s": 2.3506, "download_s": 0.0934, "total_s": 2.444, "bytes": 255404, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "请简单描述一下具体情况。", "gen_s": 1.284, "download_s": 0.0755, "total_s": 1.3595, "bytes": 114284, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "麻烦留个联系电话，维修师傅好联系您。", "gen_s": 2.0016, "download_s": 0.1249, "total_s": 2.1265, "bytes": 171884, "head": "52494646"}
+{"arm": "B2_prebaked_tts", "text": "简单说下是什么问题（比如家里不热、管道漏水），我好帮您登记。", "error": "HTTPError: HTTP Error 429: Too Many Requests"}
+{"arm": "B2_prebaked_tts", "text": "再补充一下具体情况就好，比如哪个房间、多久了。", "gen_s": 2.0536, "download_s": 0.0866, "total_s": 2.1402, "bytes": 210284, "head": "52494646"}

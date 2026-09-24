@@ -1,0 +1,117 @@
+{
+  "seed": 20260922,
+  "n_dialogues": 6012,
+  "n_sys_turns": 50813,
+  "n_sys_turns_with_state_signature": 40657,
+  "n_sys_turns_without_state_signature": 10156,
+  "min_sign_state_turns": 50,
+  "min_group_hits": 3,
+  "n_state_signatures": 8904,
+  "n_state_signatures_with_candidate": 212,
+  "n_candidates": 737,
+  "n_sys_turns_covered_by_a_candidate": 5173,
+  "coverage_of_all_sys_turns": 0.1018,
+  "coverage_of_stateful_sys_turns": 0.1272,
+  "candidates_by_group_hits": {
+    ">=50": 10,
+    ">=20": 58,
+    ">=10": 208,
+    ">=3": 737
+  },
+  "top_states_by_candidate_count": {
+    "车牌/出租=#CP": 33,
+    "车型/出租=#CX": 30,
+    "周边景点/酒店=无": 28,
+    "周边酒店/景点=北京天伦王朝酒店": 18,
+    "周边餐馆/酒店=无": 17,
+    "周边酒店/景点=北京首都宾馆": 17,
+    "酒店类型/酒店=高档型": 16,
+    "周边酒店/景点=北京贵都大酒店": 14,
+    "酒店类型/酒店=舒适型": 12,
+    "周边酒店/景点=无": 11
+  },
+  "determinism_same_seed_twice_identical_examples": true,
+  "sample_candidates": [
+    {
+      "state_signature": "车型/出租=#CX",
+      "skeleton": "车型是#@，车牌是#@。",
+      "group_hits": 150,
+      "sign_total_turns": 837,
+      "examples": [
+        "车型是#CX，车牌是#CX。",
+        "车型是#CX，车牌是#CP。"
+      ],
+      "id": "MC-00000"
+    },
+    {
+      "state_signature": "车牌/出租=#CP",
+      "skeleton": "车型是#@，车牌是#@。",
+      "group_hits": 149,
+      "sign_total_turns": 836,
+      "examples": [
+        "车型是#CX，车牌是#CP。"
+      ],
+      "id": "MC-00001"
+    },
+    {
+      "state_signature": "车型/出租=#CX",
+      "skeleton": "好的，车型是#@，车牌是#@。",
+      "group_hits": 107,
+      "sign_total_turns": 837,
+      "examples": [
+        "好的，车型是#CX，车牌是#CP。"
+      ],
+      "id": "MC-00002"
+    },
+    {
+      "state_signature": "车牌/出租=#CP",
+      "skeleton": "好的，车型是#@，车牌是#@。",
+      "group_hits": 107,
+      "sign_total_turns": 836,
+      "examples": [
+        "好的，车型是#CX，车牌是#CP。"
+      ],
+      "id": "MC-00003"
+    },
+    {
+      "state_signature": "周边景点/酒店=无",
+      "skeleton": "抱歉，周边没有景点。",
+      "group_hits": 85,
+      "sign_total_turns": 662,
+      "examples": [
+        "抱歉，周边没有景点。"
+      ],
+      "id": "MC-00004"
+    },
+    {
+      "state_signature": "周边餐馆/酒店=无",
+      "skeleton": "抱歉，周边没有餐馆。",
+      "group_hits": 58,
+      "sign_total_turns": 524,
+      "examples": [
+        "抱歉，周边没有餐馆。"
+      ],
+      "id": "MC-00005"
+    },
+    {
+      "state_signature": "名称/酒店=北京贵都大酒店",
+      "skeleton": "推荐您去北京贵都大酒店住宿。",
+      "group_hits": 55,
+      "sign_total_turns": 316,
+      "examples": [
+        "推荐您去北京贵都大酒店住宿。"
+      ],
+      "id": "MC-00006"
+    },
+    {
+      "state_signature": "名称/酒店=北京贵都大酒店",
+      "skeleton": "推荐您去北京贵都大酒店。",
+      "group_hits": 55,
+      "sign_total_turns": 316,
+      "examples": [
+        "推荐您去北京贵都大酒店。"
+      ],
+      "id": "MC-00007"
+    }
+  ]
+}

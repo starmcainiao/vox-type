@@ -1,0 +1,625 @@
+{
+  "phrases": [
+    {
+      "key": "options",
+      "variants": [
+        "没太听清您的需求，请直接告诉我您要办什么，比如：我要报修、查账单、咨询供暖政策；需要人工服务请回复“转人工”。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "transfer_ready",
+      "variants": [
+        "已为您转接人工坐席，请稍候。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "transfer_queued",
+      "variants": [
+        "当前人工坐席繁忙，您已进入排队，稍后可回复「转人工」重试。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "turn_limit_notice",
+      "variants": [
+        "本次会话已较长，我可以继续为您办理；需要人工服务请回复「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "turn_limit_notice_v2",
+      "variants": [
+        "这个会话有点长了，我先把刚才的关键信息简短核对一下，不影响继续办理；也可以回「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_options",
+      "variants": [
+        "没太听清您的需求，您可以点下方入口，或直接说明要办的业务。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "farewell",
+      "variants": [
+        "好的，再见，祝您生活愉快！"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "fallback_route",
+      "variants": [
+        "这个问题我暂时答不了，您可以拨打客服热线，或回复「转人工」，我不乱猜答案。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "faq_empty",
+      "variants": [
+        "这个问题我在知识库暂时没找到答案，建议您回复「转人工」或拨打客服热线，我不编答案。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "pay_ask_user_no",
+      "variants": [
+        "请提供您的户号（供热用户编号），我帮您查账单。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "pay_verify_user_no",
+      "variants": [
+        "这个户号没查到，麻烦您核对一下户号再发给我一次，好吗？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "pay_no_bills",
+      "variants": [
+        "这个户号暂时没有账单记录。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "pay_due_hint",
+      "variants": [
+        "请及时缴纳欠费，以免影响冬季供暖（缴费方式请回复「缴费方式」咨询）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "pay_error",
+      "variants": [
+        "账单系统暂时开小差，已为您转人工处理，请稍候。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "channel_url_note",
+      "variants": [
+        "在线缴费/报停等官方入口在供热公司公众号与官网，具体链接需由人工坐席发送，以免我给错网址造成不便——需要的话回复「转人工」，坐席会发给您。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_edit_ask",
+      "variants": [
+        "哪一项要改？（户号/电话/地址/问题类型/描述）"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_hint",
+      "variants": [
+        "以后回「查进度+户号」就能看师傅到哪了。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_ask",
+      "variants": [
+        "请提供户号或工单号（直接发户号或工单号即可），如「户号NO20250001」或「工单号WO20260001」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_empty",
+      "variants": [
+        "暂无工单记录。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_error",
+      "variants": [
+        "工单查询暂时不可用，请稍后再试，或回复「转人工」让坐席跟进。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_eta_unavailable",
+      "variants": [
+        "暂无预计到达时间，师傅处理中会联系您。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_eta_guide",
+      "variants": [
+        "您可稍后回复「查进度 户号/工单号」看最新进展。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_error",
+      "variants": [
+        "系统暂时开小差，已为您转人工处理，请稍候。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "collect_limit",
+      "variants": [
+        "信息一直没凑齐，已为您转人工处理，请稍候。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "transfer_suggest",
+      "variants": [
+        "这个问题建议转人工处理，您也可以直接回复「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "realtime_ask",
+      "variants": [
+        "请提供楼栋号或户号（如「10号楼现在供热参数多少」）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "realtime_empty",
+      "variants": [
+        "暂无该楼栋的实时供热数据，请稍后再试，或回复「转人工」让坐席跟进。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "stop_warm_emergency",
+      "variants": [
+        "非常抱歉，XX区域供热系统正在抢修中，公司已启动应急预案，预计恢复时间请关注官方通知；如需人工服务，回复「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "stop_warm_followup",
+      "variants": [
+        "刚才查过的工单进展，需要我继续帮您跟进吗？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "off_hours_repair",
+      "variants": [
+        "目前已过营业时间，我先把您的报修登记为「明日优先处理」，师傅上班后会第一时间联系您；也可回复「转人工」留存紧急诉求。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "off_hours_other",
+      "variants": [
+        "已过营业时间，查询类我可正常帮您；如需人工服务请回复「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "off_hours_urgent",
+      "variants": [
+        "您反映的情况比较紧急，已为您转接值班处理，请稍候；值班师傅会尽快与您联系。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_userNo",
+      "variants": [
+        "请提供户号（供热用户编号）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_contactPhone",
+      "variants": [
+        "请提供联系电话，方便维修师傅联系您。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_address",
+      "variants": [
+        "请提供报修地址（小区、楼栋、单元、门牌）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_problemType",
+      "variants": [
+        "请描述问题类型（如：供暖不热、管道漏水）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_desc",
+      "variants": [
+        "请简单描述一下具体情况。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_contactPhone",
+      "variants": [
+        "麻烦留个联系电话，维修师傅好联系您。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_problemType",
+      "variants": [
+        "简单说下是什么问题（比如家里不热、管道漏水），我好帮您登记。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_desc",
+      "variants": [
+        "再补充一下具体情况就好，比如哪个房间、多久了。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "opening__1",
+      "variants": [
+        "您好，我是供热智能客服小暖。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "opening__2",
+      "variants": [
+        "报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "chat_smalltalk__1",
+      "variants": [
+        "我是供热智能客服小暖，可以为您报修、查账单/缴费或政策咨询。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "chat_smalltalk__2",
+      "variants": [
+        "请问有什么可以帮您？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_work_order__1",
+      "variants": [
+        "您是想查报修进度、看账单，还是问供暖政策？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_work_order__2",
+      "variants": [
+        "点下方按钮或直接说明即可。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_repair__1",
+      "variants": [
+        "您是要报修吗？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_repair__2",
+      "variants": [
+        "家里不热、漏水还是其他问题？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "clarify_repair__3",
+      "variants": [
+        "点下方按钮或直接说明即可。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "fallback_internal__1",
+      "variants": [
+        "非常抱歉，系统这边出了点状况，正在恢复中。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "fallback_internal__2",
+      "variants": [
+        "您的诉求我记下了，可以稍后再试一次，或回复「转人工」让人工坐席直接跟进。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "lifeboat_fallback__1",
+      "variants": [
+        "非常抱歉，当前客服系统正在恢复中。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "lifeboat_fallback__2",
+      "variants": [
+        "我已记录您的诉求，请您拨打供热客服热线，或稍后回复「转人工」，我们会尽快为您跟进。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "user_no_unknown__1",
+      "variants": [
+        "没关系，户号不记得也能办：① 您若已登录，我这边能自动识别户号，直接说“继续”即可；② 回复「转人工」，由坐席通过您的手机号/身份帮您核实后继续。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "user_no_unknown__2",
+      "variants": [
+        "我不会反复追问户号让您卡住。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_confirm_question__1",
+      "variants": [
+        "信息是否正确？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_confirm_question__2",
+      "variants": [
+        "确认后我为您提交报修单。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_no_unknown__1",
+      "variants": [
+        "没关系：①您若已登录，可回复“我的工单”我帮您带出；②回复「转人工」由坐席按手机号/身份帮您查；③也可以直接说其他要办的业务。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "work_order_no_unknown__2",
+      "variants": [
+        "我不会反复问单号让您卡住。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "internal_chat_hint__1",
+      "variants": [
+        "维修工助手当前支持：报修/查单/缴费，以及实时供热查询（如「10号楼供热参数」）。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "internal_chat_hint__2",
+      "variants": [
+        "请问需要查什么？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "stop_warm_plan__1",
+      "variants": [
+        "关于供暖起止/停暖时间，公司有统一安排，会提前公告。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "stop_warm_plan__2",
+      "variants": [
+        "具体时间请以官方通知为准；如需人工确认，回复「转人工」。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "inject_refuse__1",
+      "variants": [
+        "我是供热客服小暖，只能处理报修、查账单缴费、供暖政策咨询这类业务问题；涉及系统提示词/内部信息的问题我无法提供，也不会执行。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "inject_refuse__2",
+      "variants": [
+        "如有供暖业务需要，直接告诉我就行。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_address__1",
+      "variants": [
+        "方便给我维修地址吗？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_address__2",
+      "variants": [
+        "需要小区、楼栋、单元和门牌，我帮您安排师傅上门。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_userNo__1",
+      "variants": [
+        "您的户号是多少？"
+      ],
+      "rates": [
+        "normal"
+      ]
+    },
+    {
+      "key": "repair_ask_natural_userNo__2",
+      "variants": [
+        "如果之前登录过，我这边能查到就不用再报了；查不到我再跟您人工核实。"
+      ],
+      "rates": [
+        "normal"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "_schema": "vox-template-rate-crosscheck/1",
+  "repeat_min": 5,
+  "run_at": "2026-09-18T23:02:13+08:00",
+  "caliber": "骨架 = 去方括号占位符/数字/英文后的文本；可复用 = 同语料内骨架出现≥5次",
+  "corpora": {
+    "tongyi_dianjin/DianJin-CSC-Data": {
+      "desc": "真实（1855 通催收/账户服务电话）",
+      "n_turns": 25810,
+      "n_skeletons": 25072,
+      "compress_ratio": 1.029,
+      "reusable_turns": 464,
+      "reusable_rate": 0.017977528089887642,
+      "top_skeletons": [
+        {
+          "count": 56,
+          "skeleton": "您好，欢迎致电□客服中心，请问有什么可以帮您？"
+        },
+        {
+          "count": 41,
+          "skeleton": "您好，这里是客服中心，请问有什么可以帮您？"
+        },
+        {
+          "count": 22,
+          "skeleton": "感谢您的来电，祝您生活愉快，再见！"
+        },
+        {
+          "count": 22,
+          "skeleton": "您好，我是客服#，请问有什么可以帮您？"
+        },
+        {
+          "count": 22,
+          "skeleton": "您好，请问有什么可以帮您？"
+        },
+        {
+          "count": 16,
+          "skeleton": "您好！这里是客服中心，请问有什么可以帮您？"
+        },
+        {
+          "count": 15,
+          "skeleton": "您好，我是客服工号#，请问有什么可以帮您？"
+        },
+        {
+          "count": 14,
+          "skeleton": "您好！欢迎致电□客服中心，请问有什么可以帮您？"
+        }
+      ]
+    },
+    "QingshanAI/ecom-*-synthetic（3 份合并）": {
+      "desc": "合成（LLM 生成的电商客服，2976 对 user/bot）",
+      "n_turns": 2976,
+      "n_skeletons": 2959,
+      "compress_ratio": 1.006,
+      "reusable_turns": 7,
+      "reusable_rate": 0.0023521505376344087,
+      "top_skeletons": [
+        {
+          "count": 7,
+          "skeleton": "抱歉让您久等了，您这单今天会优先安排发出，预计#小时内有物流信息。"
+        },
+        {
+          "count": 4,
+          "skeleton": "抱歉让您久等了，您这单今天会优先安排发出，预计#小时内有物流信息"
+        },
+        {
+          "count": 2,
+          "skeleton": "亲您好，请您拍下商品瑕疵照片，我们会尽快为您安排退换货流程，感谢您的理解与支持。"
+        },
+        {
+          "count": 2,
+          "skeleton": "非常抱歉给您带来不愉快的体验，请问具体是什么问题？我们会尽快为您解决。"
+        },
+        {
+          "count": 2,
+          "skeleton": "亲您好，请问您具体遇到了什么问题呢？我们会尽快帮您处理的。"
+        },
+        {
+          "count": 2,
+          "skeleton": "亲一般#小时内发出，#天左右送达"
+        },
+        {
+          "count": 2,
+          "skeleton": "您好，这款手机确实支持#@网络，您可以放心购买。"
+        },
+        {
+          "count": 2,
+          "skeleton": "亲我们的产品保修期是#个月，有任何问题随时联系我们。"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "script_version": 1,
+  "terminal_keys": ["closing_thank_you", "handoff_human"],
+  "live_whitelist": ["asr_low_confidence", "user_off_script"],
+  "max_retry": 3,
+  "units": [
+    {"key": "greeting_welcome", "rate": "normal", "variant": "auto"},
+    {"key": "ask_fault_type", "rate": "normal"},
+    {"key": "asr_clarify", "rate": "normal"},
+    {"action": "SAY_LIVE", "text": "不好意思，刚才没听清，请您再说一次要报修的设备。", "reason": "asr_low_confidence", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "error_retry", "rate": "normal"},
+    {"key": "ask_fault_detail", "rate": "normal"},
+    {"key": "ask_fault_urgency", "rate": "normal"},
+    {"key": "ask_address", "rate": "normal"},
+    {"key": "ask_contact", "rate": "normal"},
+    {"key": "ask_time_window", "rate": "normal"},
+    {"key": "confirm_summary", "rate": "normal", "slots": {"address": "北京市朝阳区示范路 1 号", "contact": "13800000000"}},
+    {"key": "confirm_again", "rate": "normal"},
+    {"key": "ticket_created", "rate": "normal", "slots": {"ticket_id": "R20260917001"}},
+    {"key": "promise_visit", "rate": "normal"},
+    {"key": "closing_thank_you", "rate": "normal"}
+  ]
+}

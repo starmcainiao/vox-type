@@ -1,0 +1,28 @@
+# .gitattributes —— 分发排除（T37，2026-09-23）
+#
+# WHY 需要这个文件：`packs/*/golden/**` 是第三方语料的**逐字原文**与（未来的）真人标注，
+# 仓内三处契约都写明它不进公开分发（packs/AGENTS.md:9 / packs/fin-cs/golden/README.md /
+# docs/11 §11.7）。但在此之前，这条排除**只是一句写在文档里的人工指令**——
+# 导出走 `git archive HEAD`，它对所有跟踪文件一视同仁，没有任何东西会因为它漏掉而报错。
+#
+# 实测后果（2026-09-23 推送前核对时发现）：公开仓 `packs/fin-cs/golden/` 里已经躺着
+# 1,193 KB / 2433 行逐字语料——**第一次推送时就漏了**，而 docs/20 的合规自审还写着
+# 「分发排除已兑现」。教训与本仓其它三处同类事故一致：**契约写在文档里 ≠ 有执行者**。
+#
+# `export-ignore` 是 `git archive` 的原生机制：标了它的路径**物理上不进 tar 流**。
+# 目录本身与目录内文件要分别标（gitattributes 不递归继承目录的匹配）。
+#
+# 核验命令（推送前必跑）：
+#   git archive HEAD | tar -t | grep -c 'packs/.*/golden'   # 必须为 0
+packs/fin-cs/golden export-ignore
+packs/fin-cs/golden/** export-ignore
+packs/*/golden export-ignore
+packs/*/golden/** export-ignore
+
+# docs/11 §11.7 排除清单第二条：`labs/**/raw/**` 中含第三方语料**逐字原文**的部分。
+# 该条是**内容相关**的（同一目录下并非每个文件都含原文），因此只能逐个确认后登记——
+# 已确认含原文的是语义档探针的逐条输出（每条带一个 `user_utterance` 原句，2433 条）。
+# 逐字档基线与汇总文件经扫描**不含**原文，故不在排除之列。
+# 核验：git archive HEAD | tar -t | grep -c 'labs/corpus-harvest/raw/semantic_probe.jsonl'  # 必须 0
+# （判据要精确到文件——同目录的 semantic_probe_summary.json 是汇总、不含原文，按前缀匹配会误数）
+labs/corpus-harvest/raw/semantic_probe.jsonl export-ignore

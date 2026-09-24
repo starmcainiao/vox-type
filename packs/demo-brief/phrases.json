@@ -1,0 +1,68 @@
+{
+  "phrases": [
+    {
+      "key": "greeting_ticket",
+      "variants": [
+        "您好，这里是工单提醒服务。",
+        "您好，我为您播报一条工单信息。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ticket_status",
+      "variants": [
+        "工单编号 {ticket_id} 当前状态为 {ticket_status}。",
+        "您有一条编号为 {ticket_id} 的工单，目前是 {ticket_status} 状态。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "due_tonight",
+      "variants": [
+        "这条工单今天下班前到期，建议您今天处理。",
+        "今天之内需要处理，建议您今天内确认一下。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "due_days_left",
+      "variants": [
+        "距离到期还剩 {days_left} 天，请尽快安排处理。",
+        "您还有 {days_left} 天到期时间，请尽快安排。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "already_overdue",
+      "variants": [
+        "这条工单已经逾期 {overdue_days} 天，请立即处理。",
+        "该工单已逾期 {overdue_days} 天，请您尽快处理。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_assignee",
+      "variants": [
+        "请您确认当前负责人是否仍然在岗。",
+        "麻烦您确认一下这条工单还在您名下。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "offer_help",
+      "variants": [
+        "如果需要协助，请回复工单编号我来帮您跟进。",
+        "处理有困难的话，我可以帮您转接同事。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "closing_brief",
+      "variants": [
+        "以上就是您的工单情况，谢谢。",
+        "提醒完毕，祝您工作顺利。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    }
+  ]
+}

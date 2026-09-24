@@ -1,0 +1,10 @@
+{"i": 0, "turn": "我要查一下账单", "llm_ttft_s": 0.3069, "llm_total_s": 0.5467, "tts_total_s": 4.4587, "tts_bytes": 498284, "chain_total_s": 5.0054, "error": null, "text": "您可以通过我们的微信公众号或APP查询账单，具体步骤是：进入“我的账单”页面即可查看。需要帮助可以随时告诉我。"}
+{"i": 1, "turn": "我家暖气不热", "llm_ttft_s": 0.2889, "llm_total_s": 0.5289, "tts_total_s": 3.6657, "tts_bytes": 402284, "chain_total_s": 4.1946, "error": null, "text": "您好，建议您先检查暖气片是否堵塞或气压不足，如仍不热，请联系供热公司安排检修。"}
+{"i": 2, "turn": "帮我报修", "llm_ttft_s": 0.2322, "llm_total_s": 0.3864, "tts_total_s": 3.1226, "tts_bytes": 337004, "chain_total_s": 3.509, "error": null, "text": "您好，您可以通过微信公众号或拨打客服电话报修，稍等为您转接人工服务。"}
+{"i": 3, "turn": "转人工", "llm_ttft_s": 0.2743, "llm_total_s": 0.396, "tts_total_s": 1.9885, "tts_bytes": 193004, "chain_total_s": 2.3845, "error": null, "text": "您好，正在为您转接人工客服，请稍等。"}
+{"i": 4, "turn": "怎么缴费", "llm_ttft_s": 0.3019, "llm_total_s": 0.4827, "tts_total_s": 5.4616, "tts_bytes": 447404, "chain_total_s": 5.9443, "error": null, "text": "您可以通过供热公司官网或手机APP在线缴费，也可以到指定营业厅办理。需要帮助可随时告知。"}
+{"i": 5, "turn": "查一下我的工单", "llm_ttft_s": 0.2413, "llm_total_s": 0.3639, "tts_total_s": 1.9745, "tts_bytes": 184364, "chain_total_s": 2.3384, "error": null, "text": "您好，请问您的工单号是多少？我帮您查询。"}
+{"i": 6, "turn": "户号是 NO20250001", "llm_ttft_s": 0.1949, "llm_total_s": 0.3679, "tts_total_s": 4.0853, "tts_bytes": 338924, "chain_total_s": 4.4532, "error": null, "text": "您的户号是 NO20250001，请问需要办理什么业务？"}
+{"i": 7, "turn": "供暖温度标准是多少", "llm_ttft_s": 0.3511, "llm_total_s": 0.5383, "tts_total_s": 4.0508, "tts_bytes": 454124, "chain_total_s": 4.5891, "error": null, "text": "根据国家规定，住宅供暖温度应保持在18℃±2℃。具体以当地供热管理部门要求为准。"}
+{"i": 8, "turn": "报停供暖怎么办理", "llm_ttft_s": 0.2768, "llm_total_s": 0.4692, "tts_total_s": 3.8487, "tts_bytes": 417644, "chain_total_s": 4.3179, "error": null, "text": "您需要携带身份证和房产证到供热公司营业厅办理报停手续，或拨打客服电话咨询具体流程。"}
+{"i": 9, "turn": "你好", "llm_ttft_s": 0.2734, "llm_total_s": 0.3543, "tts_total_s": 1.4845, "tts_bytes": 134444, "chain_total_s": 1.8388, "error": null, "text": "您好！有什么可以帮您的吗？"}

@@ -1,0 +1,4 @@
+[
+  {"key": "greeting_welcome", "rate": "normal"},
+  {"key": "step_confirm_amount", "rate": "fast", "slots": {"amount": "¥500"}}
+]

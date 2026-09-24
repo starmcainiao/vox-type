@@ -1,0 +1,524 @@
+{
+  "spec": "docs/10 §10.7（序列命中：逐字覆盖、最长优先、任一段不中即整体未命中）",
+  "card": "docs/tasks/T33-packs-多分句整段序列命中与plan拼接.md",
+  "pack": {
+    "pack_id": "heat-kefu",
+    "pack_version": "1",
+    "assets": 69,
+    "built_dir": "packs/heat_kefu_build/heat-kefu-1"
+  },
+  "yaml_env": "KEFU_HEAT_YAML",
+  "provenance": {
+    "yaml_sha256": "a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44",
+    "manifest_sha256": "e35a639a8b43eb0cc027d700a43bd7d119801a024e60b38ef20dd5240d0193ef",
+    "git_commit": "8fa2e83898e49d27f7c3afa5a753f60f2b4a6e04"
+  },
+  "env": {
+    "python": "3.14.6",
+    "repeat": 3,
+    "slow_arm_skipped": false,
+    "git_error": null
+  },
+  "summary": {
+    "n_multi_clause": 14,
+    "seq_hit": 14,
+    "seq_miss": 0,
+    "old_arm_hit": 0,
+    "segment_count_p50": 2.0,
+    "segment_count_min": 2,
+    "segment_count_max": 3,
+    "executor_wall_ms_p50": 5.032,
+    "executor_wall_ms_min": 2.173,
+    "executor_wall_ms_max": 7.368,
+    "executor_first_audio_ms_p50": 0.176,
+    "executor_total_duration_ms_p50": 10481.5,
+    "tts_calls_sum": 0,
+    "slow_arm_say_ms_p50": 568.956,
+    "slow_arm_say_ms_min": 542.736,
+    "slow_arm_say_ms_max": 605.895,
+    "hit_vs_slow_delta_ms_p50": -563.924,
+    "repeat_wall_ms_p50": 5.076,
+    "n_repeat_samples": 42
+  },
+  "details": [
+    {
+      "key": "opening",
+      "n_segments": 2,
+      "segment_keys": [
+        "opening__1",
+        "opening__2"
+      ],
+      "total_chars": 56,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.363,
+        "total_duration_ms": 11021,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 5.694,
+        "out_bytes": 352730
+      },
+      "slow_arm_say_ms": 574.777,
+      "repeat_wall_ms": [
+        5.774,
+        5.1,
+        5.102
+      ]
+    },
+    {
+      "key": "chat_smalltalk",
+      "n_segments": 2,
+      "segment_keys": [
+        "chat_smalltalk__1",
+        "chat_smalltalk__2"
+      ],
+      "total_chars": 40,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.153,
+        "total_duration_ms": 8445,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 3.888,
+        "out_bytes": 270280
+      },
+      "slow_arm_say_ms": 560.64,
+      "repeat_wall_ms": [
+        4.502,
+        4.121,
+        4.026
+      ]
+    },
+    {
+      "key": "clarify_work_order",
+      "n_segments": 2,
+      "segment_keys": [
+        "clarify_work_order__1",
+        "clarify_work_order__2"
+      ],
+      "total_chars": 34,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.179,
+        "total_duration_ms": 7066,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 3.497,
+        "out_bytes": 226170
+      },
+      "slow_arm_say_ms": 554.19,
+      "repeat_wall_ms": [
+        3.982,
+        3.657,
+        3.422
+      ]
+    },
+    {
+      "key": "clarify_repair",
+      "n_segments": 3,
+      "segment_keys": [
+        "clarify_repair__1",
+        "clarify_repair__2",
+        "clarify_work_order__2"
+      ],
+      "total_chars": 34,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.148,
+        "total_duration_ms": 6856,
+        "hit_count": 3,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 3.323,
+        "out_bytes": 219430
+      },
+      "slow_arm_say_ms": 561.154,
+      "repeat_wall_ms": [
+        4.192,
+        3.375,
+        3.278
+      ]
+    },
+    {
+      "key": "fallback_internal",
+      "n_segments": 2,
+      "segment_keys": [
+        "fallback_internal__1",
+        "fallback_internal__2"
+      ],
+      "total_chars": 57,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.133,
+        "total_duration_ms": 11407,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 5.703,
+        "out_bytes": 365066
+      },
+      "slow_arm_say_ms": 568.537,
+      "repeat_wall_ms": [
+        5.784,
+        5.171,
+        5.366
+      ]
+    },
+    {
+      "key": "lifeboat_fallback",
+      "n_segments": 2,
+      "segment_keys": [
+        "lifeboat_fallback__1",
+        "lifeboat_fallback__2"
+      ],
+      "total_chars": 58,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.189,
+        "total_duration_ms": 11823,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 5.846,
+        "out_bytes": 378382
+      },
+      "slow_arm_say_ms": 580.589,
+      "repeat_wall_ms": [
+        6.675,
+        5.676,
+        5.393
+      ]
+    },
+    {
+      "key": "user_no_unknown",
+      "n_segments": 2,
+      "segment_keys": [
+        "user_no_unknown__1",
+        "user_no_unknown__2"
+      ],
+      "total_chars": 87,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.181,
+        "total_duration_ms": 16478,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 7.368,
+        "out_bytes": 527336
+      },
+      "slow_arm_say_ms": 601.506,
+      "repeat_wall_ms": [
+        8.136,
+        7.548,
+        7.385
+      ]
+    },
+    {
+      "key": "repair_confirm_question",
+      "n_segments": 2,
+      "segment_keys": [
+        "repair_confirm_question__1",
+        "repair_confirm_question__2"
+      ],
+      "total_chars": 19,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.169,
+        "total_duration_ms": 4011,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 2.173,
+        "out_bytes": 128400
+      },
+      "slow_arm_say_ms": 542.736,
+      "repeat_wall_ms": [
+        2.524,
+        2.048,
+        2.024
+      ]
+    },
+    {
+      "key": "work_order_no_unknown",
+      "n_segments": 2,
+      "segment_keys": [
+        "work_order_no_unknown__1",
+        "work_order_no_unknown__2"
+      ],
+      "total_chars": 76,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.172,
+        "total_duration_ms": 14585,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 6.84,
+        "out_bytes": 466778
+      },
+      "slow_arm_say_ms": 605.895,
+      "repeat_wall_ms": [
+        7.2,
+        6.66,
+        6.426
+      ]
+    },
+    {
+      "key": "internal_chat_hint",
+      "n_segments": 2,
+      "segment_keys": [
+        "internal_chat_hint__1",
+        "internal_chat_hint__2"
+      ],
+      "total_chars": 49,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.173,
+        "total_duration_ms": 9942,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 4.534,
+        "out_bytes": 318202
+      },
+      "slow_arm_say_ms": 558.421,
+      "repeat_wall_ms": [
+        5.171,
+        4.893,
+        4.628
+      ]
+    },
+    {
+      "key": "stop_warm_plan",
+      "n_segments": 2,
+      "segment_keys": [
+        "stop_warm_plan__1",
+        "stop_warm_plan__2"
+      ],
+      "total_chars": 54,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.197,
+        "total_duration_ms": 11356,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 5.53,
+        "out_bytes": 363448
+      },
+      "slow_arm_say_ms": 569.375,
+      "repeat_wall_ms": [
+        6.052,
+        5.052,
+        5.291
+      ]
+    },
+    {
+      "key": "inject_refuse",
+      "n_segments": 2,
+      "segment_keys": [
+        "inject_refuse__1",
+        "inject_refuse__2"
+      ],
+      "total_chars": 79,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.195,
+        "total_duration_ms": 16503,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 7.311,
+        "out_bytes": 528140
+      },
+      "slow_arm_say_ms": 587.732,
+      "repeat_wall_ms": [
+        8.488,
+        7.332,
+        7.383
+      ]
+    },
+    {
+      "key": "repair_ask_natural_address",
+      "n_segments": 2,
+      "segment_keys": [
+        "repair_ask_natural_address__1",
+        "repair_ask_natural_address__2"
+      ],
+      "total_chars": 34,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.158,
+        "total_duration_ms": 7122,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 3.628,
+        "out_bytes": 227958
+      },
+      "slow_arm_say_ms": 552.852,
+      "repeat_wall_ms": [
+        3.974,
+        3.361,
+        3.708
+      ]
+    },
+    {
+      "key": "repair_ask_natural_userNo",
+      "n_segments": 2,
+      "segment_keys": [
+        "repair_ask_natural_userNo__1",
+        "repair_ask_natural_userNo__2"
+      ],
+      "total_chars": 41,
+      "old_arm": {
+        "hit": false,
+        "miss_reason": "text_not_prebaked"
+      },
+      "seq_arm": {
+        "hit": true,
+        "miss_reason": null,
+        "uncovered": ""
+      },
+      "executor": {
+        "tts_calls": 0,
+        "first_audio_ms": 0.183,
+        "total_duration_ms": 8123,
+        "hit_count": 2,
+        "miss_count": 0,
+        "fallback_count": 0,
+        "wall_ms": 3.849,
+        "out_bytes": 259966
+      },
+      "slow_arm_say_ms": 571.971,
+      "repeat_wall_ms": [
+        4.859,
+        3.831,
+        3.75
+      ]
+    }
+  ],
+  "problems": [],
+  "passed": true
+}

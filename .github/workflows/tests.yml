@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unittest:
+    # macOS runner：本项目 TTS 引擎实现为 macOS say（零第三方依赖的前提），
+    # cli/adapters 的预铸夹具需要真实 TTS 可用；Linux runner 无 say → 夹具失败。
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: 构建 heat-kefu 包（packs 的真包断言依赖它；不构建则诚实 skip）
+        run: sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
+      - name: 全量测试（十一个测试根，零第三方依赖）
+        run: |
+          fail=0
+          for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do
+            echo "== $d =="
+            python3 -m unittest discover -s "$d" || fail=1
+          done
+          exit $fail

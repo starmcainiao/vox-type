@@ -1,0 +1,385 @@
+{
+  "caliber": "tokenize NEWLINE token count（排除注释与 docstring；不含 tests/ 与 __pycache__）",
+  "layers": [
+    {
+      "layer": "core",
+      "limit": 150,
+      "files": [
+        {
+          "layer": "core",
+          "file": "__init__.py",
+          "path": "core/__init__.py",
+          "executable_lines": 3
+        },
+        {
+          "layer": "core",
+          "file": "metrics_spec.py",
+          "path": "core/metrics_spec.py",
+          "executable_lines": 28
+        },
+        {
+          "layer": "core",
+          "file": "protocol.py",
+          "path": "core/protocol.py",
+          "executable_lines": 72
+        }
+      ]
+    },
+    {
+      "layer": "rules",
+      "limit": null,
+      "files": []
+    },
+    {
+      "layer": "compiler",
+      "limit": null,
+      "files": [
+        {
+          "layer": "compiler",
+          "file": "__init__.py",
+          "path": "compiler/__init__.py",
+          "executable_lines": 6
+        },
+        {
+          "layer": "compiler",
+          "file": "checks.py",
+          "path": "compiler/checks.py",
+          "executable_lines": 143
+        },
+        {
+          "layer": "compiler",
+          "file": "prebake.py",
+          "path": "compiler/prebake.py",
+          "executable_lines": 182
+        },
+        {
+          "layer": "compiler",
+          "file": "quality.py",
+          "path": "compiler/quality.py",
+          "executable_lines": 96
+        },
+        {
+          "layer": "compiler",
+          "file": "script.py",
+          "path": "compiler/script.py",
+          "executable_lines": 137
+        },
+        {
+          "layer": "compiler",
+          "file": "source.py",
+          "path": "compiler/source.py",
+          "executable_lines": 136
+        }
+      ]
+    },
+    {
+      "layer": "assets",
+      "limit": null,
+      "files": [
+        {
+          "layer": "assets",
+          "file": "__init__.py",
+          "path": "assets/__init__.py",
+          "executable_lines": 3
+        },
+        {
+          "layer": "assets",
+          "file": "fingerprint.py",
+          "path": "assets/fingerprint.py",
+          "executable_lines": 7
+        },
+        {
+          "layer": "assets",
+          "file": "pack.py",
+          "path": "assets/pack.py",
+          "executable_lines": 325
+        }
+      ]
+    },
+    {
+      "layer": "runtime",
+      "limit": null,
+      "files": [
+        {
+          "layer": "runtime",
+          "file": "__init__.py",
+          "path": "runtime/__init__.py",
+          "executable_lines": 5
+        },
+        {
+          "layer": "runtime",
+          "file": "audio.py",
+          "path": "runtime/audio.py",
+          "executable_lines": 95
+        },
+        {
+          "layer": "runtime",
+          "file": "duplex.py",
+          "path": "runtime/duplex.py",
+          "executable_lines": 76
+        },
+        {
+          "layer": "runtime",
+          "file": "events.py",
+          "path": "runtime/events.py",
+          "executable_lines": 56
+        },
+        {
+          "layer": "runtime",
+          "file": "executor.py",
+          "path": "runtime/executor.py",
+          "executable_lines": 264
+        }
+      ]
+    },
+    {
+      "layer": "adapters",
+      "limit": 150,
+      "files": [
+        {
+          "layer": "adapters",
+          "file": "asr_omlx/__init__.py",
+          "path": "adapters/asr_omlx/__init__.py",
+          "executable_lines": 2
+        },
+        {
+          "layer": "adapters",
+          "file": "asr_omlx/adapter.py",
+          "path": "adapters/asr_omlx/adapter.py",
+          "executable_lines": 106
+        },
+        {
+          "layer": "adapters",
+          "file": "framework_kefu/__init__.py",
+          "path": "adapters/framework_kefu/__init__.py",
+          "executable_lines": 7
+        },
+        {
+          "layer": "adapters",
+          "file": "framework_kefu/bridge.py",
+          "path": "adapters/framework_kefu/bridge.py",
+          "executable_lines": 155
+        },
+        {
+          "layer": "adapters",
+          "file": "framework_kefu/hit_query.py",
+          "path": "adapters/framework_kefu/hit_query.py",
+          "executable_lines": 129
+        },
+        {
+          "layer": "adapters",
+          "file": "framework_kefu/kefu_client.py",
+          "path": "adapters/framework_kefu/kefu_client.py",
+          "executable_lines": 191
+        },
+        {
+          "layer": "adapters",
+          "file": "framework_kefu/normalize.py",
+          "path": "adapters/framework_kefu/normalize.py",
+          "executable_lines": 16
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_macsay/__init__.py",
+          "path": "adapters/tts_macsay/__init__.py",
+          "executable_lines": 2
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_macsay/adapter.py",
+          "path": "adapters/tts_macsay/adapter.py",
+          "executable_lines": 55
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_omlx/__init__.py",
+          "path": "adapters/tts_omlx/__init__.py",
+          "executable_lines": 2
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_omlx/adapter.py",
+          "path": "adapters/tts_omlx/adapter.py",
+          "executable_lines": 115
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_omlx/postprocess.py",
+          "path": "adapters/tts_omlx/postprocess.py",
+          "executable_lines": 133
+        },
+        {
+          "layer": "adapters",
+          "file": "tts_omlx/transport.py",
+          "path": "adapters/tts_omlx/transport.py",
+          "executable_lines": 73
+        }
+      ]
+    },
+    {
+      "layer": "trigger",
+      "limit": null,
+      "files": [
+        {
+          "layer": "trigger",
+          "file": "__init__.py",
+          "path": "trigger/__init__.py",
+          "executable_lines": 5
+        },
+        {
+          "layer": "trigger",
+          "file": "format.py",
+          "path": "trigger/format.py",
+          "executable_lines": 393
+        },
+        {
+          "layer": "trigger",
+          "file": "ledger.py",
+          "path": "trigger/ledger.py",
+          "executable_lines": 147
+        },
+        {
+          "layer": "trigger",
+          "file": "plan.py",
+          "path": "trigger/plan.py",
+          "executable_lines": 120
+        },
+        {
+          "layer": "trigger",
+          "file": "reachability.py",
+          "path": "trigger/reachability.py",
+          "executable_lines": 32
+        }
+      ]
+    },
+    {
+      "layer": "eval",
+      "limit": 150,
+      "files": [
+        {
+          "layer": "eval",
+          "file": "__init__.py",
+          "path": "eval/__init__.py",
+          "executable_lines": 5
+        },
+        {
+          "layer": "eval",
+          "file": "_io.py",
+          "path": "eval/_io.py",
+          "executable_lines": 33
+        },
+        {
+          "layer": "eval",
+          "file": "bench.py",
+          "path": "eval/bench.py",
+          "executable_lines": 379
+        },
+        {
+          "layer": "eval",
+          "file": "cer.py",
+          "path": "eval/cer.py",
+          "executable_lines": 42
+        },
+        {
+          "layer": "eval",
+          "file": "duplex_quality.py",
+          "path": "eval/duplex_quality.py",
+          "executable_lines": 461
+        },
+        {
+          "layer": "eval",
+          "file": "offline_tts.py",
+          "path": "eval/offline_tts.py",
+          "executable_lines": 72
+        },
+        {
+          "layer": "eval",
+          "file": "readback.py",
+          "path": "eval/readback.py",
+          "executable_lines": 254
+        },
+        {
+          "layer": "eval",
+          "file": "report.py",
+          "path": "eval/report.py",
+          "executable_lines": 179
+        },
+        {
+          "layer": "eval",
+          "file": "stats.py",
+          "path": "eval/stats.py",
+          "executable_lines": 65
+        }
+      ]
+    },
+    {
+      "layer": "cli",
+      "limit": 150,
+      "files": [
+        {
+          "layer": "cli",
+          "file": "__init__.py",
+          "path": "cli/__init__.py",
+          "executable_lines": 5
+        },
+        {
+          "layer": "cli",
+          "file": "__main__.py",
+          "path": "cli/__main__.py",
+          "executable_lines": 4
+        },
+        {
+          "layer": "cli",
+          "file": "commands/__init__.py",
+          "path": "cli/commands/__init__.py",
+          "executable_lines": 100
+        },
+        {
+          "layer": "cli",
+          "file": "commands/bench.py",
+          "path": "cli/commands/bench.py",
+          "executable_lines": 77
+        },
+        {
+          "layer": "cli",
+          "file": "commands/pack_build.py",
+          "path": "cli/commands/pack_build.py",
+          "executable_lines": 61
+        },
+        {
+          "layer": "cli",
+          "file": "commands/pack_check.py",
+          "path": "cli/commands/pack_check.py",
+          "executable_lines": 55
+        },
+        {
+          "layer": "cli",
+          "file": "commands/run.py",
+          "path": "cli/commands/run.py",
+          "executable_lines": 62
+        },
+        {
+          "layer": "cli",
+          "file": "commands/verify.py",
+          "path": "cli/commands/verify.py",
+          "executable_lines": 109
+        },
+        {
+          "layer": "cli",
+          "file": "errors.py",
+          "path": "cli/errors.py",
+          "executable_lines": 39
+        },
+        {
+          "layer": "cli",
+          "file": "main.py",
+          "path": "cli/main.py",
+          "executable_lines": 74
+        }
+      ]
+    }
+  ],
+  "total_files": 54,
+  "total_executable_lines": 5393,
+  "violations": []
+}
