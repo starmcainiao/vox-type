@@ -634,14 +634,33 @@ class TestClonePath(TmpDir):
 # ============================================================
 # 6. HTTP 失败收口：非 2xx / 非 WAV 响应 → TtsError
 # ============================================================
+@unittest.skipUnless(FFMPEG_BIN, "找不到可用的占位可执行文件，替身用例无法通过适配器的 ffmpeg 可用性检查")
 class TestHttpFailure(TmpDir):
-    """服务端故障必须收口为 TtsError，不得让裸异常或半截字节溜出去。"""
+    """服务端故障必须收口为 TtsError，不得让裸异常或半截字节溜出去。
+
+    ffmpeg 一律用占位（T41 起适配器把 ffmpeg 可用性检查挪到了请求**之前**——「缺 ffmpeg 不该
+    白花一次合成」；CI runner 无 ffmpeg，用裸名会让四条里三条**因错误的原因抛异常而假绿**、
+    一条真红——2026-09-24 快照 CI 三档实测，T38 同款形态）。负例断言同时钉住**具体消息**，
+    「ffmpeg 不存在」这类错因从此过不了断言。
+    """
 
     def test_garbage_response_raises(self):
-        """服务端返回非 WAV 字节 → TtsError（不能把 HTML 错误页当音频落盘）。"""
-        tts = self.default_tts(opener=opener_returning(b"<html>not found</html>"))
-        with self.assertRaises(TtsError):
+        """服务端返回非 WAV 字节 → TtsError（不能把 HTML 错误页当音频落盘）。
+
+        runner 也注入替身（而不让占位进程真跑）：占位 `true` 退出 0 但不产出文件，
+        `_read_samples` 对「文件缺失」会漏出裸 FileNotFoundError（非 TtsError，是本卡
+        不改的既有边角）；替身明确写出坏字节，失败原因在 CI 与本地都确定。
+        """
+        def garbage_runner(cmd, **kwargs):
+            Path(cmd[-1]).write_bytes(b"<html>not found</html>")
+            return type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+
+        tts = self.default_tts(opener=opener_returning(b"<html>not found</html>"),
+                               ffmpeg=FFMPEG_BIN, runner=garbage_runner)
+        with self.assertRaises(TtsError) as ctx:
             tts.synthesize("测试", self.out())
+        self.assertIn("产物归一失败", str(ctx.exception), "必须是在归一环节失败，不是别的原因")
+        self.assertFalse(self.out().exists(), "坏字节不得落盘")
 
     def test_http_error_carries_status_code(self):
         """HTTP 非 2xx → TtsError，消息含状态码（便于区分 400 与 500）。"""
@@ -654,7 +673,7 @@ class TestHttpFailure(TmpDir):
             )
 
         with self.assertRaises(TtsError) as ctx:
-            self.default_tts(opener=rejecting).synthesize("测试", self.out())
+            self.default_tts(opener=rejecting, ffmpeg=FFMPEG_BIN).synthesize("测试", self.out())
         self.assertIn("400", str(ctx.exception))
 
     def test_connection_refused_raises(self):
@@ -665,14 +684,16 @@ class TestHttpFailure(TmpDir):
             raise urllib.error.URLError(
                 reason=ConnectionRefusedError(61, "Connection refused"))
 
-        with self.assertRaises(TtsError):
-            self.default_tts(opener=refusing).synthesize("测试", self.out())
+        with self.assertRaises(TtsError) as ctx:
+            self.default_tts(opener=refusing, ffmpeg=FFMPEG_BIN).synthesize("测试", self.out())
+        self.assertIn("无法连接", str(ctx.exception), "必须是连接类失败，不是别的原因")
 
     def test_overlarge_response_raises(self):
         """响应超过上限 → TtsError（防服务端串流把内存打爆）。"""
-        tts = self.default_tts(opener=opener_returning(b"x" * (60 * 1024 * 1024)))
-        with self.assertRaises(TtsError):
+        tts = self.default_tts(opener=opener_returning(b"x" * (60 * 1024 * 1024)), ffmpeg=FFMPEG_BIN)
+        with self.assertRaises(TtsError) as ctx:
             tts.synthesize("测试", self.out())
+        self.assertIn("过大", str(ctx.exception), "必须是响应过大，不是别的原因")
 
 
 # ============================================================
