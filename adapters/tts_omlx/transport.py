@@ -37,10 +37,13 @@ READ_STAGES = {HttpIncompleteRead: "TTS 响应读取中断（http.client.Incompl
                HttpLibError: "TTS 响应读取协议错误（http.client.HTTPException）",
                TimeoutError: "TTS 响应读取超时（TimeoutError）"}
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024
-# 归一自检失败的标记（权威源是 postprocess.normalize_from 的包装文案
-# `产物归一失败: …`）。采样型引擎重采会产出不同的新字节，这类失败才有重采的意义；
-# 其余确定性失败（空文本/未知语速档/缺 ffmpeg/非 2xx/响应过大）重试一万次也不会变。
+# 归一自检失败的两个标记：`产物归一失败: ` 是 postprocess.normalize_from 对**所有**归一内失败的
+# 统一包装（ffmpeg 退出码非零 / 产物不是合法 WAV / 全静音这类**确定性**失败也带它）；
+# 真正由采样浮动引起的随机失败只有首尾「静音仍超限」（T40 实测 24k 原始首静音 4.0–666.2 ms 浮动）。
+# 所以重采判据必须**双条件**——只认前缀会把确定性失败也空转 5 次退避
+# （T41 收尾批实测：垃圾响应 / ffmpeg 非零退出 / 伪造格式三条用例各真睡 67 秒，docs/13 §五#26）。
 NORMALIZE_FAIL_MARKER = "产物归一失败"
+NORMALIZE_RETRY_MARKER = "静音仍超限"
 
 
 class OmlxTtsTransport:
@@ -65,10 +68,12 @@ class OmlxTtsTransport:
 
     @staticmethod
     def is_normalization_failure(exc: BaseException) -> bool:
-        # 只对「产物归一自检不过」返回 True（编排层据此决定是否重新向服务端请求合成）。
-        # 归一失败是采样产物引起的随机态；空文本/未知语速档/缺 ffmpeg/非 2xx/响应过大
-        # 都是确定性失败，此处必然为 False——对同一份字节重复归一无意义，故不参与重试。
-        return NORMALIZE_FAIL_MARKER in str(exc)
+        # 只对「归一自检里随机类的静音超限」返回 True（编排层据此决定是否重新向服务端请求合成）。
+        # 双条件缺一不可：在「产物归一失败」包装之内、且是「静音仍超限」——postprocess 的
+        # ffmpeg 退出码非零 / 产物不是合法 WAV / 全静音等确定性失败带同一包装，
+        # 重试一万次也不会变，不得重采（docs/13 §五#26 的实测教训）。
+        text = str(exc)
+        return NORMALIZE_FAIL_MARKER in text and NORMALIZE_RETRY_MARKER in text
 
     def _sleep(self, seconds: float) -> None:
         import time

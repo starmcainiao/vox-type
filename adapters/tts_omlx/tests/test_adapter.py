@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 from adapters.tts_omlx import OmlxTts, TtsError
+from adapters.tts_omlx.transport import OmlxTtsTransport
 import adapters.tts_omlx.adapter as adapter_module
 from adapters.tts_omlx.transport import OmlxTtsTransport
 
@@ -209,6 +210,12 @@ class TmpDir(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.env = EnvGuard(cleared=True)
+        # 传输层重试的退避同样归零：T41 拆分后 busy/连接类重试走 OmlxTtsTransport._sleep，
+        # 夹具若不归零，连接拒绝 / HTTP 5xx 类用例每次真睡满 2+5+10+20+30=67 秒
+        # （实测套件 69s→270s，docs/13 §五#26）。adapter 侧的归一重试归零在 capture_stderr 里，两条睡路各管各的。
+        sleeper = mock.patch.object(OmlxTtsTransport, "_sleep", staticmethod(lambda seconds: None))
+        sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def tearDown(self):
         self.env.restore()
@@ -804,10 +811,17 @@ class TestNormalizeRetry(TmpDir):
                     self.assertNotIn("重试", stderr)
 
     def test_only_normalization_failure_is_retryable(self):
-        """只有「产物归一失败」这类随机失败才被重采（其余标记不触发重试）。"""
+        """只有「归一自检里随机类的静音超限」才被重采；确定性失败即使带归一包装也不触发。"""
         self.assertTrue(OmlxTtsTransport.is_normalization_failure(
             TtsError("产物归一失败: 归一后头静音仍超限: 310.3 ms > 100 ms")))
+        self.assertTrue(OmlxTtsTransport.is_normalization_failure(
+            TtsError("产物归一失败: 归一后尾静音仍超限: 200.0 ms > 150 ms")))
         for no_retry in (TtsError("产物格式不符（要求 16kHz/单声道/16-bit 且非空，实际 0Hz）"),
+                         # 确定性失败也带「产物归一失败: 」包装——postprocess 对所有归一内失败
+                         # 统一加前缀，单认前缀会把它空转 5 次退避（docs/13 §五#26 的实测教训）
+                         TtsError("产物归一失败: 降采样: 退出码 2: 'ffmpeg: Invalid data found'"),
+                         TtsError("产物归一失败: 降采样产物不是合法 WAV（100 字节）: /tmp/x.wav"),
+                         TtsError("产物归一失败: 音频全静音，无法归一（拒绝产出静音资产）"),
                          TtsError("空文本无法合成语音（禁止合成静音）"),
                          TtsError("TTS 服务端返回 HTTP 400（urllib.error.HTTPError）"),
                          TtsError("未知语速档位: 'turbo'（仅支持: fast, normal, slow）")):

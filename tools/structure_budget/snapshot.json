@@ -212,7 +212,7 @@
           "layer": "adapters",
           "file": "tts_omlx/transport.py",
           "path": "adapters/tts_omlx/transport.py",
-          "executable_lines": 71
+          "executable_lines": 73
         }
       ]
     },
@@ -380,6 +380,6 @@
     }
   ],
   "total_files": 54,
-  "total_executable_lines": 5391,
+  "total_executable_lines": 5393,
   "violations": []
 }
