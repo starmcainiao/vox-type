@@ -28,6 +28,20 @@ traced). Zero third-party dependencies.
 
 ## Why
 
+### 一眼对比：前置包命中 vs 模型合成
+
+| 臂 | 路径 | 首音（本次实测 P50） |
+|---|---|---:|
+| **快路** | `vox run` 命中即播（磁盘读，零 TTS 调用） | **0.715 ms**（区间 0.475–4.176 ms，N=50） |
+| **慢路** | oMLX `Qwen3-TTS-12Hz-0.6B-Base-bf16` 全链路 | **2336.0 ms**（区间 1052.3–6453.6 ms，N=10） |
+
+**P50/P50 ≈ 3,267×**（附注，非测量值）；保守区间约 **252×–9,026×**。同机同句、同 16 kHz 契约，
+快路每句重复 5 次取中位数，慢路逐句 1 次；慢路含服务端合成、ffmpeg 归一、落盘与契约复验；
+快路 `first_audio_ms` 取自 `vox run` 的 CLI JSON、**不含 Python 进程启动**（别读成「从零拉起进程到首响」）。
+图见 [`docs/media/value-compare.svg`](docs/media/value-compare.svg)，数字唯一来源是
+[`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)，口径与局限见
+[`labs/frontpack-value/README.md`](labs/frontpack-value/README.md)。
+
 1. **流程话术在替慢链路陪跑。** 一通「查一下账单」的电话，用户要等 ASR + LLM 首 token + TTS
    才能听到「请提供您的户号」——这句话由业务流程决定，却陪整条链路等了几秒，还烧一次推理。
    我们实测：预铸命中读包首响 **P50 0.232 ms**，链路级实时合成 **586.7 ms**（≈2530×，n 见 `docs/09`）。
@@ -91,11 +105,11 @@ traced). Zero third-party dependencies.
 git clone https://github.com/starmcainiao/vox-type && cd vox-type
 
 # 1) 铸一个业务包（源码 packs/heat_kefu/ → 资产包；预铸成功率必须 100%）
-sh bin/vox pack build packs/heat_kefu --out /tmp/vox-demo/heat-kefu
+sh bin/vox pack build packs/heat_kefu --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-demo/heat-kefu
 
 # 2) 播一句：plan 就是「这一轮要说什么」的 JSON 数组
 printf '[{"key": "opening__1"}, {"key": "opening__2"}]' > /tmp/vox-demo/plan.json
-sh bin/vox run /tmp/vox-demo/plan.json --pack /tmp/vox-demo/heat-kefu --out /tmp/vox-demo/out.wav
+sh bin/vox run /tmp/vox-demo/plan.json --pack /tmp/vox-demo/heat-kefu --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-demo/out.wav
 # → hit=2 miss=0 tts_calls=0 first_audio_ms=0.5
 #    ↑ 「零 TTS 调用」就是本项目的字面价值：这两句是磁盘读，不是合成
 afplay /tmp/vox-demo/out.wav      # 听一下（非 macOS 用别的播放器）
@@ -110,22 +124,16 @@ for d in core rules assets adapters compiler runtime eval cli tools trigger pack
 done
 ```
 
-> ⚠️ **两个前提**：① **缺省合成引擎是 macOS 自带的 `say`**——Linux / 服务器上第一条 `pack build`
-> 会响亮地失败（`say 命令不可用`）。**非 macOS 上改走模型 TTS**：仓内的 `adapters.tts_omlx:OmlxTts`
-> 是 **OpenAI 兼容 `/v1/audio/speech` 客户端**（**不专用 oMLX**——oMLX / vLLM-Omni / SGLang-Omni /
-> 任意云服务说的是同一个协议），把端点用 env 指过去就行，不新增任何第三方依赖：
->
-> ```sh
-> VOX_TTS_ENDPOINT=http://127.0.0.1:10099 \
->   sh bin/vox pack build packs/heat_kefu --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-demo/heat-kefu-model
-> ```
->
-> （`VOX_TTS_ENDPOINT` 缺省就是 `http://127.0.0.1:10099`——本机 oMLX；音色可用 `VOX_TTS_VOICE`
-> 指定，缺省 `default`。端点必须是 http/https：写错会**响亮地**抛 `ValueError`，**不会**替你悄悄
-> 换一个地址。**要免掉 `--adapter` 这个 flag 得改冻结区 `cli/`，需开批**——见 `docs/13` 未完成清单。）
-> ② `bench` 另需一份 `--corpus` 语料文件——**现在仓内有了一份**：[`examples/bench-corpus.json`](examples/bench-corpus.json)
-> （`sh bin/vox bench /tmp/vox-demo/heat-kefu --corpus examples/bench-corpus.json`）。
-> 端点与音色的写法照 [`docs/22`](docs/22-五分钟跑起来.md) 抄，其余缺口清单也在那份文档的 §5。
+> **macOS `say` 应急（可选）**：已有 macOS 且暂不接 TTS 端点时，可在 `pack build` 命令上**省略**
+> `--adapter` 走 macOS 自带 `say`；这只是应急路径，缺省适配器仍写在冻结区 `cli/`。跨平台或生产接入
+> 请优先使用上面的 `adapters.tts_omlx:OmlxTts`（OpenAI 兼容 `/v1/audio/speech`，端点由
+> `VOX_TTS_ENDPOINT` 指定；另需 `ffmpeg` 做 16 kHz 归一）。
+
+> ⚠️ **前提**：模型 TTS 主线需要 `VOX_TTS_ENDPOINT` 指向可达的 OpenAI 兼容 `/v1/audio/speech`
+> 端点（缺省 `http://127.0.0.1:10099`），另需 `ffmpeg` 把常见 24 kHz 输出归一到本仓 16 kHz 契约；
+> 音色可用 `VOX_TTS_VOICE` 指定（缺省 `default`）。端点必须是 http/https，写错会**响亮地**抛
+> `ValueError`，不会替你悄悄换地址。`VOX_TTS_MODEL` 可选服务端模型名。缺省适配器仍在冻结区
+> `cli/`，所以模型路径要显式给 `--adapter`（见 `docs/13` 未完成清单）。
 
 可选评测组件（不装也能跑全量测试）：本机模型服务 oMLX（回读 CER 与 ASR 实测用，
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
@@ -154,8 +162,11 @@ done
 | **合规自审记录**（预铸准入 + 数据许可，拍板人已签字） | [`docs/20`](docs/20-合规自审记录.md) |
 | 前置包定位 / 未完成清单（单一事实源） | [docs/12](docs/12-前置包-定位与任务清单.md) · [`docs/13`](docs/13-未完成清单.md) |
 | **五分钟跑起来**（唯一一份上手指南，clone → 听见声音） | [`docs/22`](docs/22-五分钟跑起来.md) |
+| **接入形态与评判**（零第三方依赖、毫秒首音何时兑现） | [`docs/24`](docs/24-接入形态与评判.md) |
 | **如何新增一个 TTS 引擎**（新人 how-to：契约项 / 接口 / 测试） | [`docs/23`](docs/23-如何新增一个TTS引擎.md) |
-| **示例 plan 与示例语料**（可跑，含演示音频复现命令） | [`examples/`](examples/README.md) |
+| **示例 plan、语料与零引擎自证包**（可跑，含演示音频复现命令） | [`examples/`](examples/README.md) · [`examples/prebuilt-pack/`](examples/prebuilt-pack/) |
+| **一命令自证**（环境自检、零引擎 `run`、可选完整链路） | [`examples/selftest.sh`](examples/selftest.sh) |
+| **MCP 接入适配器**（工具面薄适配器） | [`adapters/mcp_vox/`](adapters/mcp_vox/) |
 | 全部任务卡与逐卡验收记录 / 实验区 | `docs/tasks/` · `labs/` |
 
 ## Roadmap

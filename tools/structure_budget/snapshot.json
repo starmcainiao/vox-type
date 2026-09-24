@@ -180,6 +180,24 @@
         },
         {
           "layer": "adapters",
+          "file": "mcp_vox/__init__.py",
+          "path": "adapters/mcp_vox/__init__.py",
+          "executable_lines": 4
+        },
+        {
+          "layer": "adapters",
+          "file": "mcp_vox/server.py",
+          "path": "adapters/mcp_vox/server.py",
+          "executable_lines": 56
+        },
+        {
+          "layer": "adapters",
+          "file": "mcp_vox/tools.py",
+          "path": "adapters/mcp_vox/tools.py",
+          "executable_lines": 73
+        },
+        {
+          "layer": "adapters",
           "file": "tts_macsay/__init__.py",
           "path": "adapters/tts_macsay/__init__.py",
           "executable_lines": 2
@@ -379,7 +397,7 @@
       ]
     }
   ],
-  "total_files": 54,
-  "total_executable_lines": 5393,
+  "total_files": 57,
+  "total_executable_lines": 5526,
   "violations": []
 }

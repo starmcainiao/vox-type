@@ -89,7 +89,14 @@
    T11 验收登记），它必然要驱动 runtime 播包；这与「业务适配器只吃 core」的普通适配器不同。
    **边界仍硬**：不得 import 内部私有名（下划线）；只走公开 `__all__`。
 
-3. **实现变更（T41，2026-09-23）：`tts_omlx/` 拆出 `transport.py`**——按 §⑨.1 对 asr_omlx 写下的
+3. **依赖授权：`mcp_vox/`（T46，2026-09-24 登记）**——MCP 最小子集适配器依赖 `runtime` /
+   `assets` 的**公开 API**（`load_pack` / `lookup` / `validate_pack` /
+   `REASON_KEY_NOT_PREBAKED` 等，均在各自 `__all__`），与 `framework_kefu` 同款口径：
+   「core + runtime/assets 公开面」。理由：MCP 是把**控制面**（查命中 / 出 plan / 验包）
+   接给外部 Agent 客户端的桥，必然要驱动 assets 查表；**边界仍硬**——不得 import 内部私有名
+   （下划线），只走公开 `__all__`，且**只出控制面元数据、不出音频字节**（数据面留在进程内 adapter）。
+
+4. **实现变更（T41，2026-09-23）：`tts_omlx/` 拆出 `transport.py`**——按 §⑨.1 对 asr_omlx 写下的
    同一思路（「拆传输/协议两层可自然回 150 内，不必长期靠豁免」），把「HTTP 传输 / 请求体 /
    传输层有界重试」移到 `adapters/tts_omlx/transport.py`，`adapter.py` 回到只做编排
    （音色 / 指纹 / 克隆 / 落盘 / 契约复验）。实测：`adapter.py` **115** 可执行行、

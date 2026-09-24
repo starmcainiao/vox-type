@@ -1,0 +1,111 @@
+{
+  "pack_id": "heat-kefu-prebuilt-10",
+  "pack_version": "1",
+  "protocol_version": "0.1",
+  "ruleset_version": "v1",
+  "voice": "default",
+  "model_version": "Qwen3-TTS-12Hz-0.6B-Base-bf16",
+  "created_at": "2026-09-24T08:04:49.967973+00:00",
+  "assets": [
+    {
+      "key": "transfer_ready",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "已为您转接人工坐席，请稍候。",
+      "fingerprint": "299e94b7e394f5f2",
+      "path": "audio/299e94b7e394f5f2.wav",
+      "duration_ms": 2777
+    },
+    {
+      "key": "farewell",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "好的，再见，祝您生活愉快！",
+      "fingerprint": "7543de62dc32de91",
+      "path": "audio/7543de62dc32de91.wav",
+      "duration_ms": 2510
+    },
+    {
+      "key": "work_order_empty",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "暂无工单记录。",
+      "fingerprint": "8ba5edbeb4a9a52c",
+      "path": "audio/8ba5edbeb4a9a52c.wav",
+      "duration_ms": 1074
+    },
+    {
+      "key": "repair_ask_desc",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "请简单描述一下具体情况。",
+      "fingerprint": "f806210d7ac8d416",
+      "path": "audio/f806210d7ac8d416.wav",
+      "duration_ms": 1745
+    },
+    {
+      "key": "opening__1",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "您好，我是供热智能客服小暖。",
+      "fingerprint": "fc8097d3763973fd",
+      "path": "audio/fc8097d3763973fd.wav",
+      "duration_ms": 2784
+    },
+    {
+      "key": "opening__2",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。",
+      "fingerprint": "84392223402c7a2b",
+      "path": "audio/84392223402c7a2b.wav",
+      "duration_ms": 8127
+    },
+    {
+      "key": "chat_smalltalk__2",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "请问有什么可以帮您？",
+      "fingerprint": "7a1f27a637aabda2",
+      "path": "audio/7a1f27a637aabda2.wav",
+      "duration_ms": 1566
+    },
+    {
+      "key": "clarify_repair__1",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "您是要报修吗？",
+      "fingerprint": "afcbcfbb17fbde7f",
+      "path": "audio/afcbcfbb17fbde7f.wav",
+      "duration_ms": 1152
+    },
+    {
+      "key": "repair_confirm_question__1",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "信息是否正确？",
+      "fingerprint": "a31c484dde72bf9f",
+      "path": "audio/a31c484dde72bf9f.wav",
+      "duration_ms": 1389
+    },
+    {
+      "key": "repair_ask_natural_userNo__1",
+      "part_index": 0,
+      "rate_key": "normal",
+      "variant": 0,
+      "text": "您的户号是多少？",
+      "fingerprint": "ccba9d28fd5da785",
+      "path": "audio/ccba9d28fd5da785.wav",
+      "duration_ms": 1363
+    }
+  ]
+}

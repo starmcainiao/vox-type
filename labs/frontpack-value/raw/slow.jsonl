@@ -1,0 +1,10 @@
+{"arm": "slow", "key": "opening__1", "warmup": false, "wall_s": 2.1029, "audio_s": 2.3482, "rtf": 0.8955, "bytes": 75186, "rate_key": "normal"}
+{"arm": "slow", "key": "opening__2", "warmup": false, "wall_s": 6.1301, "audio_s": 7.0698, "rtf": 0.8671, "bytes": 226278, "rate_key": "normal"}
+{"arm": "slow", "key": "transfer_ready", "warmup": false, "wall_s": 3.6627, "audio_s": 3.9471, "rtf": 0.9279, "bytes": 126350, "rate_key": "normal"}
+{"arm": "slow", "key": "farewell", "warmup": false, "wall_s": 3.28, "audio_s": 3.4376, "rtf": 0.9541, "bytes": 110048, "rate_key": "normal"}
+{"arm": "slow", "key": "chat_smalltalk__2", "warmup": false, "wall_s": 1.6854, "audio_s": 1.6033, "rtf": 1.0512, "bytes": 51348, "rate_key": "normal"}
+{"arm": "slow", "key": "pay_no_bills", "warmup": false, "wall_s": 1.9689, "audio_s": 1.8694, "rtf": 1.0532, "bytes": 59864, "rate_key": "normal"}
+{"arm": "slow", "key": "clarify_work_order__2", "warmup": false, "wall_s": 2.5691, "audio_s": 3.0239, "rtf": 0.8496, "bytes": 96810, "rate_key": "normal"}
+{"arm": "slow", "key": "repair_ask_userNo", "warmup": false, "wall_s": 6.4536, "audio_s": 2.5082, "rtf": 2.573, "bytes": 80306, "rate_key": "normal"}
+{"arm": "slow", "key": "work_order_empty", "warmup": false, "wall_s": 1.613, "audio_s": 1.3446, "rtf": 1.1996, "bytes": 43072, "rate_key": "normal"}
+{"arm": "slow", "key": "clarify_repair__1", "warmup": false, "wall_s": 1.0523, "audio_s": 1.1339, "rtf": 0.928, "bytes": 36330, "rate_key": "normal"}

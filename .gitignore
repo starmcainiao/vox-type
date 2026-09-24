@@ -16,6 +16,9 @@ assets/audio/
 *.opus
 *.mp3
 !docs/**/*.wav
+# 自证包音频入库（T45）：examples/prebuilt-pack 是"clone 后零引擎就能听见"的产物，
+# 音频必须随仓走。注意：gitignore 不支持行尾注释，注释必须独立成行。
+!examples/prebuilt-pack/**/*.wav
 
 # 日志与临时
 *.log
