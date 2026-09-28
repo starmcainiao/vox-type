@@ -9,8 +9,10 @@ authors:
 description: >-
   Pre-cast voice asset layer + duplex behaviour controller for voice agents.
   Pre-bakes the process-determined portion of a voice agent's dialogue into
-  audited, versioned audio assets and plays them on a hit, falling back to the
-  host's own TTS path on every miss (fail-closed, fully traced).
+  audited, versioned audio assets and plays them on a hit. On a miss the plan
+  aborts by default (fail-closed, rc=5, no audio written); degrading to the
+  host's own slow-path TTS requires an explicit --allow-fallback and is traced
+  in full.
   A drop-in overlay for the voice stack: sits between the LLM and TTS in a
   cascaded chain, or bypasses a whole turn for an end-to-end S2S model.
   Zero third-party dependencies (Python >= 3.12 standard library only).

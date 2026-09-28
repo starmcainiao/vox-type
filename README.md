@@ -17,6 +17,7 @@
 > 端到端 S2S 模型里做整轮旁路。
 >
 > **第一次来？→ 先读 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**（clone 到听见声音，全真值输出）·
+> 一命令自检环境与零引擎 `run` → `sh examples/selftest.sh` ·
 > 想看可跑的示例 → [`examples/`](examples/README.md) · 想加一个 TTS 引擎 → [`docs/23`](docs/23-如何新增一个TTS引擎.md)
 
 **你什么时候需要它**：做客服 / 催收 / 政务 IVR，首响被 TTS 合成卡住，**且有一部分话术是流程写死的**
@@ -28,8 +29,8 @@
  compiler（编译期管线）        trigger（决策表）           runtime（线性执行器）
  phrases.json ──预铸──▶  assets 包 ◀──选 key──  state → plan ──▶ 播包/槽位合成/事件流
    │  五类规则校验         │ key→音频+指纹+TTL     │ 规则按序匹配       │
-   │  四属性校验          │ +变体池+语速档         │ 显式兜底           │ 未命中 → fail-closed
-   ▼                     ▼                      ▼                   ▼ 走宿主原 TTS（留痕）
+   │  四属性校验          │ +变体池+语速档         │ 显式兜底           │ 未命中 → fail-closed（默认 rc=5）
+   ▼                     ▼                      ▼                   ▼    显式 --allow-fallback 才降级→宿主TTS（留痕）
  packs/<业务>/（数据）─── bin/vox（check/build/bench/verify/run）─── adapters/<宿主>（钩子）
 ```
 
@@ -44,7 +45,7 @@
 ![vox-type 架构图](docs/media/architecture.svg)
 
 （架构图源文件 [`docs/media/architecture.svg`](docs/media/architecture.svg) 是纯文本 SVG，可直接 diff 与审阅；
-上方 ASCII 版是它的文字等价物。）
+上方 ASCII 版是它的文字等价物。`未命中 → fail-closed` = 默认中止 `rc=5`，显式 `--allow-fallback` 才降级走宿主原 TTS（留痕）——口径见下「English one-liner」。）
 
 ## 先听声音：30 秒，零引擎（不需要 TTS 服务）
 
@@ -74,7 +75,9 @@ afplay /tmp/prebuilt.wav                     # 听一下（非 macOS 用别的�
 **English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
 dialogue into audited, versioned audio assets, and plays them in 0.475–4.176 ms
 (P50 0.715 ms, N=50, measured on one machine) when the upstream model decides to speak them —
-falling back to your existing TTS path on every miss (fail-closed, fully traced).
+on a miss it **fails closed by default and aborts the plan (`rc=5`, no audio, no other units played)**;
+only with explicit `--allow-fallback` does it degrade to the slow path (host-side TTS synthesis),
+with every degrade traced.
 Zero third-party dependencies.
 
 ## Quick Start
@@ -180,12 +183,13 @@ python3 tools/run_all_tests.py
 
 ## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
 
-- **十一个测试根；`failed=0` 在四种环境下都成立，`skipped` 随环境变**
-  （2026-09-28 本机实测四档，**唯一出处 = 命令**：`python3 tools/run_all_tests.py`，末行打印；
+- **十一个测试根；`failed=0` 在下列三个配置变体下都成立，`skipped` 随配置变**
+  （下面这张表的两个轴是 **yaml 文件可达 × PyYAML 可导入**——是配置变体，不是平台矩阵；
+  2026-09-28 本机实测，**唯一出处 = 命令**：`python3 tools/run_all_tests.py`，末行打印；
   `ran`=各根 `testsRun` 之和含 skip 与失败用例，`executed=ran-skipped`，`failed=failures+errors`。
   **数字随用例增删漂移——请以命令的实跑输出为准，不要引用本文的抄件**）：
 
-  | 环境 | `ran` | `skipped` | `executed` | `failed` |
+  | 配置变体 | `ran` | `skipped` | `executed` | `failed` |
   |---|---|---|---|---|
   | 本机：yaml 可达 **且** 装了 PyYAML | 1628 | **0** | 1628 | 0 |
   | 本机：yaml 可达，**未装** PyYAML | 1628 | 25 | 1603 | 0 |
@@ -198,7 +202,7 @@ python3 tools/run_all_tests.py
   其余跳过条件全在 `adapters`（`@unittest.skipUnless` 门 + 运行时探测）：需 `ffmpeg`、
   需 macOS `say` 且 tmpdir 与仓库跨设备、需本机 oMLX `:10099` 在跑、需仓内已有 heat-kefu 预铸产物。
   **换台机器这些依赖不在，`skipped` 会上升、`executed` 随之变小**——
-  skip 不是失败，也不是「没跑」，但**它确实意味着那批断言没被验证**。四档口径表见 [`tools/README.md`](tools/README.md)。
+  skip 不是失败，也不是「没跑」，但**它确实意味着那批断言没被验证**。完整四组合口径表见 [`tools/README.md`](tools/README.md)（上面本表只列三条实测变体）。
   CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。
   2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms**（n=20）vs 同引擎实时合成 **586.7 ms**（n=36）；
