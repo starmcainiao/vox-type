@@ -69,6 +69,17 @@
 
 ### Fixed
 
+- **绝对路径门禁在「根卷 checkout」上退化成裸 `/`**（T76 · 推送前 CI 代理试跑撞出）：
+  `build_prefixes` 里 `home` 与 `tmp` **都有** `!= "/"` 守卫，唯独 `mount` 三样没有；
+  而 `_mount_ancestor` 在根卷 checkout 上返回的正是 `Path("/")`，
+  `str("/").rstrip("/") + "/"` 恒等于 `"/"` —— `"/"` 作前缀会命中每一行里的每一个路径分隔符。
+  实测在根卷条件下扫描本仓：**`violation_count=12838`、422 个文件全红**，
+  而修复后同条件 `violation_count=0`。
+  **本机绿是侥幸**（本仓恰在外接卷上，退化不出来）；GitHub runner 的 checkout 在根卷上。
+  已公开快照的 workflow 尚未包含关卡 4a，**这次推送是它的第一次执行**——
+  不修就会把 CI 直接顶红。现补 `mount` 与 `home` 两处守卫 + 一道兜底
+  （`"/"` 键不得进入 `prefixes`），并新增 9 条回归用例
+  （用 mock 把三条退化路径各自造出来，**修复前必红、修复后必绿**）。
 - **死端点被当成瞬时故障重试**：端点连不上时适配器把「无法连接」判为可重试
   （`MAX_RETRIES=5` + `RETRY_DELAYS=(2,5,10,30)` = 单条 67 秒静默等待），
   `packs/demo-brief`（48 单元）实测 ≈ **54 分钟零输出**，终端像死机。
@@ -129,7 +140,7 @@
   （数十毫秒量级）没有 harness、没有 `report.json`——想引用就得自己量并标机器与命令。
 - **测试数没有永久值**：一切以 `python3 tools/run_all_tests.py` 的末行实跑输出为准；
   引用文档里的抄件等于引用一个会过期的数字。**2026-09-28 本机实跑：
-  `ran=1628 skipped=0 executed=1628 failed=0 failures=0 errors=0 roots=11`**——
+  `ran=1637 skipped=0 executed=1637 failed=1 failures=1 errors=0 roots=11`**（那 1 条是 `packs` 同源指纹断言发现仓外 kefu yaml 变更、门禁按设计报警）——
   T50 定的 26 条 skip 基线已被 T51/T53 作废，`ran=1601`（T55 新增夹具槽位完整性守卫**之前**）
   与 `ran=1602`（T61–T63 之前）同样已作废。**`skipped=0` 是本机状态、不是契约**。
 - **`cli` 根是平台相关的**：它走 macOS 自带的 `say`（缺省适配器 `adapters.tts_macsay:MacSayTts`）。

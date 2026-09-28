@@ -123,11 +123,12 @@ sh bin/vox verify /tmp/vox-demo/heat-kefu
 #    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。上面 Status 一节的
 #    测试数就是这条命令的输出抄件；要数字请重跑它，不要抄文档。
 python3 tools/run_all_tests.py
-# → ran=1628 skipped=0 executed=1628 failed=0 failures=0 errors=0 roots=11
-#   （本机实跑抄件。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
-#   ⚠️ 唯一例外：`packs` 根有一条**同源指纹断言**，它盯着可选的 kefu-agent 集成源 yaml
-#     （见下方 Status 一节）。那个 yaml 一改，这条断言就报 failed=1 —— 那是门禁在按设计报警，
-#     不是测试坏了。公开仓不含该 yaml，克隆者只会看到 skip，不会看到 failed。
+# → ran=1637 skipped=0 executed=1637 failed=1 failures=1 errors=0 roots=11
+#   （本机实跑抄件，2026-09-28。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
+#   ⚠️ 那条 failed=1 是 `packs` 根的**同源指纹断言**在按设计报警：它盯着仓外可选的
+#     kefu-agent 集成源 yaml（见下方 Status 一节）。那个 yaml 一改，这条断言就红 ——
+#     那是「预铸资产与源话术不同源了」的门禁在报警，不是测试坏了。公开仓不含该 yaml，
+#     克隆者只会看到 skip，不会看到 failed。
 ```
 
 > **macOS `say` 应急（可选）**：已有 macOS 且暂不接 TTS 端点时，可在 `pack build` 命令上**省略**
@@ -194,7 +195,8 @@ python3 tools/run_all_tests.py
 
 ## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
 
-- **测试全绿**：11 个测试根，`failed=0`（2026-09-28 本机实测；`skipped` 随环境变，不是契约）。
+- **测试：11 个测试根，当前 `ran=1637 failed=1`**（2026-09-28 本机实测；`skipped` 随环境变，不是契约）。
+  那 1 条是下述同源指纹断言在按设计报警，**其余全绿**；公开仓不含被监视的 yaml，克隆者看到的是 `failed=0`。
   唯一出处 = 命令，重跑它拿你自己的数：`python3 tools/run_all_tests.py`
   yaml 可达 × PyYAML 四组合口径表与各根 skip 条件见 [`tools/README.md`](tools/README.md)；该表未覆盖、故在此保留：
   本机 oMLX `:10099` 端点离线时对应 `adapters` 冒烟用例会 skip；CI 为 Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。

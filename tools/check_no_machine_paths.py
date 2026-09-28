@@ -245,7 +245,7 @@ def build_prefixes(root: Path):
     machine = {}
 
     home = os.environ.get("HOME") or ""
-    if home:
+    if home and home != "/":
         machine[home.rstrip("/") + "/"] = "machine-home"
     try:
         ph = str(Path.home())
@@ -256,11 +256,31 @@ def build_prefixes(root: Path):
 
     mount = _mount_ancestor(root)
     if mount is not None:
-        machine[str(mount).rstrip("/") + "/"] = "volume-mount"
+        mp = str(mount).rstrip("/") + "/"
+        if mp != "/":
+            machine[mp] = "volume-mount"
 
     for tmp in {tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir())}:
         if tmp and tmp != "/":
             machine[tmp.rstrip("/") + "/"] = "boot-tmp"
+
+    # 兜底：任何等于 "/" 的键一律不得进入 prefixes。
+    #
+    # WHY（T76）：上面三处守卫（machine-home / volume-mount / boot-tmp）是三份
+    # 各自维护的记忆，每一份都能被未来的改动单独碰掉——这次被碰掉的就是第三份：
+    # `_mount_ancestor` 在根卷 checkout 上返回 `Path("/")`，
+    # 而 `str("/").rstrip("/") + "/"` 恒等于 `"/"`，`mount is not None` 挡不住它。
+    # `"/"` 作前缀会命中每一行里的每一个路径分隔符，一次扫描产出上万条噪音，
+    # 红到没人再看输出——那道门禁等于静默降级成「看起来在跑」。
+    # 守卫照旧各管各的（哪一路退化，测试就点名哪一路）；这道闸只兜住最终产物里
+    # 那条不可协商的事实：`"/"` 不是前缀。于是「守卫被碰掉」从一次事故
+    # 降级成一个测试。
+    #
+    # 边界：这道闸**只管推导出来的前缀**，不管下面的 `VOX_SCAN_EXTRA_PREFIXES`。
+    # 推导是机器替人做的决定（没有人要求过），逃逸口是运维显式写下的要求——
+    # 运维写了 `"/"` 却被设置本身悄悄忽略、脚本照样报绿，那是 D4 换个方向复发，
+    # 比噪音更坏。所以逃逸口按原样透传，由写它的那个人负责。
+    machine = {k: v for k, v in machine.items() if k != "/"}
 
     prefixes = []
     for prefix, label in machine.items():

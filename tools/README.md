@@ -49,12 +49,14 @@ python3 tools/run_all_tests.py --json     # 额外打逐根明细 + 汇总（机
 末行汇总**必须分项**，不要只给一个总数：
 
 ```
-ran=1628 skipped=0 executed=1628 failed=0 failures=0 errors=0 roots=11
-FAILED roots: (none)
+ran=1637 skipped=0 executed=1637 failed=1 failures=1 errors=0 roots=11
+FAILED roots: packs
 ```
 
 （上面这行是 2026-09-28 在「yaml 文件可达 **且** 已装 PyYAML」的本机上的实跑值，
-**样例而非契约**：条数随各层增删变化，真值一律由本命令当场产出——这正是「数字必须有出处」的意思。）
+**样例而非契约**：条数随各层增删变化，真值一律由本命令当场产出——这正是「数字必须有出处」的意思。
+那 1 条 `failed` 是 `packs` 根的同源指纹断言在按设计报警（仓外可选的 kefu yaml 变了），
+不是测试坏了；yaml 不可达的环境（公开 CI）连跑都不跑它，`FAILED roots` 那行为 `(none)`。）
 口径（写死在这一节，改这里等于改对外口径）：
 
 - `ran` = 所有根 `TestResult.testsRun` 之和，**含** skip、**含**失败用例；
@@ -73,7 +75,10 @@ FAILED roots: (none)
   | 不可达 | 已装 | **25** | 公开 CI 常态（无 kefu 仓） |
   | 不可达 | 未装 | **25** | 两者皆缺，skip 消息里报的是**先命中的那条** |
 
-  四种组合本机实测均 `failed=0`（2026-09-28，`ran=1628` 口径）。
+  四种组合的 **skip 数如上表**（2026-09-28，`ran=1637` 口径）。
+  **`failed` 则随 yaml 可达性分岔**：不可达的两档是 `failed=0`（断言按设计 skip）；
+  可达的两档当前是 `failed=1`——那是同源指纹断言发现**仓外** kefu yaml 变了，
+  属门禁按设计报警，不是测试坏了。
   要复跑「文件不可达」那一档（可复现，不靠人记）：
 
   ```bash
