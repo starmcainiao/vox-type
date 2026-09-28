@@ -7,7 +7,7 @@
 
 ## [0.2.0] - 2026-09-28
 
-本版本是 `[0.1.0]` 首发之后的全部累积（`git log --oneline | wc -l` = **179** 个提交，首个提交
+本版本是 `[0.1.0]` 首发之后的全部累积（`git log --oneline | wc -l` = **180** 个提交，首个提交
 `0eefd1c docs: 立项前设计文档`，无历史重写）。本节按 **Added / Changed / Fixed** 三段写给外部读者，
 末尾的「内部批次」小节保留 T 卡号索引（给维护者与验收方检索，外部用户可跳过）。
 数字一律附出处；**口径不同的数字不并列、不相减**。
@@ -69,6 +69,23 @@
 
 ### Fixed
 
+- **可用性探针只探了一半前置条件，漏掉 ffmpeg**（T78 · 推送前 CI 代理试跑撞出，
+  同一轮的第三盏红灯，也是 T77 那个缺陷的下一层）：T77 加的
+  `OmlxTts.probe_availability()` 只回答「远端服务在不在跑」，
+  但 `synthesize` 在**发任何请求之前**就要求 `ffmpeg` 存在
+  （服务出 24 kHz，缺 ffmpeg 无法降到契约 16 kHz）。
+  于是「端点可达但缺 ffmpeg」这一档探针报「可用」、套件照跑，然后炸在 ffmpeg 上：
+  在 PATH 无 ffmpeg 的机器上（**正是 CI runner 的常态**——workflow 没有任何安装步骤）
+  `adapters` 根报 **`errors=2`**。**只覆盖一半前置条件的探针比没有探针更坏**。
+  现按 `synthesize` 的检查顺序先查 ffmpeg、再查端点，两条都不满足时**两个原因都报**
+  （只报第一个会让人补完 ffmpeg 再跑一遍才发现端点也不通）；
+  「ffmpeg 不可用」那句文案抽成模块级常量供两处共用，**不写第二份字符串**
+  （两处各写一遍、改一处忘一处就又是一次「本机绿≠CI 绿」）。
+  负控实测：同一棵树、同一条件下 `FAILED (failures=3, errors=3, skipped=1)` → `OK (skipped=3)`。
+  skip 消息**点名适配器与缺失的前置条件**（`omlx-tts: ffmpeg 不可用: 'ffmpeg'…`），
+  缺什么、怎么补都写在里面——skip 不是静默降级。`synthesize` 的失败语义一字未改。
+  新增 4 条用例，且它们**能在本机有 ffmpeg 的情况下造出「无 ffmpeg」**
+  （用 `VOX_FFMPEG` 指向解析不到的名字），不依赖宿主机状态。
 - **一致性套件把「类整体跳过」错当成「逐适配器跳过」**（T77 · 推送前 CI 代理试跑撞出，
   同一轮里的第二盏红灯）：`TestSynthesizeWavFormat` 带着类级
   `@unittest.skipUnless(shutil.which("say"), …)`，里面却是 `for tts in self.adapters:`
@@ -153,6 +170,7 @@
 - **T75** · 通用 Agent 技能包 `SKILL.md`（国产宿主优先，不造私有格式）
 - **T76** · 绝对路径门禁在「根卷仓」上的前缀退化（`volume-mount` 派生出裸 `/`）
 - **T77** · 一致性套件按「适配器自身可用性」跳过，而非按类整体跳过
+- **T78** · 可用性探针补齐 ffmpeg 前置条件（T77 那个缺陷的下一层）
 
 ### 口径提醒（对外引用前必读）
 
@@ -165,7 +183,7 @@
   （数十毫秒量级）没有 harness、没有 `report.json`——想引用就得自己量并标机器与命令。
 - **测试数没有永久值**：一切以 `python3 tools/run_all_tests.py` 的末行实跑输出为准；
   引用文档里的抄件等于引用一个会过期的数字。**2026-09-28 本机实跑：
-  `ran=1645 skipped=0 executed=1645 failed=1 failures=1 errors=0 roots=11`**（那 1 条是 `packs` 同源指纹断言发现仓外 kefu yaml 变更、门禁按设计报警）——
+  `ran=1649 skipped=0 executed=1649 failed=1 failures=1 errors=0 roots=11`**（那 1 条是 `packs` 同源指纹断言发现仓外 kefu yaml 变更、门禁按设计报警）——
   T50 定的 26 条 skip 基线已被 T51/T53 作废，`ran=1601`（T55 新增夹具槽位完整性守卫**之前**）
   与 `ran=1602`（T61–T63 之前）同样已作废。**`skipped=0` 是本机状态、不是契约**。
 - **`cli` 根是平台相关的**：它走 macOS 自带的 `say`（缺省适配器 `adapters.tts_macsay:MacSayTts`）。

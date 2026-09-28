@@ -49,7 +49,7 @@ python3 tools/run_all_tests.py --json     # 额外打逐根明细 + 汇总（机
 末行汇总**必须分项**，不要只给一个总数：
 
 ```
-ran=1645 skipped=0 executed=1645 failed=1 failures=1 errors=0 roots=11
+ran=1649 skipped=0 executed=1649 failed=1 failures=1 errors=0 roots=11
 FAILED roots: packs
 ```
 
@@ -75,7 +75,7 @@ FAILED roots: packs
   | 不可达 | 已装 | **25** | 公开 CI 常态（无 kefu 仓） |
   | 不可达 | 未装 | **25** | 两者皆缺，skip 消息里报的是**先命中的那条** |
 
-  四种组合的 **skip 数如上表**（2026-09-28，`ran=1645` 口径）。
+  四种组合的 **skip 数如上表**（2026-09-28，`ran=1649` 口径）。
   **`failed` 则随 yaml 可达性分岔**：不可达的两档是 `failed=0`（断言按设计 skip）；
   可达的两档当前是 `failed=1`——那是同源指纹断言发现**仓外** kefu yaml 变了，
   属门禁按设计报警，不是测试坏了。

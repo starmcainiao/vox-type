@@ -35,6 +35,11 @@ DEFAULT_MODEL = "Qwen3-TTS-12Hz-0.6B-Base-bf16"
 CLONE_MODEL_VERSION = "qwen3-tts-0.6b-base-clone"
 DEFAULT_VOICE = "default"
 DEFAULT_FFMPEG = "ffmpeg"
+# 「ffmpeg 不可用」的**唯一**文案（单一真源）：synthesize 抛 TtsError、probe_availability 拼
+# reason 都从它格式化。两处各写一遍就会「改一处忘一处」，重演本机绿≠CI 绿。
+# 占位带 !r 是为与改动前逐字一致（名字带引号，一眼看出是命令名而非路径）。
+FFMPEG_MISSING = ("ffmpeg 不可用: {name!r}（可在 PATH 提供或以 env VOX_FFMPEG 覆盖）"
+                  "——服务出 24 kHz，缺 ffmpeg 无法降到契约 16 kHz")
 TARGET_FMT = (1, 2, 16000)
 TARGET_RATE = TARGET_FMT[2]
 CLONE_PREFIX = "clone-"
@@ -106,27 +111,45 @@ class OmlxTts:
     def probe_availability(cls) -> tuple[bool, str]:
         # 可选自报钩子（T77）：一致性套件按适配器**逐个**问「现在能不能真合成」用。
         # 子类可不实现——不实现 = 永远可用，所以无远端依赖的适配器（如 tts_macsay）行为完全不变。
-        # 判据与 tests/test_adapter.py 的 _service_up() 同源：socket.create_connection + 短超时，
-        # OSError 即判不可用——沿用仓内既有先例，不另发明一套探活。
+        # 前置条件共两条，**顺序与 synthesize 完全一致**（先 ffmpeg、后端点）：ffmpeg 是确定性失败，
+        # synthesize 在发任何请求之前就查它，探针也必须先查它——只探端点的探针会报「可用」，
+        # 让套件照跑然后炸在 ffmpeg 上（只覆盖一半前置条件的探针比没有探针更坏）。
+        # 两条都不满足时**两个原因都报**（用 "; " 分隔）：只报第一个会让人补完 ffmpeg 再跑一遍
+        # 才发现端点也不通，白来回一趟。单条原因时文案与 T77 原版逐字相同。
+        # 本方法是类方法、拿不到实例的 ffmpeg 参数，所以只能走 __init__ 回落链的后两档：
+        # env VOX_FFMPEG → 常量 DEFAULT_FFMPEG——与 __init__ 那一段**逐字同构**，探的就是
+        # 「无参构造会用的」同一个名字。这里刻意沿用 __init__ 的 `or`（不设但为空 → 回落常量），
+        # 与 __init__ 对 VOX_TTS_ENDPOINT 那条「设了但为空要响亮失败」纪律**有意不同**：端点为空
+        # 会静默打回默认地址（静默换地址，绝不可有），ffmpeg 名为空只会解析不到、响亮报缺 ffmpeg；
+        # 而探针的第一要务是「探的就是会用的」——若此处改成分支不同的取法，空 env 下探针查「空名」
+        # 而构造用 DEFAULT_FFMPEG，就变成「探说不可用、构造其实能用」。
+        name = os.environ.get("VOX_FFMPEG") or DEFAULT_FFMPEG
+        reasons = []
+        if shutil.which(name) is None:
+            reasons.append(FFMPEG_MISSING.format(name=name))
+        # 端点：判据与 tests/test_adapter.py 的 _service_up() 同源——socket.create_connection + 短超时，
+        # OSError 即判不可用，沿用仓内既有先例，不另发明一套探活。
         # 基址按与 __init__ 完全相同的回落链取（env VOX_TTS_ENDPOINT → 常量 BASE_URL）；
         # 刻意不用 `or`：设了但为空的 env 要响亮失败，而不是悄悄打回默认端点（见 __init__ 的 WHY）。
-        # 本方法是类方法、拿不到实例的 base_url，所以探的是「无参构造会打的那个端点」——
-        # 一致性套件本来就是无参 `cls()` 后测的，探与打是同一个地址。
+        # 探的是「无参构造会打的那个端点」——一致性套件本来就是无参 `cls()` 后测的，探与打同一地址。
         base = (os.environ.get("VOX_TTS_ENDPOINT", BASE_URL)).strip().rstrip("/")
         parts = urlsplit(base)
         try:
             host, port = parts.hostname, parts.port
         except ValueError:
             host, port = None, None
-        if not host or not port:
+        reachable = bool(host and port)
+        if reachable:
+            try:
+                with socket.create_connection((host, port), timeout=PROBE_TIMEOUT):
+                    pass
+            except OSError:
+                reachable = False
+        if not reachable:
             # 解析不出主机与端口（env 设了空串之类的非法值）：同样记为不可用并把那个值点出来，
             # 不猜端点。无参构造下这条走不到——__init__ 会先抛 ValueError，套件以 error 响亮失败。
-            return (False, f"端点不可用：{base}")
-        try:
-            with socket.create_connection((host, port), timeout=PROBE_TIMEOUT):
-                return (True, "")
-        except OSError:
-            return (False, f"端点不可用：{base}")
+            reasons.append(f"端点不可用：{base}")
+        return (not reasons, "; ".join(reasons))
 
     def _payload(self, text: str, rate: float) -> dict:
         # 克隆请求体带 base64 ref_audio + ref_text 且不带 voice；默认音色只带 voice，
@@ -150,7 +173,7 @@ class OmlxTts:
         # 失败，连一次服务端请求都不该发（否则白白消耗采样型引擎的算力，还把重试语义弄混）。
         ffmpeg = shutil.which(self._ffmpeg)
         if ffmpeg is None:
-            raise TtsError(f"ffmpeg 不可用: {self._ffmpeg!r}（可在 PATH 提供或以 env VOX_FFMPEG 覆盖）——服务出 24 kHz，缺 ffmpeg 无法降到契约 16 kHz")
+            raise TtsError(FFMPEG_MISSING.format(name=self._ffmpeg))
         payload = self._payload(text, self.rate_value(rate_key))
         with tempfile.TemporaryDirectory(prefix="vox_tts_omlx_") as tmp:
             src = Path(tmp) / "raw.wav"

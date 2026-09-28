@@ -1,5 +1,6 @@
 """
-adapters.tests.test_conformance_probe — T77：「逐适配器可用性 → skip」这处判定的自测
+adapters.tests.test_conformance_probe — T77：「逐适配器可用性 → skip」这处判定的自测；
+T78：真适配器那条 hook 必须覆盖**全部**前置条件（ffmpeg + 端点）
 
 被测对象是 `test_conformance.skip_unless_available` 本身：这里**直接 import 套件里那一份**
 来调，不复制一份判定实现来测——复制出来的测试只能证明副本写对了，证明不了套件。
@@ -20,15 +21,29 @@ adapters.tests.test_conformance_probe — T77：「逐适配器可用性 → ski
 
 以及真适配器那条 hook（`OmlxTts.probe_availability`）：探的端点必须与「无参构造会打的那个
 端点」是同一个地址——探得通却说打不通（或反过来）就等于探了个寂寞。
+
+T78 加的那一层：hook 回答的是「此刻能不能**真**合成」，前置条件共两条（ffmpeg 与端点），
+漏一条就会「报可用、套件照跑、炸在另一个前置条件上」——比没有探针更坏。故：
+  5. 缺 ffmpeg + 端点可达 → 不可用，reason 点名 ffmpeg；
+  6. 两者都缺 → **两条原因都在**（只报第一个会让人补完再跑一遍，白来回一趟）；
+  7. 缺 ffmpeg 时 synthesize 仍抛 TtsError 且消息与探针**逐字同源**（同一常量格式化）；
+  8. VOX_FFMPEG 能让探针改探别的名字（回落链第二档真生效）。
+这两条 ffmpeg 名的状态**不靠宿主机**：「有 ffmpeg」用临时目录里造的假 ffmpeg 挂到 PATH 前部，
+「无 ffmpeg」用 VOX_FFMPEG 指一个解析不到的名字——本机装没装 ffmpeg，八条覆盖一模一样，
+不靠「碰巧这台机器没装」。**否则本机永远绿，等于没测。**
 env 一律就地还原（含「原本没设」）：漏还原会把后续用例悄悄指向别处。
 """
 
 import os
+import shutil
 import socket
+import tempfile
 import unittest
+from pathlib import Path
 
 from adapters.tests.test_conformance import ADAPTER_CLASSES, skip_unless_available
-from adapters.tts_omlx import OmlxTts
+from adapters.tts_omlx import OmlxTts, TtsError
+import adapters.tts_omlx.adapter as omlx_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -156,14 +171,37 @@ class TestOmlxTtsProbe(unittest.TestCase):
     """`OmlxTts.probe_availability`：与 __init__ 同一条 env 回落链，探打同一个地址。"""
 
     def setUp(self):
-        # 记下原值（None = 原本没设），tearDown 逐字还原
-        self._saved = os.environ.get("VOX_TTS_ENDPOINT")
+        # 记下原值（None = 原本没设），tearDown 逐字还原。PATH 一并管起来：假 ffmpeg 靠
+        # 临时目录挂在 PATH 前部才能被 shutil.which 解析到，漏还原会让同进程后续用例的
+        # which() 结果漂移，等于把这条用例的状态泄漏给别的层。
+        self._saved = {key: os.environ.get(key) for key in ("VOX_TTS_ENDPOINT", "VOX_FFMPEG", "PATH")}
+        self.tmp_dir = tempfile.mkdtemp(prefix="vox_probe_")
+        self.fake_ffmpeg = self._plant_fake_ffmpeg("vox-fake-ffmpeg")
+        # 默认态：ffmpeg 前置条件**已显式满足**（挂到 PATH 前部的假 ffmpeg）。
+        # 需要「无 ffmpeg」的用例在各自用例里把 VOX_FFMPEG 改成一个解析不到的名字。
+        os.environ["VOX_FFMPEG"] = self.fake_ffmpeg
+        os.environ["PATH"] = os.pathsep.join(filter(None, [self.tmp_dir, self._saved["PATH"]]))
 
     def tearDown(self):
-        if self._saved is None:
-            os.environ.pop("VOX_TTS_ENDPOINT", None)
-        else:
-            os.environ["VOX_TTS_ENDPOINT"] = self._saved
+        for key, saved in self._saved.items():
+            if saved is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = saved
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _plant_fake_ffmpeg(self, name):
+        """在临时目录造一个**能被 shutil.which 解析到**的假 ffmpeg，返回它的名字。
+
+        只要求 X_OK（shutil.which 的判据），内容是条空脚本：探针只问「解析得到吗」，
+        从不执行它。用它而不是「指望本机装没装 ffmpeg」——本机有 ffmpeg 时也能造出
+        可解析的状态，本机没装时也不会让「可用」这条用例变红。
+        """
+        exe = os.path.join(self.tmp_dir, name)
+        with open(exe, "w") as fh:
+            fh.write("#!/bin/sh\nexit 1\n")
+        os.chmod(exe, 0o755)
+        return name
 
     @staticmethod
     def _listening():
@@ -182,7 +220,11 @@ class TestOmlxTtsProbe(unittest.TestCase):
         return f"http://127.0.0.1:{port}"
 
     def test_reachable_endpoint_is_available(self):
-        """连得上的端点 → (True, "")。用临时监听而非固定端口，不与本机状态耦合。"""
+        """连得上的端点 + 解析得到 ffmpeg → (True, "")。
+
+        ffmpeg 那半由 setUp 的假 ffmpeg 显式安排（T78 起不再隐含依赖宿主机装了 ffmpeg），
+        端点用临时监听而非固定端口，两个前置条件都与本机状态解耦。
+        """
         base, listener = self._listening()
         try:
             os.environ["VOX_TTS_ENDPOINT"] = base
@@ -191,10 +233,11 @@ class TestOmlxTtsProbe(unittest.TestCase):
             listener.close()
 
     def test_unreachable_endpoint_is_unavailable_and_names_base_url(self):
-        """连不上的端点 → (False, "端点不可用：<base_url>")，reason 里带着那个端点。
+        """连不上的端点（ffmpeg 前置条件已满足）→ (False, "端点不可用：<base_url>")。
 
         端口是自己刚 close 掉的，所以「此刻无人监听」是事实而非假设；
         万一有别的进程在毫秒级窗口里抢占了它，本用例会响亮失败，不会悄悄判绿。
+        逐字相等守的是「单条原因不带分隔符」：加了两条原因后，别让格式噪声渗进单条场景。
         """
         base = self._dead_endpoint()
         os.environ["VOX_TTS_ENDPOINT"] = base
@@ -202,14 +245,114 @@ class TestOmlxTtsProbe(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("端点不可用", reason)
         self.assertIn(base, reason)
+        self.assertEqual(reason, f"端点不可用：{base}")
 
     def test_probe_targets_same_endpoint_as_unargued_construction(self):
-        """探活的地址与无参构造的地址是同一个（探与打不能各指一处）。"""
+        """探活的地址与无参构造的地址是同一个（探与打不能各指一处）。
+
+        ffmpeg 前置条件同样由 setUp 的假 ffmpeg 显式满足，不与本机是否装了 ffmpeg 耦合。
+        """
         base, listener = self._listening()
         try:
             os.environ["VOX_TTS_ENDPOINT"] = base
             self.assertEqual(OmlxTts().base_url, base)
             self.assertTrue(OmlxTts.probe_availability()[0])
+        finally:
+            listener.close()
+
+    def test_missing_ffmpeg_is_unavailable_and_names_ffmpeg(self):
+        """缺 ffmpeg + 端点可达 → (False, …)，reason 点名 ffmpeg 与那个解析不到的名字。
+
+        这就是 T78 修的那个洞：只探端点的探针在这一档会报「可用」，让套件照跑然后炸在
+        ffmpeg 上。本机装着 ffmpeg 也不影响本用例——VOX_FFMPEG 被显式指到解析不到的名字。
+        """
+        base, listener = self._listening()
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_FFMPEG"] = "vox-no-such-ffmpeg"
+            ok, reason = OmlxTts.probe_availability()
+        finally:
+            listener.close()
+        self.assertFalse(
+            ok,
+            f"缺 ffmpeg 仍报可用 = 探针只覆盖了一半前置条件，实际 {reason!r}",
+        )
+        self.assertIn("ffmpeg", reason, f"reason 必须点名 ffmpeg，实际 {reason!r}")
+        self.assertIn("vox-no-such-ffmpeg", reason, f"reason 必须点到那个名字，实际 {reason!r}")
+        self.assertNotIn(
+            "端点不可用", reason,
+            f"端点明明可达，不该连带报端点（报多了等于把可用态判成不可用），实际 {reason!r}",
+        )
+
+    def test_missing_both_reports_both_reasons(self):
+        """ffmpeg 与端点**都**缺 → 两条原因都在，且 ffmpeg 那条在前。
+
+        只报第一个会让人补完 ffmpeg 再跑一遍才发现端点也不通，白来回一趟；
+        ffmpeg 在前守的是「检查顺序与 synthesize 一致」（它也是先查 ffmpeg 再发请求）。
+        """
+        os.environ["VOX_TTS_ENDPOINT"] = self._dead_endpoint()
+        os.environ["VOX_FFMPEG"] = "vox-no-such-ffmpeg"
+        ok, reason = OmlxTts.probe_availability()
+        self.assertFalse(ok)
+        self.assertIn("ffmpeg", reason, f"两条都缺时必须报 ffmpeg，实际 {reason!r}")
+        self.assertIn("端点不可用", reason, f"两条都缺时必须报端点，实际 {reason!r}")
+        self.assertIn("vox-no-such-ffmpeg", reason, f"必须点到那个 ffmpeg 名，实际 {reason!r}")
+        self.assertIn("127.0.0.1:", reason, f"必须点到那个端点，实际 {reason!r}")
+        self.assertLess(
+            reason.index("ffmpeg"), reason.index("端点不可用"),
+            f"ffmpeg 必须排在端点之前（与 synthesize 的检查顺序一致），实际 {reason!r}",
+        )
+
+    def test_vox_ffmpeg_env_repoints_the_probe(self):
+        """回落链第二档生效：VOX_FFMPEG 指定别的名字，探针探的就是**那个**名字。
+
+        探针是类方法、拿不到实例参数，所以它只能读 env——本用例同时验两个方向：
+        指定的名字解析得到时判可用，换成解析不到的名字时 reason 点的是那个名字而非写死的
+        "ffmpeg"。任一方向改成读 DEFAULT_FFMPEG，本用例都会响亮失败。
+        """
+        base, listener = self._listening()
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_FFMPEG"] = self.fake_ffmpeg
+            self.assertEqual(OmlxTts.probe_availability(), (True, ""))
+            os.environ["VOX_FFMPEG"] = "vox-another-missing-ffmpeg"
+            ok, reason = OmlxTts.probe_availability()
+            self.assertFalse(ok, f"env 指定的 ffmpeg 解析不到时必须判不可用，实际 {reason!r}")
+            self.assertIn(
+                "vox-another-missing-ffmpeg", reason,
+                f"reason 必须点到 env 指定的那个名字（不能写死 DEFAULT_FFMPEG），实际 {reason!r}",
+            )
+        finally:
+            listener.close()
+
+    def test_synthesize_and_probe_share_one_ffmpeg_message(self):
+        """synthesize 抛的缺 ffmpeg 消息与探针 reason **逐字同源**（同一个 FFMPEG_MISSING 常量）。
+
+        两处若各写一遍文案，改一处忘一处就会重演「本机绿≠CI 绿」；这里把两侧都跟同一个
+        常量比——任一处复制粘贴（哪怕只差一个字）都会被这条用例抓到。
+        顺带守住「绝不改 synthesize 的失败语义」：端点是刚 close 掉的死端点，synthesize 仍抛
+        **ffmpeg** 那条错而非连接错，说明它照旧在发任何请求之前就先查 ffmpeg。
+        """
+        name = "vox-no-such-ffmpeg"
+        expected = omlx_adapter.FFMPEG_MISSING.format(name=name)
+        self.assertIn("ffmpeg", expected, "FFMPEG_MISSING 文案本身被改跑，本用例即失去意义")
+        with self.assertRaises(TtsError) as ctx:
+            OmlxTts(base_url=self._dead_endpoint(), ffmpeg=name).synthesize(
+                "接口一致性测试", Path(self.tmp_dir) / "unavailable.wav")
+        self.assertEqual(
+            str(ctx.exception), expected,
+            "synthesize 的缺 ffmpeg 消息必须与 FFMPEG_MISSING 逐字同源",
+        )
+        base, listener = self._listening()
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_FFMPEG"] = name
+            ok, reason = OmlxTts.probe_availability()
+            self.assertFalse(ok)
+            self.assertEqual(
+                reason, expected,
+                "探针 reason 的 ffmpeg 那半必须与 synthesize 抛出的消息逐字同源",
+            )
         finally:
             listener.close()
 
