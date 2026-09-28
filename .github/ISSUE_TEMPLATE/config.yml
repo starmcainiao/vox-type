@@ -1,0 +1,34 @@
+# New issue 页面的兜底配置。
+#
+# 为什么 blank_issues_enabled: true
+# ---------------------------------
+# 此前这里只有两个模板（bug_report / feature_request），打开 New issue 的人
+# 只看到「报 bug」和「提协议」两个口子——**「我只是想问个问题」没有出口**。
+# 于是要么硬塞进 feature_request、要么不发了。本仓当前是设计讨论期，
+# 提问与质疑边界是最欢迎的贡献形态（见 CONTRIBUTING.md），必须留通道。
+#
+# contact_links 是给「其实不该开 issue」的那部分流量指路：
+#   - 上手/环境问题 → 先读 docs/22，别开 issue 占坑
+#   - 安全漏洞 → 本仓是公开仓，绝不走公开 issue（SECURITY.md）
+
+blank_issues_enabled: true
+
+contact_links:
+  - name: 提问 / 怎么跑不起来
+    url: https://github.com/starmcainiao/vox-type/blob/main/docs/22-五分钟跑起来.md
+    about: >-
+      先读 docs/22（clone → 听见声音，每条命令都贴了实机真值输出，并如实列出当前还不好用的地方）。
+      仍卡住再回来开 blank issue，贴完整命令与输出。注意 cli 根在无 macOS say 的环境下会红，
+      那是已知平台限制，不是 bug。
+
+  - name: 质疑协议与边界
+    url: https://github.com/starmcainiao/vox-type/issues/new?template=feature_request.md
+    about: >-
+      plan 契约（docs/02）、准入判据（docs/14）、命中口径（docs/10）。
+      用 feature_request 模板：它要的是「动机 + 提案 + 与现有裁定的关系」，负结果与反例同样欢迎。
+
+  - name: 报告安全漏洞（勿用公开 issue）
+    url: https://github.com/starmcainiao/vox-type/security/advisories/new
+    about: >-
+      本仓是公开仓，安全漏洞走 GitHub 的 Private vulnerability reporting，详见仓库根 SECURITY.md。
+      绕过本仓既有机制的手段（命中判定、指纹门禁、fail-closed 留痕）一律视为安全漏洞。

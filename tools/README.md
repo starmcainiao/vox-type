@@ -29,6 +29,7 @@
 | `feedback_mining/make_demo_inputs.py` | 造挖掘器的演示输入（T17 留痕 + T07 事件流，全部自造话术） | 不读时钟、不随机 |
 | `run_all_tests.py` | **「跑全量测试」的单一真源**（T48）：逐根跑十一个测试根、累计 ran/skipped/failures/errors、打印**分项**汇总行、任一根红即非零退出并点名失败根 | 零第三方依赖（纯标准库）；每根一个独立子进程（十一个 `tests` 包名全撞，同进程必串味） |
 | `check_no_machine_paths.py` | **发布树绝对路径门禁**（T58）：扫「入库 + 未跟踪」全量文件，按本机家目录/外接卷挂载点/启动卷临时目录三类**推导出的**前缀判红，输出机器可读 JSON | 只读（不写任何文件）；判据自带豁免机制（`# scan-exempt: <理由>`）而不靠「悄悄不查」；前缀不写死 |
+| `check_import_direction.py` | **import 方向闸门**（T63）：用 `ast` 解析真实语法树（不用正则——正则分不清 `import` 与字符串/注释里的 `import`）判两条：`frozen-import`（冻结区 `core/ rules/ compiler/ assets/ runtime/ eval/ cli/` 反向 import 扩展区 `adapters/ packs/ trigger/`）与 `private-name`（跨包 `from x import _y`）；例外走 `import_direction_baseline.txt` | 只读（不写任何文件）；判据与前缀只住在脚本里（写在文档里的判据会扫到写判据的那一行）；基线条目**必须带非空理由**且必须与真实违规配对，对不上（陈旧或凭空）直接判红，不靠「往基线里随便加一条」放水；`tests/` 目录内**不判**（判的是产品的依赖方向，而测试断言内部实现需要跨包引用私有名）；零第三方依赖 |
 | `pack_phrase_audit.py` | **发布树话术比对门禁**（T58）：`admission.md` × 仓外 yaml 逐 key 机械比对，**分级**四类命中（凭据/内网地址 = 硬失败；逐字重合/结构化标签 = 只报告） | 只输出 key 名与类别，**绝不输出原文**；逐字类退出 0 并带 `policy="pending-business-decision"`（业务判断未裁定，见 `docs/20 §四`）；零第三方依赖（不 import PyYAML） |
 
 测试：`tools/tests/test_corpus_fetch.py`、`tools/tests/test_derive_golden.py`、
@@ -48,29 +49,40 @@ python3 tools/run_all_tests.py --json     # 额外打逐根明细 + 汇总（机
 末行汇总**必须分项**，不要只给一个总数：
 
 ```
-ran=1602 skipped=0 executed=1602 failed=0 failures=0 errors=0 roots=11
+ran=1628 skipped=0 executed=1628 failed=0 failures=0 errors=0 roots=11
 FAILED roots: (none)
 ```
 
-（上面这行是 2026-09-28 在 yaml 可达的本机上的实跑值，**样例而非契约**：条数随各层增删变化，
-真值一律由本命令当场产出——这正是「数字必须有出处」的意思。）
+（上面这行是 2026-09-28 在「yaml 文件可达 **且** 已装 PyYAML」的本机上的实跑值，
+**样例而非契约**：条数随各层增删变化，真值一律由本命令当场产出——这正是「数字必须有出处」的意思。）
 口径（写死在这一节，改这里等于改对外口径）：
 
 - `ran` = 所有根 `TestResult.testsRun` 之和，**含** skip、**含**失败用例；
-- `skipped` = `@unittest.skip` / `@unittest.skipUnless` 的条数。
+- `skipped` = `@unittest.skip` / `@unittest.skipUnless` / `skipTest` 的条数。
   **`skipped` 是环境相关量，不是契约**——同一个仓在不同的机器/环境下必然不同，
   任何对外数字都不许拿它当定值引用。真值只有一条出处：**本命令当场产出**。
-  触发条件（2026-09-28 实测，`ran=1602` 口径下）：
 
-  | 环境 | `skipped` | 触发条件 |
-  |---|---|---|
-  | 本机 kefu 仓 yaml **可达** | **0** | `packs` 根的同源断言真跑，不 skip |
-  | kefu 仓 yaml **不可达**（公开 CI 常态） | **25** | 全部来自 `packs` 根的 4 组 `@unittest.skipUnless(YAML_PATH.is_file(), …)`；`KEFU_HEAT_YAML` 未设且 3 条候选路径均不存在 |
+  `packs` 根的同源断言要真跑，**两个**前置条件必须**同时**成立
+  （T70 把判据从单条件扩成合取——单条件只覆盖了两个前置之一，
+  于是「文件在、库不在」那一格掉进缝里炸成 error）：
+
+  | ① yaml 文件 | ② PyYAML 可导入 | `skipped` | 说明 |
+  |---|---|---|---|
+  | 可达 | 已装 | **0** | 25 条同源断言全真跑（本机默认） |
+  | 可达 | **未装** | **25** | 有仓无库：判据合取生效，诚实 skip 而非 error |
+  | 不可达 | 已装 | **25** | 公开 CI 常态（无 kefu 仓） |
+  | 不可达 | 未装 | **25** | 两者皆缺，skip 消息里报的是**先命中的那条** |
+
+  四种组合本机实测均 `failed=0`（2026-09-28，`ran=1628` 口径）。
+  要复跑「文件不可达」那一档（可复现，不靠人记）：
 
   ```bash
-  # 复跑上面第二行（可复现，不靠人记）：把 yaml 显式指到一个不存在的路径
+  # 把 yaml 显式指到一个不存在的路径
   KEFU_HEAT_YAML=/nonexistent/供热预设.yaml python3 tools/run_all_tests.py
   ```
+
+  **「未装 PyYAML」是测试期可选依赖，不是产品依赖**——产品仍是零第三方依赖
+  （`README.md` 首屏口径）。想看这 25 条真跑，装上 PyYAML 即可（不装不影响 `failed=0`）。
 
   `packs` 之外各根也有自己的 `@unittest.skipUnless`，**与 yaml 无关**，按环境各自成立：
 

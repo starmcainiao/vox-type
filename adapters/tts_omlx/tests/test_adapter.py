@@ -19,14 +19,19 @@ adapters.tts_omlx.tests.test_adapter — oMLX TTS 适配器测试
 """
 
 import base64
+import errno
 import hashlib
 import io
 import os
+import socket
+import ssl
 import sys
 import shutil
 import struct
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 import wave
 from unittest import mock
 from contextlib import redirect_stderr
@@ -34,7 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 from adapters.tts_omlx import OmlxTts, TtsError
-from adapters.tts_omlx.transport import OmlxTtsTransport
+from adapters.tts_omlx.transport import (FIX_HINT, MAX_RETRIES, OmlxTtsTransport)
 import adapters.tts_omlx.adapter as adapter_module
 from adapters.tts_omlx.transport import OmlxTtsTransport
 
@@ -848,6 +853,258 @@ class TestNormalizeRetry(TmpDir):
                          TtsError("未知语速档位: 'turbo'（仅支持: fast, normal, slow）")):
             with self.subTest(msg=str(no_retry)):
                 self.assertFalse(OmlxTtsTransport.is_normalization_failure(no_retry))
+
+
+# ============================================================
+# 9. T61：传输层重试语义 + 预铸进度可见
+# ============================================================
+@unittest.skipUnless(FFMPEG_BIN, "找不到可用的占位可执行文件，替身用例无法通过适配器的 ffmpeg 可用性检查")
+class TestRetrySemantics(TmpDir):
+    """T61 核心：确定性故障首抛、瞬时态照旧重试。
+
+    反空转：断言的是**请求次数**，不是消息文案。若把重试逻辑删掉，
+    AC1/AC2 类用例会立刻因「抛出的原因不对」变红；若把瞬时态一起砍了，
+    AC3 类用例会因请求数只有 1 变红。两条都指向行为，不指向措辞。
+    """
+
+    URL = "http://127.0.0.1:10099/v1/audio/speech"
+
+    def setUp(self):
+        super().setUp()
+        # endpoint 必须是完整 URL：transport 只持有路径段，完整 URL 由 adapter 拼装；
+        # 直接实例化 transport 做单测时得自己给全，否则 urllib 报 unknown url type。
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([]))
+        self.payload = {"model": "m", "input": "测试句子", "speed": 1.0}
+
+    # --- 测试替身 -----------------------------------------------------------
+    def counting(self, outcome):
+        """按调用次序从 outcome 取结果（元素是 bytes 或异常对象），并计数。
+
+        `opener.count["n"]` 就是请求次数——AC1/AC3 断言的对象。
+        """
+        state = {"n": 0}
+
+        def opener(req, timeout=None):
+            n = state["n"]
+            state["n"] += 1
+            item = outcome[min(n, len(outcome) - 1)]
+            if isinstance(item, BaseException):
+                raise item
+            return FakeResponse(item)
+        opener.count = state
+        return opener
+
+    @staticmethod
+    def http_error(code, body=b""):
+        """造一个 urllib HTTPError（body 会被读掉取片段，busy 文案类用例需要它非空）。"""
+        fp = mock.MagicMock(read=lambda: body, close=lambda: None)
+        return urllib.error.HTTPError(url=TestRetrySemantics.URL, code=code, msg="Reason",
+                                      hdrs=None, fp=fp)
+
+    # --- AC1 / AC2：连接类确定性故障首抛 -----------------------------------
+    def test_connection_refused_is_first_thrown(self):
+        """AC1：ECONNREFUSED 只发 1 次请求即抛错（不是 6 次）。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting(
+            [urllib.error.URLError(reason=ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"))]))
+        with self.assertRaises(TtsError) as ctx:
+            self.t.fetch(self.payload)
+        self.assertEqual(self.t._opener.count["n"], 1, "确定性连接失败必须首抛，一次重试都不许")
+
+    def test_connection_refused_message_has_fix_hint(self):
+        """AC2：首抛消息含「无法连接」且含修复指引（提到 VOX_TTS_ENDPOINT）。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting(
+            [urllib.error.URLError(reason=ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"))]))
+        error = self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertIn("无法连接", str(error), "必须是连接类失败，不是别的原因")
+        self.assertIn("VOX_TTS_ENDPOINT", str(error), "首抛必须告诉用户怎么改端点")
+        self.assertIn("端点不可用", str(error), "首抛必须带上怎么修，不能让用户自己猜")
+
+    def test_tls_error_is_first_thrown(self):
+        """TLS 是确定性故障（证书/协议不配对），首抛且带修复指引。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting(
+            [ssl.SSLError("certificate verify failed")]))
+        error = self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], 1)
+        self.assertIn("TLS", str(error))
+        self.assertIn("VOX_TTS_ENDPOINT", str(error))
+
+    def test_tls_wrapped_in_url_error_is_first_thrown(self):
+        """https 握手失败常被 urllib 包成 URLError(reason=SSLError)：仍按类型判，不靠 errno。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting(
+            [urllib.error.URLError(reason=ssl.SSLError("SSL handshake failed"))]))
+        error = self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], 1, "TLS 失败不得重试")
+        self.assertIn("VOX_TTS_ENDPOINT", str(error))
+
+    def test_http_4xx_is_first_thrown(self):
+        """HTTP 4xx（voice 拼错 / 缺 ref_text / 端点 404）是确定性失败，不重试。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([self.http_error(400, b"Bad Request")]))
+        error = self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], 1)
+        self.assertIn("HTTP 400", str(error))
+
+    def test_retryable_errno_is_retried_to_limit(self):
+        """连接期瞬时态（ECONNRESET 等）仍要重试到上限——只摘确定性类，别把瞬时态也砍了。"""
+        exc = ConnectionResetError(errno.ECONNRESET, "Connection reset by peer")
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([exc] * (MAX_RETRIES + 2)))
+        self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], MAX_RETRIES + 1, "瞬时态必须重到上限")
+
+    def test_transient_failure_message_has_no_fix_hint(self):
+        """瞬时态不该指用户去改端点（它会重试），只给确定性故障带修复指引。"""
+        exc = ConnectionResetError(errno.ECONNRESET, "Connection reset by peer")
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([exc] * (MAX_RETRIES + 2)))
+        error = self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertNotIn("VOX_TTS_ENDPOINT", str(error))
+        self.assertNotIn("端点不可用", str(error))
+
+    # --- 走 adapter.synthesize() 端到端（AC1 的原始措辞）------------------
+    def _refusing_opener(self):
+        """造一个「端点连不上」的计数 opener：任何请求都抛 ECONNREFUSED。"""
+        state = {"n": 0}
+
+        def opener(req, timeout=None):
+            state["n"] += 1
+            raise urllib.error.URLError(
+                reason=ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"))
+        opener.count = state
+        return opener
+
+    def test_synthesize_on_dead_endpoint_makes_exactly_one_request(self):
+        """AC1（原始措辞）：VOX_TTS_ENDPOINT 指向死端口跑一次 synthesize，
+        只发 1 次 HTTP 请求即抛错——不是 6 次（1 次首试 + MAX_RETRIES 次重试）。"""
+        state = {"n": 0}
+
+        def opener(req, timeout=None):
+            state["n"] += 1
+            raise urllib.error.URLError(
+                reason=ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"))
+
+        tts = self.default_tts(opener=opener, ffmpeg=FFMPEG_BIN)
+        out = self.out("dead-endpoint.wav")
+        with self.assertRaises(TtsError):
+            tts.synthesize("死端点测试", out)
+        self.assertEqual(state["n"], 1,
+                         f"死端点必须发 1 次就抛，实际发了 {state['n']} 次")
+        self.assertNotEqual(state["n"], MAX_RETRIES + 1, "不许退化回 1 次首试 + 5 次重试")
+        self.assertFalse(out.exists(), "首抛不得留下半成品文件")
+        self.assertEqual(tts._normalize_retries, 0, "连接类首抛不走归一重采")
+
+    def test_synthesize_dead_endpoint_still_emits_progress_first(self):
+        """首抛前进度行已经打出：用户看到它停在第几条，而不是一行字都没有。"""
+        tts = self.default_tts(opener=self._refusing_opener(), ffmpeg=FFMPEG_BIN)
+        stderr, error = self.capture_stderr(
+            lambda: self._expect_tts_error(tts.synthesize, "死端点进度", self.out("d2.wav")))
+        self.assertIn("[prebake] 1/? voice=default model=", stderr,
+                      f"首抛前应有进度行，实际 stderr={stderr!r}")
+        self.assertIn("VOX_TTS_ENDPOINT", str(error), "首抛消息仍带修复指引")
+
+    # --- AC3：5xx / busy 仍按上限重试 --------------------------------------
+    def test_http_5xx_retries_to_limit(self):
+        """AC3：HTTP 5xx 重试到 MAX_RETRIES（别把瞬时态也砍了）。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([self.http_error(500)] * (MAX_RETRIES + 2)))
+        with self.assertRaises(TtsError) as ctx:
+            self.t.fetch(self.payload)
+        self.assertEqual(self.t._opener.count["n"], MAX_RETRIES + 1,
+                         "1 次首试 + MAX_RETRIES 次重试，不多不少")
+        self.assertIn("HTTP 500", str(ctx.exception))
+
+    def test_busy_marker_retries_to_limit(self):
+        """引擎装卸窗口的 busy 文案必须照样重试（BUSY_MARKERS 语义不能丢）。"""
+        busy = self.http_error(503, b"Model 'Qwen3-TTS' is busy; cannot start work while unload is pending")
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([busy] * (MAX_RETRIES + 2)))
+        self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], MAX_RETRIES + 1)
+
+    def test_timeout_retries_to_limit(self):
+        """超时是瞬时态（0.6B 冷启动实测 68 s），必须重试到上限。"""
+        self.t = OmlxTtsTransport(endpoint=self.URL, opener=self.counting([socket.timeout("timed out")] * (MAX_RETRIES + 2)))
+        self._expect_tts_error(self.t.fetch, self.payload)
+        self.assertEqual(self.t._opener.count["n"], MAX_RETRIES + 1)
+
+    # --- 判据是类型，不是中文子串 ------------------------------------------
+    @staticmethod
+    def _with_cause(text, cause):
+        """用 `raise ... from cause` 造一条带 __cause__ 的 TtsError（产品代码的同款包装方式）。"""
+        try:
+            raise TtsError(text) from cause
+        except TtsError as exc:
+            return exc
+
+    def test_retryable_is_type_based_not_string_based(self):
+        """同一条中文消息，判据只能来自 __cause__ 的原异常类型（T61 明确要求，不许退回 str() 匹配）。"""
+        text = "TTS 无法连接（urllib.error.URLError）——端点不可用"
+        self.assertFalse(self.t._retryable(TtsError(text)),
+                         "没有原始异常时不许凭文案猜成可重试（fail-closed 方向：不重试）")
+        refused = urllib.error.URLError(reason=ConnectionRefusedError(errno.ECONNREFUSED, "x"))
+        reset = ConnectionResetError(errno.ECONNRESET, "x")
+        self.assertFalse(self.t._retryable(self._with_cause(text, refused)), "ECONNREFUSED 确定性，不重试")
+        self.assertTrue(self.t._retryable(self._with_cause(text, reset)), "ECONNRESET 瞬时态，重试")
+        self.assertFalse(self.t._retryable(self._with_cause(text, ssl.SSLError("x"))), "TLS 确定性，不重试")
+        self.assertTrue(self.t._retryable(self._with_cause(text, socket.timeout("x"))), "超时是瞬时态")
+
+    def test_retryable_classifies_by_http_code_not_text(self):
+        """HTTP 判定走 cause.code，不走 'HTTP 5' 子串。"""
+        code_500 = self.http_error(500)
+        code_404 = self.http_error(404, b"not found")
+        self.assertTrue(self.t._retryable(self._with_cause("某条中文消息", code_500)))
+        self.assertFalse(self.t._retryable(self._with_cause("某条中文消息", code_404)))
+
+    # --- 进度行可见性 -------------------------------------------------------
+    def test_prebake_progress_line_before_request(self):
+        """T61-B：请求前往 stderr 打一行进度，格式 [prebake] <n>/? voice= model=。"""
+        runner = FakeRunner()
+        tts = self.default_tts(opener=opener_returning(b"RIFF" + b"\0" * 100),
+                               ffmpeg=FFMPEG_BIN, runner=runner)
+        out = self.out("progress.wav")
+        stderr, _ = self.capture_stderr(lambda: tts.synthesize("进度行校验", out))
+        self.assertTrue(out.is_file(), "进度行不得改变成功路径")
+        lines = [l for l in stderr.splitlines() if l.startswith("[prebake] ")]
+        self.assertEqual(lines, ["[prebake] 1/? voice=default model=Qwen3-TTS-12Hz-0.6B-Base-bf16"],
+                         f"单次合成应恰好一条进度行且字段齐全，实际 stderr={stderr!r}")
+
+    def test_prebake_progress_goes_to_stderr_not_stdout(self):
+        """进度走 stderr：stdout 保持只有机器可读产物。两个流必须**同时**截住才有意义。"""
+        buf_err = io.StringIO()
+        buf_out = io.StringIO()
+        tts = self.default_tts(opener=opener_returning(b"RIFF" + b"\0" * 100),
+                               ffmpeg=FFMPEG_BIN, runner=FakeRunner())
+        with mock.patch.object(adapter_module.sys, "stderr", buf_err), \
+                mock.patch.object(adapter_module.sys, "stdout", buf_out):
+            tts.synthesize("进度行走 stderr", self.out("a.wav"))
+            tts.synthesize("再合成一条", self.out("b.wav"))
+        self.assertIn("[prebake]", buf_err.getvalue())
+        self.assertNotIn("[prebake]", buf_out.getvalue(), "stdout 必须是机器可读的，不得夹进度行")
+        self.assertEqual(tts._calls, 2, "计数由适配器自己维护")
+
+    def test_prebake_total_is_placeholder_not_guess(self):
+        """总数未知就打 `/?`——不许猜总数（猜错的进度行比没有更误导）。"""
+        runner = FakeRunner()
+        tts = self.default_tts(opener=opener_returning(b"RIFF" + b"\0" * 100),
+                               ffmpeg=FFMPEG_BIN, runner=runner)
+        stderr, _ = self.capture_stderr(lambda: tts.synthesize("不猜总数", self.out("c.wav")))
+        self.assertIn("[prebake] 1/?", stderr)
+        self.assertNotRegex(stderr, r"\[prebake\] \d+/\d+", "不许猜出总数")
+
+    def test_prebake_progress_printed_before_first_request(self):
+        """必须是**请求前**打：先写进度、再发 HTTP（卡住时用户看到的才是「卡在哪一条」）。"""
+        order = []
+        real_open = opener_returning(b"RIFF" + b"\0" * 100)
+
+        def opener(req, timeout=None):
+            order.append("request")
+            return real_open(req, timeout=timeout)
+
+        class StderrRecorder:
+            def write(self, s):
+                order.append("progress")
+                return len(s)
+
+        tts = self.default_tts(opener=opener, ffmpeg=FFMPEG_BIN, runner=FakeRunner())
+        with mock.patch.object(adapter_module.sys, "stderr", StderrRecorder()), \
+                mock.patch.object(OmlxTts, "_sleep", staticmethod(lambda seconds: None)):
+            tts.synthesize("顺序校验", self.out("order.wav"))
+        self.assertEqual(order, ["progress", "request"], f"进度行必须在请求之前，实际顺序 {order}")
 
 
 if __name__ == "__main__":

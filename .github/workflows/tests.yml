@@ -187,3 +187,31 @@ jobs:
           python3 tools/pack_phrase_audit.py
           echo "::endgroup::"
           echo "PASS 关卡4b 凭据与内网地址（零违规）"
+
+      # ── 关卡 5/5：import 方向（D3「适配器不改内核」/ D8「宿主无关」）──────
+      # D3 与 D8 此前 100% 是散文：tools/structure_budget/ 只管行数，
+      # 「冻结区反向 import 扩展区」这条纪律没有任何一行代码在守，靠人读评审。
+      # 本关卡把两条判据收进 tools/check_import_direction.py（AST 扫描，
+      # **不用正则**——正则分不清 `import adapters` 和字符串里的 "import"）：
+      #   frozen-import   冻结区（core/ rules/ compiler/ assets/ runtime/ eval/ cli/）
+      #                   import 扩展区（adapters/ packs/ trigger/）
+      #   private-name    跨包 `from x import _y`（下划线私有名）
+      #
+      # 「挂上即绿」是靠**基线**，不是靠放宽判据：仓内既有的两处破口登记在
+      # tools/import_direction_baseline.txt，每条必须带非空理由、且必须与
+      # **真实存在的违规**一一配对。修掉某处违规后，它对应的基线条目会立刻
+      # 判「与违规不配对」而红——必须显式删掉那一行才算闭环，基线不会自己变绿。
+      # 基线条目缺理由 / 与违规不配对 / 同键重复 / 显式基线文件缺失 → 退出 2。
+      #
+      # 只读：本脚本主路径不写任何文件（故本步不需要 --no-write；
+      # --self-test 仅在 tempfile.mkdtemp 里造临时树并在 finally 删除，
+      # 若临时目录落在真仓内会直接中止，绝不在真仓造脏）。
+      - name: 关卡5 import 方向闸门（D3 适配器不改内核 / D8 宿主无关）
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::5a import 方向（冻结区→扩展区 / 跨包私有名）"
+          python3 tools/check_import_direction.py
+          echo "::endgroup::"
+          echo "PASS 关卡5 import 方向"
+

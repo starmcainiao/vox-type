@@ -19,53 +19,8 @@
 > **第一次来？→ 先读 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**（clone 到听见声音，全真值输出）·
 > 想看可跑的示例 → [`examples/`](examples/README.md) · 想加一个 TTS 引擎 → [`docs/23`](docs/23-如何新增一个TTS引擎.md)
 
-**English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
-dialogue into audited, versioned audio assets, and plays them in 0.475–4.176 ms
-(P50 0.715 ms, N=50, measured on one machine) when the upstream model decides to speak them —
-falling back to your existing TTS path on every miss (fail-closed, fully traced).
-Zero third-party dependencies.
-
-> **⚠️ 本仓有「两组首音数字」，口径不同，不可混读或相减**：
-> ① 上面的 `0.715 ms` 与下表同源，唯一真源是
-> [`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)（同机同句同 16 kHz 契约，
-> 快路每句重复 5 次取中位数，N=50；`first_audio_ms` 取自 `vox run` 的 CLI JSON，**不含 Python 进程启动**）。
-> ② [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) 另有一组**链路级对拍**数字
-> （预铸命中 P50 0.232 ms，n=20 vs 链路实时合成 586.7 ms，`say` 口径，n=36）——**不同机器、不同语料、
-> 不同 TTS**，那组数字本身没错，但不能和本表并列比较。
-
----
-
-## Why
-
-### 一眼对比：前置包命中 vs 模型合成
-
-| 臂 | 路径 | 首音（本次实测 P50） |
-|---|---|---:|
-| **快路** | `vox run` 命中即播（磁盘读，零 TTS 调用） | **0.715 ms**（区间 0.475–4.176 ms，N=50） |
-| **慢路** | oMLX `Qwen3-TTS-12Hz-0.6B-Base-bf16` 全链路 | **2336.0 ms**（区间 1052.3–6453.6 ms，N=10） |
-
-**P50/P50 ≈ 3,267×**（附注，非测量值）；保守区间约 **252×–9,026×**。同机同句、同 16 kHz 契约，
-快路每句重复 5 次取中位数，慢路逐句 1 次；慢路含服务端合成、ffmpeg 归一、落盘与契约复验；
-快路 `first_audio_ms` 取自 `vox run` 的 CLI JSON、**不含 Python 进程启动**（别读成「从零拉起进程到首响」）。
-图见 [`docs/media/value-compare.svg`](docs/media/value-compare.svg)，数字唯一来源是
-[`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)，口径与局限见
-[`labs/frontpack-value/README.md`](labs/frontpack-value/README.md)。
-**链路口径另见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md)**（P50 0.232 ms vs 586.7 ms，`say` 口径）——
-**那是另一台机器、另一批语料、另一种 TTS，与本表不可混读、不可相减**。
-
-1. **流程话术在替慢链路陪跑。** 一通「查一下账单」的电话，用户要等 ASR + LLM 首 token + TTS
-   才能听到「请提供您的户号」——这句话由业务流程决定，却陪整条链路等了几秒，还烧一次推理。
-   我们实测：预铸命中读包首响 **P50 0.232 ms**，链路级实时合成 **586.7 ms**（≈2530×，n 见 `docs/09`）。
-2. **生成式话术不可审计。** 客服话术（催收/政务/通知）有合规要求，LLM 每次生成都在赌。
-   预铸资产 = **字节级一致、可审核、可版本化**；源话术一改，指纹门禁自动让缓存失效（fail-closed）。
-   行业背景：AI 骚扰电话投诉年增 230%（财联社 2025-04），厂商靠「500 套合规话术模板」应对——
-   模板没有治理，我们有准入判据（[`docs/14`](docs/14-预铸准入判据.md)）。
-3. **缓存手法行业皆知，资产层没有开源件。** 「缓存预合成音频」是 Vapi 官方文档里的优化技巧；
-   把它做成**有准入、有质检、有指纹、能差量重铸的层**（含双工参数治理）没有现成开源实现
-   （同类项目检索见 [`docs/04-prior-art.md`](docs/04-prior-art.md)、市场验证见 [`docs/16`](docs/16-行业痛点与切入点分析.md)）。
-
-**诚实边界**：适用范围 = 流程决定的话轮（真实客服语料实测占 23%，催收/账户服务场景）；
-自由对话部分永远走原路——本项目不试图、也不应该覆盖它。
+**你什么时候需要它**：做客服 / 催收 / 政务 IVR，首响被 TTS 合成卡住，**且有一部分话术是流程写死的**
+（问候、转人工、报修确认、告别）——那部分话术用它；全是自由对话的系统不需要它。
 
 ## Architecture
 
@@ -88,39 +43,17 @@ Zero third-party dependencies.
 
 ![vox-type 架构图](docs/media/architecture.svg)
 
-（架构图源文件 [`docs/media/architecture.svg`](docs/media/architecture.svg) 是纯文本 SVG，可直接 diff 与审阅；上方 ASCII 版是它的文字等价物。）
+（架构图源文件 [`docs/media/architecture.svg`](docs/media/architecture.svg) 是纯文本 SVG，可直接 diff 与审阅；
+上方 ASCII 版是它的文字等价物。）
 
-## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
-
-- **十一个测试根，分项口径 `ran=1602 skipped=0 executed=1602 failed=0`**
-  （2026-09-28 本机实跑，**唯一出处 = 命令**：`python3 tools/run_all_tests.py`，末行打印；
-  `ran`=各根 `testsRun` 之和含 skip 与失败用例，`executed=ran-skipped`，`failed=failures+errors`。
-  **数字随用例增删漂移——请以命令的实跑输出为准，不要引用本文的抄件**）。
-  **`skipped=0` 是本机状态、不是契约**（T54 刷新；T50 定的 26 条 skip 基线已被 T51/T53 作废）：
-  那 26 条里有 24 条是 `packs` 的 yaml 同源断言，此前因**仓外 kefu 仓 yaml 路径写死**而按设计 skip，
-  **T51 改为多候选路径探测后本机命中，这 24 条现在真跑**（T53 把 `packs` 由 6 红修回全绿）。
-  剩下的跳过条件全在 `adapters`（`@unittest.skipUnless` 门 + 运行时探测）：需 `ffmpeg`、
-  需 macOS `say` 且 tmpdir 与仓库跨设备、需本机 oMLX `:10099` 在跑、需仓内已有 heat-kefu 预铸产物。
-  **换台机器（典型如 Linux CI）这些依赖不在，`skipped` 会重新大于 0、`executed` 随之变小**——
-  本行只对本机成立，**不是「这 1602 条在任何环境都会跑」**；skip 不是失败，也不是「没跑」。
-  CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。
-  2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
-- 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
-- **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
-  命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
-- **多分句整段也能走快路**（拆句铸入 + 逐字覆盖序列命中，[`docs/10 §10.7`](docs/10-接入取景与命中口径.md)）：
-  14 条多分句预设话术 **14/14** 序列命中、命中臂拼接 **P50 ≈ 5 ms**（冷缓存首跑 ~22 ms）vs 慢路合成
-  **≈ 575 ms**、零 TTS 调用（数字以 `labs/heat-kefu-seq/report.json` 为准）；
-- 回读 CER 基准可复现（本地 ASR 回读，真机闭环 CER 0.0）；方言域 ASR 边界已实测
-  （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）；
-- **双工与失效已落地**：四参数各有可观测行为 + 双工质量三指标可复现（`labs/duplex-quality/`）
-  + 资产 TTL 过期拒播；预铸查找热路径索引化（10k 条下 0.5–0.8 µs，旧 61–2115 µs）。
-  （以上能力的任务级验收记录见 [`docs/tasks/`](docs/tasks/)）
-
-## 只想听声音？30 秒（零引擎，不需要 TTS 服务）
+## 先听声音：30 秒，零引擎（不需要 TTS 服务）
 
 > 不想先装 oMLX / 铸包？仓里带了一份**预铸好的自证包**，clone 完直接播——
 > 全程磁盘读，**一次合成都没发生**（`tts_calls=0`），端点离线也能跑。
+
+🎧 **[demo.wav](docs/media/demo.wav)** —— 一段真人耳朵能听差的快路播报，由
+[`packs/heat_kefu`](packs/heat_kefu/) 的自造话术经 `sh bin/vox run` 生成
+（`hit` 命中、`tts_calls=0`：是磁盘读，不是合成）。
 
 ```sh
 git clone https://github.com/starmcainiao/vox-type && cd vox-type
@@ -138,7 +71,15 @@ afplay /tmp/prebuilt.wav                     # 听一下（非 macOS 用别的�
 完整推导（为什么 `--adapter` 仍须显式给、预铸包来源与重铸口径）见
 [`examples/README.md`](examples/README.md) 与 [`examples/prebuilt-pack/PROVENANCE.md`](examples/prebuilt-pack/PROVENANCE.md)。
 
-## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
+**English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
+dialogue into audited, versioned audio assets, and plays them in 0.475–4.176 ms
+(P50 0.715 ms, N=50, measured on one machine) when the upstream model decides to speak them —
+falling back to your existing TTS path on every miss (fail-closed, fully traced).
+Zero third-party dependencies.
+
+## Quick Start
+
+> 纯标准库，Python ≥ 3.12；零第三方依赖。
 
 > **第一次来？先看 [`docs/22-五分钟跑起来`](docs/22-五分钟跑起来.md)**——那份从 clone 到听见声音，
 > 每条命令都贴了**实机跑出来的真值输出**，并如实列出当前还不好用的地方。下面是最短版本。
@@ -157,8 +98,11 @@ sh bin/vox run /tmp/vox-demo/plan.json --pack /tmp/vox-demo/heat-kefu --adapter 
 # → hit=2 miss=0 tts_calls=0 first_audio_ms=<随机器与冷热缓存漂移，非固定值>
 #    ↑ 「零 TTS 调用」就是本项目的字面价值：这两句是磁盘读，不是合成
 #    ↑ first_audio_ms 的**形状恒定、数值不定**：同一台机冷热不同也会差一个量级
-#      （已实跑到的真值见 examples/README.md 与 labs/frontpack-value/report.json）；
+#     （已实跑到的真值见 examples/README.md 与 labs/frontpack-value/report.json）；
 #      本行不写死数字，因为任何写死的数字都会立刻过期。
+#    ↑ 另外：这个数**不含 Python 进程启动**，所以它 ≠ 你敲一条命令看到的墙钟时间
+#      ——「引擎就绪后首音」与「从零敲命令」是两个口径，量级差约两个数量级
+#      （两组数字与口径见下方「⚠️ 本仓有「两组首音数字」」）。
 afplay /tmp/vox-demo/out.wav      # 听一下（非 macOS 用别的播放器）
 
 # 3) 查包 / 质检
@@ -170,7 +114,7 @@ sh bin/vox verify /tmp/vox-demo/heat-kefu
 #    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。上面 Status 一节的
 #    测试数就是这条命令的输出抄件；要数字请重跑它，不要抄文档。
 python3 tools/run_all_tests.py
-# → ran=1602 skipped=0 executed=1602 failed=0 failures=0 errors=0 roots=11
+# → ran=1628 skipped=0 executed=1628 failed=0 failures=0 errors=0 roots=11
 #   （本机实跑抄件。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
 ```
 
@@ -189,11 +133,99 @@ python3 tools/run_all_tests.py
 `eval/readback.py --asr adapters.asr_omlx:OmlxAsr`）；kefu-agent 集成见
 `adapters/framework_kefu/`（环境变量 `KEFU_AGENT_ROOT` 指向其仓根）。
 
+## Why
+
+> **⚠️ 本仓有「两组首音数字」，口径不同，不可混读或相减**：
+> ① 上面英文行的 `0.715 ms` 与下表同源，唯一真源是
+> [`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)（同机同句同 16 kHz 契约，
+> 快路每句重复 5 次取中位数，N=50；`first_audio_ms` 取自 `vox run` 的 CLI JSON，**不含 Python 进程启动**
+> ——报告原文：「不含 Python 进程启动那几十毫秒」。所以它量的是**引擎就绪后首音到得多快**，
+> **不是从零敲一条命令到首响**：后者还含进程启动与 CLI 解析，是**数十毫秒量级**，差约两个数量级。
+> 墙钟没有落盘报告（`labs/frontpack-value/` 只量引擎就绪后的首音），所以本行**不写死任何抄件数字**，
+> 请在你自己机器上跑一次上面「先听声音」的命令、用 `/usr/bin/time` 或 shell 的 `time` 量它。
+> ② [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) 另有一组**链路级对拍**数字
+> （预铸命中 P50 0.232 ms，n=20 vs 链路实时合成 586.7 ms，`say` 口径，n=36）——**不同机器、不同语料、
+> 不同 TTS**，那组数字本身没错，但不能和本表并列比较。
+
+### 一眼对比：前置包命中 vs 模型合成
+
+| 臂 | 路径 | 首音（本次实测 P50） |
+|---|---|---:|
+| **快路** | `vox run` 命中即播（磁盘读，零 TTS 调用） | **0.715 ms**（区间 0.475–4.176 ms，N=50） |
+| **慢路** | oMLX `Qwen3-TTS-12Hz-0.6B-Base-bf16` 全链路 | **2336.0 ms**（区间 1052.3–6453.6 ms，N=10） |
+
+**P50/P50 ≈ 3,267×**（附注，非测量值）；保守区间约 **252×–9,026×**。同机同句、同 16 kHz 契约，
+快路每句重复 5 次取中位数，慢路逐句 1 次；慢路含服务端合成、ffmpeg 归一、落盘与契约复验；
+快路 `first_audio_ms` 取自 `vox run` 的 CLI JSON、**不含 Python 进程启动**（别读成「从零拉起进程到首响」；
+从零敲命令到首响是数十毫秒量级，见上方口径警告 ①）。
+图见 [`docs/media/value-compare.svg`](docs/media/value-compare.svg)，数字唯一来源是
+[`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)，口径与局限见
+[`labs/frontpack-value/README.md`](labs/frontpack-value/README.md)。
+**链路口径另见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md)**（P50 0.232 ms vs 586.7 ms，`say` 口径）——
+**那是另一台机器、另一批语料、另一种 TTS，与本表不可混读、不可相减**。
+
+1. **流程话术在替慢链路陪跑。** 一通「查一下账单」的电话，用户要等 ASR + LLM 首 token + TTS
+   才能听到「请提供您的户号」——这句话由业务流程决定，却陪整条链路等了几秒，还烧一次推理。
+   我们实测：预铸命中读包首响 **P50 0.232 ms**，链路级实时合成 **586.7 ms**（≈2530×，n 见 `docs/09`）。
+2. **生成式话术不可审计。** 客服话术（催收/政务/通知）有合规要求，LLM 每次生成都在赌。
+   预铸资产 = **字节级一致、可审核、可版本化**；源话术一改，指纹门禁自动让缓存失效（fail-closed）。
+   行业背景：AI 骚扰电话投诉年增 230%（财联社 2025-04），厂商靠「500 套合规话术模板」应对——
+   模板没有治理，我们有准入判据（[`docs/14`](docs/14-预铸准入判据.md)）。
+3. **缓存手法行业皆知，资产层没有开源件。** 「缓存预合成音频」是 Vapi 官方文档里的优化技巧；
+   把它做成**有准入、有质检、有指纹、能差量重铸的层**（含双工参数治理）没有现成开源实现
+   （同类项目检索见 [`docs/04-prior-art.md`](docs/04-prior-art.md)、市场验证见 [`docs/16`](docs/16-行业痛点与切入点分析.md)）。
+
+**诚实边界**：适用范围 = 流程决定的话轮（真实客服语料实测占 23%，催收/账户服务场景）；
+自由对话部分永远走原路——本项目不试图、也不应该覆盖它。
+
+## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
+
+- **十一个测试根；`failed=0` 在四种环境下都成立，`skipped` 随环境变**
+  （2026-09-28 本机实测四档，**唯一出处 = 命令**：`python3 tools/run_all_tests.py`，末行打印；
+  `ran`=各根 `testsRun` 之和含 skip 与失败用例，`executed=ran-skipped`，`failed=failures+errors`。
+  **数字随用例增删漂移——请以命令的实跑输出为准，不要引用本文的抄件**）：
+
+  | 环境 | `ran` | `skipped` | `executed` | `failed` |
+  |---|---|---|---|---|
+  | 本机：yaml 可达 **且** 装了 PyYAML | 1628 | **0** | 1628 | 0 |
+  | 本机：yaml 可达，**未装** PyYAML | 1628 | 25 | 1603 | 0 |
+  | 公开 CI：无 kefu 仓（装了/没装 PyYAML 都一样） | 1628 | 25 | 1603 | 0 |
+
+  **对外只承诺 `failed=0`**，不承诺 `skipped=0`——**`skipped` 是环境量不是契约**
+  （T70 把 `packs` 根的同源断言判据从单条件扩成两个前置条件的**合取**：
+  yaml 文件可达 **且** PyYAML 可导入，缺任一即诚实 skip）。
+  「测试期可选依赖」指 PyYAML，**产品仍是零第三方依赖**。
+  其余跳过条件全在 `adapters`（`@unittest.skipUnless` 门 + 运行时探测）：需 `ffmpeg`、
+  需 macOS `say` 且 tmpdir 与仓库跨设备、需本机 oMLX `:10099` 在跑、需仓内已有 heat-kefu 预铸产物。
+  **换台机器这些依赖不在，`skipped` 会上升、`executed` 随之变小**——
+  skip 不是失败，也不是「没跑」，但**它确实意味着那批断言没被验证**。四档口径表见 [`tools/README.md`](tools/README.md)。
+  CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。
+  2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
+- 离线对拍：预铸命中首响 P50 **0.232 ms**（n=20）vs 同引擎实时合成 **586.7 ms**（n=36）；
+  慢路 **515.3 ms**（n=20）；出处 [`docs/09-链路级语音对拍.md`](docs/09-链路级语音对拍.md) 实测表；
+- **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
+  命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
+- **多分句整段也能走快路**（拆句铸入 + 逐字覆盖序列命中，[`docs/10 §10.7`](docs/10-接入取景与命中口径.md)）：
+  14 条多分句预设话术 **14/14** 序列命中、命中臂拼接 **P50 5.032 ms** vs 慢路合成
+  **P50 568.956 ms**、零 TTS 调用（n=14；出处 `labs/heat-kefu-seq/report.json` 的
+  `summary.executor_wall_ms_p50` 与 `summary.slow_arm_say_ms_p50`）；
+- 回读 CER 基准可复现（本地 ASR 回读，真机闭环 CER 0.0）；方言域 ASR 边界已实测
+  （Wu-Bench 吴语 100 条，CER mean 0.269，见 `labs/wubench-dialect/`）；
+- **双工与失效已落地**：四参数各有可观测行为 + 双工质量三指标可复现（`labs/duplex-quality/`）
+  + 资产 TTL 过期拒播；预铸查找热路径索引化：n=10,000 时新索引 P50 **0.209–0.792 µs**
+  且不随命中位置变化（first/mid/last 均 0.542），旧线性扫描 P50 **0.708–72.667 µs**
+  且随命中位置劣化（first 0.708 → last 72.667）；n=200,000 时旧扫描劣化到
+  **739.521–2075.979 µs** 而新索引仍为 **0.208–0.833 µs**。
+  **打开统计时两者接近**（n=200,000 时 4.5 vs 4.6 µs）——那部分耗时在统计本身，不在扫描。
+  （出处 `labs/pack-index-bench/report.json` 的 `sizes[n=…]` 各臂
+  `*_no_stat.p50_us` 与 `hit_arm_with_real_stat.*_p50_us` 字段）
+  （以上能力的任务级验收记录见 [`docs/tasks/`](docs/tasks/)）
+
 ## 演示素材（可直接看 / 直接听）
 
 | 素材 | 是什么 | 怎么复现 |
 |---|---|---|
-| 🎧 [demo.wav](docs/media/demo.wav) | 一段真人耳朵能听差的快路播报——**由 [`packs/heat_kefu`](packs/heat_kefu/) 的自造话术经 `sh bin/vox run` 生成**（`hit` 命中、`tts_calls=0`，是磁盘读不是合成） | 复现命令写在 [`examples/README.md`](examples/README.md)；输出即本文件 |
+| 🎧 [demo.wav](docs/media/demo.wav) | 一段真人耳朵能听差的快路播报——**由 [`packs/heat_kefu`](packs/heat_kefu/) 的自造话术经 `sh bin/vox run` 生成**（`hit` 命中、`tts_calls=0`，是磁盘读不是合成） | 复现命令写在上方「先听声音：30 秒」一节；输出即本文件 |
 | 🗺️ [architecture.svg](docs/media/architecture.svg) | 架构图（纯文本 SVG，可 diff、可离线打开，无外链图片） | 上方 Architecture 一节的 ASCII 图是它的文字等价物 |
 
 数据口径：`demo.wav` 的文本全部来自 `packs/heat_kefu/` 的自造 demo 文案，

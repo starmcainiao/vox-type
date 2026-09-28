@@ -63,6 +63,7 @@ class OmlxTts:
             base, model, timeout_seconds, ffmpeg if ffmpeg is not None else (os.environ.get("VOX_FFMPEG") or DEFAULT_FFMPEG), opener, runner)
         self._transport = OmlxTtsTransport(opener=opener, timeout=timeout_seconds, endpoint=self.endpoint())
         self._normalize_retries = 0  # 归一失败的累计重采次数（供构建侧/测试观测；每次重试必写 stderr）
+        self._calls = 0  # 已发起的预铸请求数（供预铸进度行用；总数由构建侧持有，本层不猜）
 
     def _clone_ref(self) -> Optional[Path]:
         # 无 VOX_TTS_REF 返回 None（走默认音色）；env 不完整或文件无效即 fail-closed。
@@ -139,6 +140,10 @@ class OmlxTts:
         # 不静默通过——第 1 次警告就是它的痕迹。确定性失败在这里一次都不重试，消息原样上抛。
         attempt = 0
         while True:
+            # 预铸进度：每次真正发起请求**前**打一行 stderr（卡住时用户看到的就是它卡在哪一条）。
+            # 归一重试会重新请求服务端，故也在这里计数——计数 = 已发起的合成请求次数，非单元数。
+            self._calls += 1
+            self._emit_prebake_progress()
             src.write_bytes(self._transport.fetch(payload))
             try:
                 return postprocess.normalize_from(src, ffmpeg=ffmpeg, runner=self._runner)
@@ -169,6 +174,12 @@ class OmlxTts:
         # 而这条警告是唯一的重试留痕，必须可被观测。
         sample = "".join(c for c in text if c != "\n")[:24] or "<空文本>"
         sys.stderr.write(f"[TTS 归一重试] 重试 {attempt}/{MAX_RETRIES}: {sample} | {reason}\n")
+
+    def _emit_prebake_progress(self) -> None:
+        # 预铸进度（T61）：请求**前**打一行，格式固定 [prebake] <n>/? voice=<voice> model=<model>。
+        # 总数用 `/?` 占位——构建侧才知道单元总数，本层猜不出也不该猜（猜错的进度行比没有更误导）。
+        # 与归一重试警告同款：走 sys.stderr.write，保证 mock.patch 掉的 sys.stderr 也抓得住。
+        sys.stderr.write(f"[prebake] {self._calls}/? voice={self.voice} model={self.model}\n")
 
     def _assert_contract(self, path: Path) -> None:
         # 用 wave 复验产物格式与非空——不靠信任 ffmpeg 或归一化步骤的输出。

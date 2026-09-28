@@ -9,8 +9,20 @@ packs.heat-kefu.tests.test_source_of_truth — 「话术同源」机器证明（
       事后无法定位（仓库头号红线：禁止静默降级）。所以本文件里没有任何归一化后的比较——
       归一化相等 ≠ 同源（docs/14 的教训）。
 
-yaml 不在本仓（公开 CI 没有 kefu 仓）时：依赖 yaml 的测试一律 **skip** 而非 fail，
-      包源自身的结构测试（key 集合、单句判据、不含槽位）不受影响照常跑。
+「依赖 yaml 的测试」要真跑需要**两个**前置条件，本文件对它们各有一个判据，
+      合取成立才跑（判据集中在一处：`_yaml_guard()`，见下）：
+        ① yaml **文件**可达 —— `YAML_PATH.is_file()`（只探测存在性，不读内容）；
+        ② yaml **解析器**可导入 —— `_yaml_module()`（`try import yaml`，缺库返回 `None`）。
+      缺**任一** → 该组断言诚实 **skip**（不是 fail，也不换路径、不降级）；
+      skip 消息指名**当前缺失的那一个**，所以「文件不在」与「没装库」分得开。
+      包源自身的结构测试（key 集合、单句判据、不含槽位）不依赖上面任何一个，照常跑。
+
+      PyYAML 是**测试期可选依赖，不是产品依赖**：本仓 `import yaml` 只出现在本文件
+      与 `labs/` 的一次性实验里，产品代码（`core/ rules/ compiler/ assets/ runtime/
+      cli/ adapters/ trigger/ packs/` 的非测试代码）不 import yaml。所以 `README.md`
+      的「零第三方依赖」说的是**产品**，与装不装 PyYAML 无关、互不冲突；没装 PyYAML
+      的机器上 B/C/D/E 段是 skip 而不是红，装上（`pip install pyyaml`，装到隔离目录
+      再用 `PYTHONPATH` 指过来即可，不必装进解释器）就真跑。
 """
 
 import hashlib
@@ -39,8 +51,10 @@ PACK_DIR = REPO_ROOT / "packs" / "heat_kefu"
 # 约束（两条红线）：
 #   ① **不许写死机器绝对路径**（docs/13 §八#20 的发布树红线）——所有候选都是
 #      相对本仓推导或走环境变量。
-#   ② **不许用假路径骗过 skip**——skip 的唯一判据自始至终是 `YAML_PATH.is_file()`，
-#      探测只影响 YAML_PATH 取哪一条，不影响「找不到就 skip」这个行为。
+#   ② **不许用假路径骗过 skip**——探测只影响 YAML_PATH 取哪一条，不影响「判据不通过就
+#      skip」这个行为。skip 的判据是**两个前置条件的合取**（见 `_yaml_guard()`）：
+#      ① 文件可达（`YAML_PATH.is_file()`）② 解析器可导入（`_yaml_module()`），
+#      缺任一即 skip——写假路径、装个假库都换不来真跑。
 #
 # 候选（按序，取第一个真实存在的）：
 #   ① $KEFU_HEAT_YAML             —— 显式指定，优先级最高
@@ -82,8 +96,8 @@ def _resolve_yaml_path(env=None):
     ②③④——那会让「用户指定的文件失效」被悄悄换成「另一个文件」（静默降级，纪律 4）。
     未设时才按候选顺序取第一个真实存在的；都不存在则返回最高优先级那条。
 
-    返回的那条若不存在，`YAML_PATH.is_file()` 为假 → 依赖 yaml 的测试照设计 skip
-    （不 fail、不换文件、不降级）。
+    返回的那条若不存在，`YAML_PATH.is_file()` 为假 → 前置条件 ① 不成立 →
+    依赖 yaml 的测试按设计 skip（判据在 `_yaml_guard()`，不 fail、不换文件、不降级）。
     """
     cands = _yaml_candidates(env)
     if (os.environ if env is None else env).get("KEFU_HEAT_YAML"):
@@ -95,6 +109,63 @@ def _resolve_yaml_path(env=None):
 
 
 YAML_PATH = _resolve_yaml_path()  # kefu 预设原文；仅探测到时才做同源断言，否则按设计 skip
+
+
+def _yaml_module():
+    """探测 yaml 解析器是否可导入：可导入返回模块对象，缺库返回 `None`。
+
+    与 `_resolve_yaml_path` 对称：一个只判「文件在不在」，一个只判「库装没装」，
+    两者都只做探测、不读任何内容（数据分级：存在性 / 可导入性探测）。
+    """
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        return None
+    return yaml
+
+
+# yaml 解析器：缺库时是 None（只影响依赖 yaml 的测试，A 段包源结构测试照常跑）
+YAML_MODULE = _yaml_module()
+
+
+def _yaml_guard():
+    """「依赖 yaml 的测试」的 skip 判据：两个前置条件的**合取**，缺任一即 skip。
+
+        ① `YAML_PATH.is_file()`  —— yaml 文件可达（公开 CI 没有 kefu 仓）；
+        ② `YAML_MODULE is not None` —— yaml 解析器可导入（PyYAML，测试期可选依赖）。
+
+    返回 `None` 表示两个前置都满足（不 skip）；否则返回**当前缺失的那一个**的说明，
+    直接当 skip 消息用——「文件不在」与「没装库」在这条路径上分得开。
+
+    刻意**不**在 `_load_yaml()` 里 catch `ModuleNotFoundError` 再 `raise unittest.SkipTest`：
+    那样两种情形都会堆在 `setUpClass` 里变成 skip，事后看不出缺的是哪一个（docs/13 里
+    「假绿比红更坏」的另一面——看不出来比红更糟）。判据集中在这一处，`skipUnless` 与
+    `skipTest` 都走它，不留第二份判据。
+    """
+    if not YAML_PATH.is_file():
+        return "kefu 供热预设 yaml 文件不在候选路径（公开 CI 没有 kefu 仓）"
+    if YAML_MODULE is None:
+        return "未安装 PyYAML（测试期可选依赖，非产品依赖）"
+    return None
+
+
+def _yaml_skip_msg(what):
+    """skip 消息：「哪个前置条件缺失」+ 调用方给的断言组名 `what`（可空串）。
+
+    **恒返回 `str`**——两个前置条件都满足时返回空串，让 `skipUnless` 的条件为真、
+    消息字段始终是合法的 `str`。
+    刻意**不做条件字符串拼接**：把 `_yaml_guard()` 的返回值（可能为 `None`）直接当
+    `+` 的操作数，会在两个前置条件都在时于**类定义期**抛 `TypeError`，整个模块
+    import 失败，本文件一条断言都跑不了——门禁不是「跳过」而是「不起作用」。
+    """
+    reason = _yaml_guard()
+    if not reason:
+        return ""
+    return reason if not what else f"{reason}——{what}"
+
+
+YAML_RUNNABLE = _yaml_guard() is None  # 类级 skipUnless 的条件（恒为 bool）
+
 # yaml 指纹：变更即钩子自动不命中（fail-closed），admission.md 文首有同一份记录
 # 2026-09-28 T53 重对账：T31 基线（kefu 侧 commit 3b296a2）之后上游连改 4 次
 #   （d59255a/9fc9cd4 9-23 报修话术落题面锚点 · bd0ae3d 9-24 模糊澄清守卫+转人工三拆表
@@ -210,9 +281,20 @@ def _yaml_lookup(yaml_doc, key):
 
 
 def _load_yaml():
-    import yaml  # 延迟导入：yaml 缺失时只影响依赖 yaml 的测试
+    """读 kefu 供热预设 yaml 原文（动态期望值的唯一来源）。
+
+    本函数**不做** skip 判断——前置条件由 `_yaml_guard()` 在调用方判（文件可达 +
+    解析器可导入）。正常路径下走到这里时两个前置都已成立。
+    """
+    if YAML_MODULE is None:
+        # 判据与实现分离后的兜底：某个调用方漏了 `_yaml_guard()` 的 skip 判据，
+        # 就让它在这里**指名报错**，而不是抛一个和「文件不在」长得一样的错。
+        raise AssertionError(
+            "YAML_MODULE 为 None（未安装 PyYAML）却调用了 _load_yaml()——"
+            "调用方漏了 `_yaml_guard()` 的 skip 判据（fail-closed：不猜、不降级）"
+        )
     with open(YAML_PATH, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return YAML_MODULE.safe_load(f)
 
 
 def _load_pack_dir():
@@ -376,9 +458,9 @@ class TestPackSourceStructure(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# B. 同源断言（依赖 yaml；yaml 缺失 → skip）
+# B. 同源断言（依赖 yaml；`_yaml_guard()` 两个前置条件缺任一 → skip）
 # ---------------------------------------------------------------------------
-@unittest.skipUnless(YAML_PATH.is_file(), "kefu 供热预设 yaml 不在本仓（公开 CI）——同源断言跳过")
+@unittest.skipUnless(YAML_RUNNABLE, _yaml_skip_msg("同源断言跳过"))
 class TestSourceOfTruthVerbatim(unittest.TestCase):
     """40 条 variant 与 yaml 值逐字 `==`——本包唯一价值的机器证明。"""
 
@@ -482,9 +564,9 @@ class TestSourceOfTruthVerbatim(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# C. find_hit 双向断言（依赖构建产物；未构建 → skip）
+# C. find_hit 双向断言（依赖 yaml + 构建产物；`_yaml_guard()` 缺任一 → skip，未构建 → skip）
 # ---------------------------------------------------------------------------
-@unittest.skipUnless(YAML_PATH.is_file(), "kefu 供热预设 yaml 不在本仓——find_hit 断言跳过")
+@unittest.skipUnless(YAML_RUNNABLE, _yaml_skip_msg("find_hit 断言跳过"))
 class TestFindHitAll40Hit(unittest.TestCase):
     """必铸 40 条：文本档逐条查询 → 100% 命中（entry 非 None 且 miss_reason 为 None）。"""
 
@@ -520,7 +602,7 @@ class TestFindHitAll40Hit(unittest.TestCase):
         self.assertEqual(res.mode, MODE_TEXT)
 
 
-@unittest.skipUnless(YAML_PATH.is_file(), "kefu 供热预设 yaml 不在本仓——exclusion 断言跳过")
+@unittest.skipUnless(YAML_RUNNABLE, _yaml_skip_msg("exclusion 断言跳过"))
 class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
     """「不铸」的双向断言：exclusion 键真的未命中，证明它们真实走原路（不是只查表里没有）。"""
 
@@ -794,9 +876,9 @@ class TestExclusionGoesThroughOriginalPath(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# D. 断言可打破性（负例）
+# D. 断言可打破性（负例；三条都依赖 yaml，按 `_yaml_guard()` 判定 skip）
 # ---------------------------------------------------------------------------
-@unittest.skipUnless(YAML_PATH.is_file(), "kefu 供热预设 yaml 不在本仓——序列命中确定性跳过")
+@unittest.skipUnless(YAML_RUNNABLE, _yaml_skip_msg("序列命中确定性跳过"))
 class TestSequenceHitDeterministic(unittest.TestCase):
     """同一整段连跑 10 次：段 key 序列与长度完全一致（同长度多候选取索引首条）。"""
 
@@ -831,8 +913,8 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
     def test_one_char_tamper_is_detected(self):
         with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
             by_key = {p["key"]: p for p in json.load(f)["phrases"]}
-        if not YAML_PATH.is_file():
-            self.skipTest("kefu yaml 不在本仓——负例跳过")
+        if not YAML_RUNNABLE:
+            self.skipTest(_yaml_skip_msg("负例跳过"))
         doc = _load_yaml()
         key = "farewell"
         original = str(_yaml_lookup(doc, key))
@@ -853,8 +935,8 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 
     def test_sequence_one_char_tamper_is_detected(self):
         """拆句断言同样不空转：把某段改一个字，拼回就不等于 yaml 原文。"""
-        if not YAML_PATH.is_file():
-            self.skipTest("kefu yaml 不在本仓——拆句负例跳过")
+        if not YAML_RUNNABLE:
+            self.skipTest(_yaml_skip_msg("拆句负例跳过"))
         doc = _load_yaml()
         with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
             by_key = {p["key"]: p for p in json.load(f)["phrases"]}
@@ -885,8 +967,8 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 
     def test_mismatch_report_lists_every_offending_key(self):
         # 断言的失败消息必须能定位到哪几条（否则事后无法复算）
-        if not YAML_PATH.is_file():
-            self.skipTest("kefu yaml 不在本仓——负例跳过")
+        if not YAML_RUNNABLE:
+            self.skipTest(_yaml_skip_msg("负例跳过"))
         doc = _load_yaml()
         with open(PACK_DIR / "phrases.json", "r", encoding="utf-8") as f:
             by_key = {p["key"]: p for p in json.load(f)["phrases"]}
@@ -917,8 +999,8 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 # 双向指名——多了指名「夹具多出的占位符」，少了指名「上游有而夹具没有的占位符」
 # （后者正是 `.format()` 会抛 KeyError 的那一个）。
 #
-# 纪律：本守卫**只读** yaml、**不写**任何文件；yaml 不在（公开 CI）→ skip，与本文件既有
-# 约定一致（诚实 skip，不是失败）。
+# 纪律：本守卫**只读** yaml、**不写**任何文件；`_yaml_guard()` 两个前置条件缺任一 → skip，
+# 与本文件其余各段走同一判据（诚实 skip，不是失败）。
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 
 
@@ -926,8 +1008,8 @@ class TestFixtureSlotCompleteness(unittest.TestCase):
     """夹具槽位完整性：`SLOT_FILL_EXAMPLES` 的键集合必须等于上游对应 key 文本的占位符集合。"""
 
     def test_fixture_slots_match_yaml_placeholders(self):
-        if not YAML_PATH.is_file():
-            self.skipTest("kefu yaml 不在本仓——夹具槽位完整性无法对账（诚实 skip）")
+        if not YAML_RUNNABLE:
+            self.skipTest(_yaml_skip_msg("夹具槽位完整性无法对账（诚实 skip）"))
         doc = _load_yaml()
         fixture_extra = []    # 夹具里多出的占位符（上游没有）
         fixture_missing = []  # 上游有、夹具没有的占位符（.format() 会抛 KeyError）
@@ -973,14 +1055,19 @@ class TestFixtureSlotCompleteness(unittest.TestCase):
 # 实测（2026-09-21，T33b）：`python3 -m unittest discover -s packs` **能跑到本文件**
 #   （packs/__init__.py 已入库，CPython 的 namespace package 守卫不再拦；包目录名是
 #   `heat_kefu` 下划线形式，`-t packs` 下的 `_splitext` 截断问题不存在）。
-#   但真断言（B/C/D 段依赖 yaml 与构建产物）需要两个前置，否则**诚实 skip**：
-#       ① `sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1`
-#       ② kefu 供热预设 yaml 可达 —— **默认多候选自动探测**（见本文件顶部 `_yaml_candidates`，
-#          仓与本仓同级 `<repo>/../../kefu-agent/...` 即可命中），不必设环境变量；
-#          只有当你的 kefu 仓在以上候选之外时才需要 `KEFU_HEAT_YAML=<绝对路径>`。
-#          该变量一旦设置即**唯一权威**：指向不存在的文件不会回退去试别的候选，
-#          而是照常 skip（见顶部「显式指定即权威」）。
-#   两者都在时 packs 段才是完整真包断言（否则 A 段包源结构测试照常跑）。
+#   但真断言（B/C/D/E 段依赖 yaml，C 段还依赖构建产物）需要三个前置，缺任一**诚实 skip**：
+#       ① 构建产物 —— `sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1`
+#       ② kefu 供热预设 yaml **文件**可达 —— **默认多候选自动探测**（见本文件顶部
+#          `_yaml_candidates`，与本仓同级 `<repo>/../../kefu-agent/...` 即可命中），
+#          不必设环境变量；只有当你的 kefu 仓在以上候选之外时才需要
+#          `KEFU_HEAT_YAML=<绝对路径>`。该变量一旦设置即**唯一权威**：指向不存在的
+#          文件不会回退去试别的候选，而是照常 skip（见顶部「显式指定即权威」）。
+#       ③ yaml **解析器**可导入 —— `pip install pyyaml`（**测试期可选依赖，不是产品依赖**；
+#          装到 /tmp 等隔离目录再用 `PYTHONPATH` 指过来即可，不必装进解释器）。
+#          ② 成立而 ③ 不成立时是 **skip 而不是 error**——T70 修的正是这个缝：判据原先
+#          只覆盖 ②，「文件在、库不在」的机器上这 25 条（本文件依赖 yaml 的全部测试）
+#          会炸成 8 个 error **条目**——error 按 `setUpClass` 归组，所以是 8 不是 25。
+#   三个都在时 packs 段才是完整真包断言（否则 A 段包源结构测试照常跑）。
 #   本文件自带 `sys.path` 兜底（同 labs/ 先例），不依赖调用方环境变量。
 
 

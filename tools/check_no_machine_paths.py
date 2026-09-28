@@ -89,14 +89,49 @@ import sys
 import tempfile
 from pathlib import Path
 
-# 通用根前缀（兜底）。**这些不是本机路径**——是跨机器恒定的那一层根。
-# 本机具体前缀一律靠推导，见 build_prefixes()。
-ROOT_PREFIXES = (
-    ("root:user-home", "/Users/"),
-    ("root:external-volume", "/Volumes/"),
+# 兜底根前缀（root-literal）。**这些不是本机路径**——是本机推导不到时的兜底，
+# 按「跨机器恒定」分层登记。本机具体前缀一律靠运行时推导，见 build_prefixes()。
+#
+# 为什么分组登记，而不是平铺一串字面量（T63 立的判据：判据的载体不能是判据本身）：
+#   前一张卡的毛病是把 macOS 的四条平铺在一个元组里，读者看不出哪几条只有某个
+#   OS 家族成立，补 Linux 时要么补不上、要么补错 OS。现在拆成三张按**OS 约定**
+#   归类的表，每条都写明它属于哪个 OS 家族、出处是什么；新增兜底前缀必须落在
+#   某一张表里并说明出处，否则这条前缀的来源无从查证。
+#
+# 三条都**不是**运行时探测的结果，是各 OS 家族的目录约定（探测不到，只能登记），
+# 因此来源必须写在注释里 —— 这是「前缀必须在运行时推导**或有注释说明来源**」中
+# 后半句的落点。为什么探测不到：`$HOME` 只给**当前这台机器、当前这个用户**的家目录
+# （macOS 上推不出 Linux 的），而门禁要拦的是**别人提交进来**的路径。
+#
+# OS_HOME_ROOTS —— 各 OS 家族的用户家目录根
+#   macOS   /Users/<user>        系统约定（System 与 POSIX 层）
+#   Linux   /home/<user>         FHS §3.10：普通用户家目录
+#   Linux   /root                FHS §3.10 的例外：root 用户家目录**不**在 /home 下
+#
+#   已知取舍（不许悄悄改）：`/root/` 短且通用，路径段名恰好叫 `root` 的仓库内
+#   相对路径（形如 `/a/b/root/c`）会被误判。实测本仓命中为 0；真出现误判时，
+#   那一行用 `# scan-exempt: <理由>` 显式标注，**不要**把这条前缀删掉。
+OS_HOME_ROOTS = (
+    ("root:user-home-macos", "/Users/"),
+    ("root:user-home-linux", "/home/"),
+    ("root:user-home-linux-root", "/root/"),
+)
+
+# VOLUME_MOUNT_ROOTS —— 外部卷挂载根
+#   macOS   /Volumes              HFS+ 外部卷挂载约定
+VOLUME_MOUNT_ROOTS = (("root:external-volume", "/Volumes/"),)
+
+# PER_USER_TMP_ROOTS —— 每用户临时目录根
+#   macOS   /var/folders          per-user 临时目录约定
+#   macOS   /private/var/folders  同一目录的 canonical 路径（/var 是符号链接）
+#                                 两个都要：realpath 视角与字面视角各命中一半，
+#                                 缺一条就有一半 traceback 漏判。
+PER_USER_TMP_ROOTS = (
     ("root:per-user-tmp", "/var/folders/"),
     ("root:per-user-tmp-canonical", "/private/var/folders/"),
 )
+
+ROOT_PREFIXES = OS_HOME_ROOTS + VOLUME_MOUNT_ROOTS + PER_USER_TMP_ROOTS
 
 # 本仓自有的机器推导前缀类别（用来在报告里区分 `machine-path`）
 MACHINE_SOURCES = ("machine-home", "volume-mount", "boot-tmp")
