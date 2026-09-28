@@ -1,0 +1,406 @@
+{
+  "seed": 20260923,
+  "listen_dir": "~/vox-naturalness/listen",
+  "items": {
+    "repair_confirm_question": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/repair_confirm_question-one_shot.wav",
+        "sha256": "a6252103d21aa9ac2c97d869b3548bd06351c308fefd269f0d6cce5ddc062c03"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/repair_confirm_question-prebaked.wav",
+        "sha256": "51d5949d487253d91a86a4d25bbf002da894cc763d3177e2a8a13411201b0414"
+      },
+      "c3": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/repair_confirm_question-runtime_synth.wav",
+        "sha256": "51d5949d487253d91a86a4d25bbf002da894cc763d3177e2a8a13411201b0414"
+      }
+    },
+    "clarify_repair": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/clarify_repair-prebaked.wav",
+        "sha256": "6ec0f23b4e92b1d8c45b274c2d4aa820553b14be3c5a924724a0b360e673b7f8"
+      },
+      "c2": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/clarify_repair-one_shot.wav",
+        "sha256": "addc0595b5166d2bbcc793b716025ca87ae191acd9e2bec1bc4277ae9bbea1ab"
+      },
+      "c3": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/clarify_repair-runtime_synth.wav",
+        "sha256": "6ec0f23b4e92b1d8c45b274c2d4aa820553b14be3c5a924724a0b360e673b7f8"
+      }
+    },
+    "clarify_work_order": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/clarify_work_order-one_shot.wav",
+        "sha256": "06478ba096cf36e2088940b8bd38554cebe981257a21c0e47cb59e22b23a7e11"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/clarify_work_order-runtime_synth.wav",
+        "sha256": "710959735840cf799bd52dd373c0959704a37232ba58c456293ec9e9eb00a646"
+      },
+      "c3": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/clarify_work_order-prebaked.wav",
+        "sha256": "710959735840cf799bd52dd373c0959704a37232ba58c456293ec9e9eb00a646"
+      }
+    },
+    "repair_ask_natural_address": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_address-one_shot.wav",
+        "sha256": "e257d42801cfbce8c0d01932f7f21839b1f180bf71dacd7f351d017f4898c3eb"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_address-prebaked.wav",
+        "sha256": "625c1279249a84016e46eafbb07629bbbc8f993529965ed726d1923a20b9140e"
+      },
+      "c3": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_address-runtime_synth.wav",
+        "sha256": "625c1279249a84016e46eafbb07629bbbc8f993529965ed726d1923a20b9140e"
+      }
+    },
+    "repair_ask_userNo+repair_ask_address": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/repair_ask_userNo+repair_ask_address-runtime_synth.wav",
+        "sha256": "449bd94cd93cc9282b41ed09056a038547e2bb55c244a9e05a04379c2ecdf8a6"
+      },
+      "c2": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/repair_ask_userNo+repair_ask_address-one_shot.wav",
+        "sha256": "dec4d45c7f9238e9a8d04e87251f01ef33c41997f7c1e074db2d7bd79803d4ce"
+      },
+      "c3": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/repair_ask_userNo+repair_ask_address-prebaked.wav",
+        "sha256": "449bd94cd93cc9282b41ed09056a038547e2bb55c244a9e05a04379c2ecdf8a6"
+      }
+    },
+    "repair_ask_natural_userNo": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_userNo-runtime_synth.wav",
+        "sha256": "7269d18583b672c14be8674540969399db96241d3256f785147fe66233811b96"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_userNo-prebaked.wav",
+        "sha256": "7269d18583b672c14be8674540969399db96241d3256f785147fe66233811b96"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/repair_ask_natural_userNo-one_shot.wav",
+        "sha256": "393aacb2d908b1721227ed5032d3e3138edaea55a25626774bbe9c110655e93c"
+      }
+    },
+    "chat_smalltalk": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/chat_smalltalk-runtime_synth.wav",
+        "sha256": "d11e53206286bfe6e8e279a2446bd05788023cbb8475cab5746f71f68f4c9b6e"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/chat_smalltalk-prebaked.wav",
+        "sha256": "d11e53206286bfe6e8e279a2446bd05788023cbb8475cab5746f71f68f4c9b6e"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/chat_smalltalk-one_shot.wav",
+        "sha256": "e226d11a0946bccccff946da0983eb4ac40ab5a2b679cfa60d0d796aa4004fc9"
+      }
+    },
+    "transfer_ready+transfer_queued": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/transfer_ready+transfer_queued-one_shot.wav",
+        "sha256": "738874d11cefc120ccecc6d2cbd7034f09c16372ae2d11366ca443e95b0d9735"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/transfer_ready+transfer_queued-prebaked.wav",
+        "sha256": "fb0eaeb1279d2cfb37b2d9abdd37ce17e589aff3bab0f710e3f15449187873a4"
+      },
+      "c3": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/transfer_ready+transfer_queued-runtime_synth.wav",
+        "sha256": "fb0eaeb1279d2cfb37b2d9abdd37ce17e589aff3bab0f710e3f15449187873a4"
+      }
+    },
+    "internal_chat_hint": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/internal_chat_hint-one_shot.wav",
+        "sha256": "dfb7d0542489266219607668d88d07666c0e1bf8b3f5da51054b289223646b01"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/internal_chat_hint-runtime_synth.wav",
+        "sha256": "8112f371882ce6eb3e8b05d42c37eeb057e632b353df533a262d8874e0756cb7"
+      },
+      "c3": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/internal_chat_hint-prebaked.wav",
+        "sha256": "8112f371882ce6eb3e8b05d42c37eeb057e632b353df533a262d8874e0756cb7"
+      }
+    },
+    "opening": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/opening-runtime_synth.wav",
+        "sha256": "a0e36b9dbf9ffbf977cf82ca5cba41122c7d3340fea23526dba028826e9cdd2f"
+      },
+      "c2": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/opening-one_shot.wav",
+        "sha256": "6bf5a23d0b013e3b1470c673922129ec2fc7a329d4ef521cc5818aefca808529"
+      },
+      "c3": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/opening-prebaked.wav",
+        "sha256": "a0e36b9dbf9ffbf977cf82ca5cba41122c7d3340fea23526dba028826e9cdd2f"
+      }
+    },
+    "realtime_ask+realtime_empty": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/realtime_ask+realtime_empty-prebaked.wav",
+        "sha256": "488232de526c1534831cd45f30eca0da69c0a0f825c512d6ce27cefd92603b8f"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/realtime_ask+realtime_empty-runtime_synth.wav",
+        "sha256": "488232de526c1534831cd45f30eca0da69c0a0f825c512d6ce27cefd92603b8f"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/realtime_ask+realtime_empty-one_shot.wav",
+        "sha256": "8715c295f41c01bb13387b41bf30f5c0869686517e77dcdfd7fc2bcd0fe98c3a"
+      }
+    },
+    "stop_warm_plan": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/stop_warm_plan-one_shot.wav",
+        "sha256": "1d8900ce144d6c389cea57cba9bfdd8d5729f3a803f1e11bab474d550341f4a7"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/stop_warm_plan-prebaked.wav",
+        "sha256": "f00e97015d72db2efd31cf321499c332ecc1a952e6ee622cfb59356a899cf71b"
+      },
+      "c3": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/stop_warm_plan-runtime_synth.wav",
+        "sha256": "f00e97015d72db2efd31cf321499c332ecc1a952e6ee622cfb59356a899cf71b"
+      }
+    },
+    "fallback_internal": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/fallback_internal-runtime_synth.wav",
+        "sha256": "b0ec76c2b17bb2c3ca469d673559e7aa2475235c0d15fbbd2515f60b8cc406a0"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/fallback_internal-prebaked.wav",
+        "sha256": "b0ec76c2b17bb2c3ca469d673559e7aa2475235c0d15fbbd2515f60b8cc406a0"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/fallback_internal-one_shot.wav",
+        "sha256": "584244a0efcd6cb08bcfe3225b46f5760301d081b69a8406c93f3931ff4d2f67"
+      }
+    },
+    "pay_ask_user_no+pay_due_hint": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/pay_ask_user_no+pay_due_hint-prebaked.wav",
+        "sha256": "6e8fe2f4f1fb0b377894b26df79888dd43075ddd5c4aabc0815fff0000b8505b"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/pay_ask_user_no+pay_due_hint-runtime_synth.wav",
+        "sha256": "6e8fe2f4f1fb0b377894b26df79888dd43075ddd5c4aabc0815fff0000b8505b"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/pay_ask_user_no+pay_due_hint-one_shot.wav",
+        "sha256": "bc775b0ce77fc10f72453a8aa02eebf934bd2022afcc09746bc2183f0fbcf2f2"
+      }
+    },
+    "lifeboat_fallback": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/lifeboat_fallback-prebaked.wav",
+        "sha256": "00768e5ae55132dd72d5154522dd82a572fb57a3cb098e60622fb311f24c4a49"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/lifeboat_fallback-runtime_synth.wav",
+        "sha256": "00768e5ae55132dd72d5154522dd82a572fb57a3cb098e60622fb311f24c4a49"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/lifeboat_fallback-one_shot.wav",
+        "sha256": "fd57646258790a27d667eba30a611648d85ff33d74bae2051fbcc878cab0c379"
+      }
+    },
+    "work_order_hint+work_order_ask": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/work_order_hint+work_order_ask-prebaked.wav",
+        "sha256": "7278ec6a7bf1e4c4fd2251c3df3e1751ffb9b974adb6d314bd7854f0306b81ad"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/work_order_hint+work_order_ask-runtime_synth.wav",
+        "sha256": "7278ec6a7bf1e4c4fd2251c3df3e1751ffb9b974adb6d314bd7854f0306b81ad"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/work_order_hint+work_order_ask-one_shot.wav",
+        "sha256": "947f18b85dae807c28a8143229bb3c19b171b18fae9f3c8ea83ccbfd6f995a9b"
+      }
+    },
+    "work_order_no_unknown": {
+      "c1": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/work_order_no_unknown-runtime_synth.wav",
+        "sha256": "03edaf8460f39c434afb8363b755e8dce7faa682ed6096852e0e91c589e8ea9f"
+      },
+      "c2": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/work_order_no_unknown-prebaked.wav",
+        "sha256": "03edaf8460f39c434afb8363b755e8dce7faa682ed6096852e0e91c589e8ea9f"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/work_order_no_unknown-one_shot.wav",
+        "sha256": "9c245f3a5f1039a942db3a73f117022debfc4e81a57e5fba681e09be17ab45cc"
+      }
+    },
+    "user_no_unknown": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/user_no_unknown-prebaked.wav",
+        "sha256": "0818fbe5f7aba2461e5ac9c0927d761271a3dd30d9cf409afa790633a82e5c84"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/user_no_unknown-runtime_synth.wav",
+        "sha256": "0818fbe5f7aba2461e5ac9c0927d761271a3dd30d9cf409afa790633a82e5c84"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/user_no_unknown-one_shot.wav",
+        "sha256": "0365efbb25bfb97a14a07f1574642174b548778d3715d931d29d4679bcc17d16"
+      }
+    },
+    "inject_refuse": {
+      "c1": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/inject_refuse-one_shot.wav",
+        "sha256": "2e055586741e0fd36dc2266f3b3cdc07f44402c67000fb951fea183a3e220e3a"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/inject_refuse-runtime_synth.wav",
+        "sha256": "3df111420651411f49a3e754e0b8aa4df989c7126e7a9ac8ba7747ad19f23b9c"
+      },
+      "c3": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/inject_refuse-prebaked.wav",
+        "sha256": "3df111420651411f49a3e754e0b8aa4df989c7126e7a9ac8ba7747ad19f23b9c"
+      }
+    },
+    "off_hours_repair+off_hours_urgent": {
+      "c1": {
+        "arm": "prebaked",
+        "arm_label": "①预铸拼接（产品快路）",
+        "src": "~/vox-naturalness/arms/off_hours_repair+off_hours_urgent-prebaked.wav",
+        "sha256": "8f7b30bb302edad7614a4d10e2dab4a934a5af749bcf6f0bad19ecc93d899c50"
+      },
+      "c2": {
+        "arm": "runtime_synth",
+        "arm_label": "②逐句实时合成",
+        "src": "~/vox-naturalness/arms/off_hours_repair+off_hours_urgent-runtime_synth.wav",
+        "sha256": "8f7b30bb302edad7614a4d10e2dab4a934a5af749bcf6f0bad19ecc93d899c50"
+      },
+      "c3": {
+        "arm": "one_shot",
+        "arm_label": "③整段一次合成（无接缝参照）",
+        "src": "~/vox-naturalness/arms/off_hours_repair+off_hours_urgent-one_shot.wav",
+        "sha256": "dfe47ded5c1c02f4dc7d0ae05d9b3ebffe8366cb25065065887623f965bda762"
+      }
+    }
+  }
+}

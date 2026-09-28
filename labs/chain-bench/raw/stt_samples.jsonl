@@ -1,0 +1,12 @@
+{"key": "greeting_welcome", "text": "您好，这里是报修服务热线。", "wall_ms": 1044.3, "elapsedMs": 1043, "ok": true, "heard": "您好,这里是报修服务热线。"}
+{"key": "ask_fault_type", "text": "请问您要报修的是什么设备？", "wall_ms": 929.8, "elapsedMs": 928, "ok": true, "heard": "请问您要报修的是什么设备?"}
+{"key": "ask_fault_detail", "text": "请简单描述一下故障现象。", "wall_ms": 926.5, "elapsedMs": 925, "ok": true, "heard": "请简单描述一下故障现象。"}
+{"key": "ask_fault_urgency", "text": "请问这个问题影响正常使用吗？", "wall_ms": 927.7, "elapsedMs": 927, "ok": true, "heard": "请问这个问题影响正常使用吗?"}
+{"key": "ask_address", "text": "请问设备所在的地址是哪里？", "wall_ms": 931.2, "elapsedMs": 930, "ok": true, "heard": "请问设备所在的地址是哪里?"}
+{"key": "ask_contact", "text": "请留下您的联系电话。", "wall_ms": 922.7, "elapsedMs": 922, "ok": true, "heard": "请留下您的联系电话。"}
+{"key": "ask_time_window", "text": "请问师傅什么时间上门比较方便？", "wall_ms": 949.4, "elapsedMs": 948, "ok": true, "heard": "请问师傅什么时间上门比较方便?"}
+{"key": "confirm_summary", "text": "我再和您确认一下，地址和联系方式都已经记下了。", "wall_ms": 982.2, "elapsedMs": 980, "ok": true, "heard": "我再和您确认一下,地址和联系方式都已经记下了。"}
+{"key": "confirm_again", "text": "麻烦您再确认一下，这样填写可以吗？", "wall_ms": 907.9, "elapsedMs": 907, "ok": true, "heard": "麻烦您再确认一下,这样填写可以吗?"}
+{"key": "ticket_created", "text": "您的报修单已经创建，稍后会有师傅与您联系。", "wall_ms": 920.3, "elapsedMs": 919, "ok": true, "heard": "您的报修单已经创建,稍后会有师傅与您联系。"}
+{"key": "promise_visit", "text": "师傅会在约定时间前与您电话联系。", "wall_ms": 889.0, "elapsedMs": 888, "ok": true, "heard": "师父会在约定时间前与您电话联系。"}
+{"key": "closing_thank_you", "text": "感谢您的来电，祝您生活愉快。", "wall_ms": 875.6, "elapsedMs": 875, "ok": true, "heard": "感谢您的来电,祝您生活愉快。"}

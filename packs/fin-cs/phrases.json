@@ -1,0 +1,140 @@
+{
+  "phrases": [
+    {
+      "key": "greeting_inbound",
+      "variants": [
+        "您好，欢迎致电客户服务中心，请问有什么可以帮您？",
+        "您好，这里是客服中心，请问有什么可以帮您？"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "verify_identity",
+      "variants": [
+        "为保障您的账户安全，我需要先与您核对几项信息。",
+        "接下来的内容涉及您的账户，请您配合我做一个简单核对。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "restate_issue",
+      "variants": [
+        "我确认一下，您刚提到的情况是账户出现了一笔异常扣款。",
+        "为了确保我理解正确，您说的是这笔分期需要调整还款安排。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "probe_detail",
+      "variants": [
+        "方便的话，能请您补充一下事情发生的具体时间吗？",
+        "请问这个情况是第一次出现，还是之前也有过？"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "empathy_hardship",
+      "variants": [
+        "非常抱歉给您带来困扰，我完全理解您的着急。",
+        "我明白这件事让您费心了，我们一起来把它处理好。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "inform_fact",
+      "variants": [
+        "我把当前查到的情况向您说明一下。",
+        "您账户目前的处理进度是这样的。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "offer_options",
+      "variants": [
+        "针对您的情况，我们这边有两个方案可供您选择。",
+        "我为您梳理了几种可行的处理方式，您可以挑一个最合适的。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "execute_solution",
+      "variants": [
+        "好的，我这边马上为您提交处理。",
+        "方案已确认，我现在就按您选的这个方式操作。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "ask_feedback",
+      "variants": [
+        "请您对本次服务做一个评价，这对我很重要。",
+        "稍后会有服务评价短信，麻烦您抽空回复一下。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "relationship_extend",
+      "variants": [
+        "后续如果还有任何问题，您随时可以再联系我们。",
+        "以后遇到类似情况，您也可以直接找我们处理。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "closing_thanks",
+      "variants": [
+        "感谢您的来电，祝您生活愉快。",
+        "感谢您的配合，祝您一切顺利。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "off_script_handoff",
+      "variants": [
+        "您反馈的情况需要专人跟进，我为您转接人工同事。",
+        "这个问题超出我这边能处理的范围，我帮您转到专员那里。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "handoff_human",
+      "variants": [
+        "好的，我为您转接人工客服，请稍等。",
+        "我现在把您转给人工同事，请您稍等一下。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "error_retry",
+      "variants": [
+        "抱歉，我没听清，请您再说一次。",
+        "不好意思，麻烦您再说一遍。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "asr_clarify",
+      "variants": [
+        "这边信号不太好，您能再说一遍吗？",
+        "刚才有几句话没听清，麻烦您重说一次好吗？"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "hold_notice",
+      "variants": [
+        "我需要一点时间为您核实，请您稍等片刻。",
+        "正在为您查询，请您不要挂断。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    },
+    {
+      "key": "compliance_notice",
+      "variants": [
+        "本次通话可能会被录音，用于服务质量提升。",
+        "按照规定，接下来的沟通内容会做记录。"
+      ],
+      "rates": ["normal", "slow", "fast"]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "corpus_id": "fin-cs-keydrive",
+  "version": "1",
+  "notes": "fin-cs 包的全 key 脚本驱动档语料：key 由流程给定，不经语义检索。仅作回归闸门，不代表真实覆盖率（真实覆盖率见 labs/corpus-harvest/）。",
+  "units": [
+    {
+      "key": "greeting_inbound",
+      "text": "您好，欢迎致电客户服务中心，请问有什么可以帮您？",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "verify_identity",
+      "text": "为保障您的账户安全，我需要先与您核对几项信息。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "restate_issue",
+      "text": "我确认一下，您刚提到的情况是账户出现了一笔异常扣款。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "probe_detail",
+      "text": "方便的话，能请您补充一下事情发生的具体时间吗？",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "empathy_hardship",
+      "text": "非常抱歉给您带来困扰，我完全理解您的着急。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "inform_fact",
+      "text": "我把当前查到的情况向您说明一下。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "offer_options",
+      "text": "针对您的情况，我们这边有两个方案可供您选择。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "execute_solution",
+      "text": "好的，我这边马上为您提交处理。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "ask_feedback",
+      "text": "请您对本次服务做一个评价，这对我很重要。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "relationship_extend",
+      "text": "后续如果还有任何问题，您随时可以再联系我们。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "closing_thanks",
+      "text": "感谢您的来电，祝您生活愉快。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "off_script_handoff",
+      "text": "您反馈的情况需要专人跟进，我为您转接人工同事。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "handoff_human",
+      "text": "好的，我为您转接人工客服，请稍等。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "error_retry",
+      "text": "抱歉，我没听清，请您再说一次。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "asr_clarify",
+      "text": "这边信号不太好，您能再说一遍吗？",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "hold_notice",
+      "text": "我需要一点时间为您核实，请您稍等片刻。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "compliance_notice",
+      "text": "本次通话可能会被录音，用于服务质量提升。",
+      "rate": "normal",
+      "variant": 0
+    }
+  ]
+}

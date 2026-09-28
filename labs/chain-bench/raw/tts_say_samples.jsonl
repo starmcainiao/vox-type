@@ -1,0 +1,12 @@
+{"key": "greeting_welcome", "text": "您好，这里是报修服务热线。", "wall_ms": 547.2, "bytes": 93092}
+{"key": "ask_fault_type", "text": "请问您要报修的是什么设备？", "wall_ms": 538.8, "bytes": 83024}
+{"key": "ask_fault_detail", "text": "请简单描述一下故障现象。", "wall_ms": 548.1, "bytes": 88968}
+{"key": "ask_fault_urgency", "text": "请问这个问题影响正常使用吗？", "wall_ms": 549.1, "bytes": 96028}
+{"key": "ask_address", "text": "请问设备所在的地址是哪里？", "wall_ms": 557.3, "bytes": 85624}
+{"key": "ask_contact", "text": "请留下您的联系电话。", "wall_ms": 561.4, "bytes": 70392}
+{"key": "ask_time_window", "text": "请问师傅什么时间上门比较方便？", "wall_ms": 552.3, "bytes": 106058}
+{"key": "confirm_summary", "text": "我再和您确认一下，地址和联系方式都已经记下了。", "wall_ms": 560.1, "bytes": 162858}
+{"key": "confirm_again", "text": "麻烦您再确认一下，这样填写可以吗？", "wall_ms": 544.5, "bytes": 122368}
+{"key": "ticket_created", "text": "您的报修单已经创建，稍后会有师傅与您联系。", "wall_ms": 559.3, "bytes": 154748}
+{"key": "promise_visit", "text": "师傅会在约定时间前与您电话联系。", "wall_ms": 560.2, "bytes": 120792}
+{"key": "closing_thank_you", "text": "感谢您的来电，祝您生活愉快。", "wall_ms": 562.6, "bytes": 102136}

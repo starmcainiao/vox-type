@@ -1,0 +1,20 @@
+{
+  "pack_id": "heat-kefu-prebuilt-10",
+  "pack_version": "1",
+  "protocol_version": "0.1",
+  "ruleset_version": "v1",
+  "voice": "default",
+  "model_version": "Qwen3-TTS-12Hz-0.6B-Base-bf16",
+  "created_at": "2026-09-24T08:04:49.967973+00:00",
+  "total": 10,
+  "synthesized": 10,
+  "reused": 0,
+  "failed": [],
+  "quality_issues": [],
+  "loudness_normalized": false,
+  "clean": true,
+  "tts_calls": 10,
+  "pack_reload_status": "no_manifest",
+  "generated_at": "2026-09-24T08:06:03.966467+00:00",
+  "pack_verify_issues": []
+}

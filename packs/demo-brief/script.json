@@ -1,0 +1,14 @@
+{
+  "script_version": 1,
+  "terminal_keys": ["closing_brief"],
+  "live_whitelist": ["detail_not_prebaked", "fact_without_prebake"],
+  "max_retry": 3,
+  "units": [
+    {"key": "greeting_ticket", "rate": "normal", "variant": "auto"},
+    {"key": "ticket_status", "rate": "normal", "slots": {"ticket_id": "WB20260918001", "ticket_status": "处理中"}},
+    {"key": "due_days_left", "rate": "normal", "slots": {"days_left": "3"}},
+    {"key": "ask_assignee", "rate": "normal"},
+    {"key": "offer_help", "rate": "normal"},
+    {"key": "closing_brief", "rate": "normal"}
+  ]
+}

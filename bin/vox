@@ -1,0 +1,34 @@
+#!/bin/sh
+# bin/vox — vox CLI 入口薄壳（docs/08 §8.1）
+#
+# 定位仓库根 → exec python3 -m cli "$@"。
+# 不依赖安装、不依赖 cwd：仓库根由本脚本自身位置推导，
+#   因此可以从任意目录直接跑 <仓库路径>/vox-type/bin/vox。
+#
+# WHY 用 `python3 -m cli` 而不是 `python3 <root>/cli/main.py`：
+#   后者会把 cli/ 目录（而非仓库根）放进 sys.path，`import core` / `import compiler`
+#   会找不到。`-m` 保证 sys.path[0] 是仓库根。
+
+set -eu
+
+# 解析符号链接，拿到脚本真实位置（软链到别处时仍能定位仓库根）
+SELF="$0"
+while [ -h "$SELF" ]; do
+    TARGET="$(readlink "$SELF")"
+    case "$TARGET" in
+        /*) SELF="$TARGET" ;;
+        *) SELF="$(cd "$(dirname "$SELF")" && pwd)/$TARGET" ;;
+    esac
+done
+
+VOX_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+# 仓库根放进 PYTHONPATH：与 cwd 解耦（cd /tmp 也能跑）
+if [ -n "${PYTHONPATH:-}" ]; then
+    PYTHONPATH="${VOX_ROOT}:${PYTHONPATH}"
+else
+    PYTHONPATH="${VOX_ROOT}"
+fi
+export PYTHONPATH
+
+exec python3 -m cli "$@"

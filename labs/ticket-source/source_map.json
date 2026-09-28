@@ -1,0 +1,170 @@
+{
+  "_map_meta": {
+    "source_version": 1,
+    "target_pack": "packs/demo-brief",
+    "target_trigger": "demo-brief.ticket-reminder",
+    "purpose": "本文件是「工单系统导出 → state 快照」的完整可 Review 映射表。source_map.json 与 tickets.source.json 是数据，to_state.py 只做通用执行：任何字段的来源、类型、计算规则都只在本文件里声明，代码里不得出现某个具体字段的字面量映射（反空转条款）。",
+    "error_policy": "fail-closed：缺必需字段 / 多余未映射字段 / 类型不符 / 派生字段算不出 → 抛 SourceMapError，不产出半个 state。",
+    "no_clock": "所有涉及「今天」的计算都必须由 source_map.json 的 as_of 给出并注入；未注入即报错，代码不读系统时钟。",
+    "derived_fields_note": "派生字段一律不写入 state（validate_state 对未声明字段会报错）。它们只作为 turn_id / plan_id / ts 前缀与 summary.json 的内容，用于人工排查，不参与触发判定。"
+  },
+  "source_document": {
+    "list_path": "tickets",
+    "item_fields": [
+      "ticket_id",
+      "customer_code",
+      "assignee_name",
+      "contact_phone",
+      "ticket_status",
+      "assignee_confirmed",
+      "due_at",
+      "opened_at",
+      "sla_hours",
+      "days_left",
+      "overdue_days",
+      "is_overdue",
+      "priority",
+      "ticket_subject",
+      "last_remark"
+    ]
+  },
+  "as_of": {
+    "date": "2026-09-19",
+    "time": "10:00:00",
+    "tz": "+08:00",
+    "note": "注入的「今天」。derived_fields 里的 as_of_iso / sla_breached 相对这个日期计算；未注入（缺任一项）即报错。"
+  },
+  "timezone": "+08:00",
+  "day_unit": "P1D",
+  "as_of_override": {
+    "date": null,
+    "note": "正例走 source_map.json 的 as_of。run_e2e.py 的负例用参数注入做对照：传入完整日期 = 证明注入生效（派生值随之变化）；强制当作未注入 = 证明报错。"
+  },
+  "_why_is_as_of_still_needed": "packs/demo-brief 的 trigger.json 声明 days_left / is_overdue / overdue_days 为 layer=structured。它们与规则的依赖关系按 trigger.json 逐条现算：days_left 被 due_tonight、due_days_left 两条规则的 when 引用（本 fixture 命中 due_tonight 的 WB-DEMO-0016、due_days_left 的 WB-DEMO-0007/0010/0014）；is_overdue 被 overdue、due_tonight、due_days_left 三条规则的 when 引用（overdue 命中的是 WB-DEMO-0015）；overdue_days 0 条规则的 when 引用它——它是 overdue 规则 units[].slots 的值来源，属于播报模板的插值来源，不属于 when 的判定输入，这一点与「完全没人用」是两回事。第二个子句成立且与依赖关系无关：days_left 的 min=0 与 is_overdue 互不约束（overdue 的 when 就是 {is_overdue: true}，不含 days_left；本 fixture 里 WB-DEMO-0009 days_left=5、WB-DEMO-0012 days_left=0、WB-DEMO-0015 days_left=0 都是 is_overdue=true）。因此这三个字段直接透传源数据，state 的映射里不含任何日期运算。as_of 仍然必须注入，因为 derived_fields（不进 state，只进 summary.json）里的 as_of_iso / days_since_opened 要算；未注入即报错，代码不读系统时钟。",
+  "rule_reachability": {
+    "note": "本段是 packs/demo-brief/trigger.json 的 6 条规则在当前 fixture 下的可达性**枚举**，由 run_e2e.py 的断言与本表逐条比对；不一致即非零退出（rc 3）。改 fixture 或改包后必须同步改这里，否则脚本会立刻变红。",
+    "reachable": ["greeting", "overdue", "due_tonight", "due_days_left", "ask_assignee", "closing"],
+    "unreachable_from_source": [],
+    "hit_counts": {"greeting": 5, "overdue": 1, "due_tonight": 1, "due_days_left": 3, "ask_assignee": 1, "closing": 1},
+    "covered_by_ticket_id": {
+      "greeting": ["WB-DEMO-0007", "WB-DEMO-0008", "WB-DEMO-0009", "WB-DEMO-0011", "WB-DEMO-0012"],
+      "overdue": ["WB-DEMO-0009", "WB-DEMO-0012", "WB-DEMO-0015"],
+      "due_tonight": ["WB-DEMO-0008", "WB-DEMO-0016"],
+      "due_days_left": ["WB-DEMO-0007", "WB-DEMO-0010", "WB-DEMO-0013", "WB-DEMO-0014"],
+      "ask_assignee": ["WB-DEMO-0011", "WB-DEMO-0017"],
+      "closing": ["WB-DEMO-0007", "WB-DEMO-0008", "WB-DEMO-0009", "WB-DEMO-0010", "WB-DEMO-0011", "WB-DEMO-0012", "WB-DEMO-0013", "WB-DEMO-0014", "WB-DEMO-0015", "WB-DEMO-0016", "WB-DEMO-0017", "WB-DEMO-0018"]
+    },
+    "per_rule": {
+      "greeting": {"when": {"ticket_status": "处理中"}, "hits": 5, "covered_rows": 5, "source_fields": ["ticket_status"], "mechanism": "直接匹配"},
+      "overdue": {"when": {"is_overdue": true}, "hits": 1, "covered_rows": 3, "source_fields": ["is_overdue"], "mechanism": "直接匹配"},
+      "due_tonight": {"when": {"is_overdue": false, "days_left": {"lte": 0}}, "hits": 1, "covered_rows": 2, "source_fields": ["is_overdue", "days_left"], "mechanism": "条件算子 lte"},
+      "due_days_left": {"when": {"is_overdue": false, "days_left": {"gt": 0, "lte": 14}}, "hits": 3, "covered_rows": 4, "source_fields": ["is_overdue", "days_left"], "mechanism": "条件算子 gt + lte 合取"},
+      "ask_assignee": {"when": {"assignee_confirmed": false}, "hits": 1, "covered_rows": 2, "source_fields": ["assignee_confirmed"], "mechanism": "直接匹配"},
+      "closing": {"when": null, "hits": 1, "covered_rows": 12, "source_fields": [], "mechanism": "when=null 兜底：12 行全部匹配，只有前 5 条条件规则全不匹配时才被命中（仅 WB-DEMO-0018）"}
+    },
+    "reason": "overdue 的 when 是 {is_overdue: true}，只声明 is_overdue，不声明 days_left——is_overdue 是本表 state_fields 里直接透传的布尔列（源导出自带），因此 days_left 的 min=0 与 is_overdue 互不约束：本 fixture 里 WB-DEMO-0009（days_left=5）、WB-DEMO-0012（days_left=0）就是 is_overdue=true。T21 曾推断 is_overdue 取值恒定，该推断与 trigger.json 的 when 声明不符，已废弃（run_e2e.py 断言本段不得再出现 T21 的这句原话）。greeting 排在 rules 第一位（when={ticket_status: '处理中'}），仍会吃掉同时满足它的行（WB-DEMO-0009 与 WB-DEMO-0012 都匹配 overdue，但按 build_plan 的 rules 顺序口径取第一条，命中 greeting），所以让一条规则被**命中**而不仅是**匹配**，靠的是加一行 status 非「处理中」的源行（WB-DEMO-0015/0016/0017/0018），不是改包。",
+    "verification": "run_e2e.py 用引擎的 rule_matches 对每条源行的 state 真实判定（不复制匹配逻辑），生成 summary.json#rule_matching_matrix 与 #rule_reachability_from_source，并逐条断言本表的 reachable / unreachable_from_source / hit_counts / covered_by_ticket_id / per_rule 与该实测结果一致；任一字段不一致即 rc 3 并在失败消息里点名具体规则。",
+    "follow_up": "T21b 已用 fixture 行覆盖全部 6 条规则，packs/demo-brief/ 未改动。仍需业务侧复核（属 packs/，不在本卡范围）：greeting 排在所有日期/负责人规则之前，一条已逾期且仍标「处理中」的工单只会听到问候语。"
+  },
+  "state_fields": {
+    "ticket_status": {
+      "from": "ticket_status",
+      "type": "str",
+      "nullable": false,
+      "enum": ["待受理", "处理中", "待验收", "已关闭"],
+      "note": "驱动 greeting 与 closing 两条规则的唯一状态码；enum 与 trigger.json 一致"
+    },
+    "assignee_confirmed": {
+      "from": "assignee_confirmed",
+      "type": "bool",
+      "nullable": false,
+      "note": "源系统自带该布尔列，直接透传。映射表不再由 assignee_name 派生它——派生会把「尚未分配」和「确认过不在岗」混成同一个值（静默降级）；源里已经分清了，本实验直接透传"
+    },
+    "days_left": {
+      "from": "days_left",
+      "type": "int",
+      "nullable": false,
+      "min": 0,
+      "max": 365,
+      "note": "源系统已算好并带在导出里；trigger.json 声明 min=0，本实验不做任何重新计算"
+    },
+    "overdue_days": {
+      "from": "overdue_days",
+      "type": "int",
+      "nullable": false,
+      "min": 0,
+      "max": 3650,
+      "note": "实测 0 条规则的 when 引用 overdue_days（引用它的规则: []），但它是 ['overdue'] 的 units[].slots 值来源——它不是 when 的判定输入，与「完全不参与触发」是两回事。本卡不改 packs/（改包属 packs/ 的范围，不在本卡白名单内）；它归到 README.md 的「下一步缺的」第 4 条（= docs/tasks/00-索引.md 的「前置包的 key 可达性检查」跨批待办 3）。"
+    },
+    "is_overdue": {
+      "from": "is_overdue",
+      "type": "bool",
+      "nullable": false
+    },
+    "ticket_id": {
+      "from": "ticket_id",
+      "type": "str",
+      "nullable": false,
+      "note": "demo-brief 的 trigger.json 已把它声明为 layer=sensitive：进 state 但不进结构化层、不落盘。此处不重定义 layer，layer 的单一来源是 packs/demo-brief/trigger.json，由 validate_state 复核。"
+    }
+  },
+  "sensitive_fields": {
+    "ticket_id": {
+      "handling": "state_sensitive_layer",
+      "to_layer": "sensitive",
+      "reason": "工单号可反查客户；packs/demo-brief/trigger.json 已声明为 sensitive 层，由 validate_state 复核该声明"
+    },
+    "customer_code": {
+      "handling": "excluded",
+      "reason": "客户标识，纯敏感、且触发规则不需要它；不入 state（进 state 会因「未声明字段」被 validate_state 拦下，此处显式声明以免被当成多余字段报未映射）"
+    },
+    "contact_phone": {
+      "handling": "excluded",
+      "reason": "手机号（个人身份信息）；不入 state"
+    },
+    "assignee_name": {
+      "handling": "excluded",
+      "reason": "负责人姓名是个人身份信息；源已有结构化的 assignee_confirmed 布尔列，姓名原值不入 state"
+    }
+  },
+  "derived_fields": {
+    "as_of_iso": {
+      "depends_on_as_of": true,
+      "compute": {
+        "op": "format_as_of",
+        "tz": "timezone",
+        "formula": "as_of_iso = as_of.date + 'T' + as_of.time + as_of.tz"
+      },
+      "note": "需要注入的「今天」，只进 summary.json，不进 state"
+    },
+    "sla_breached": {
+      "depends_on_as_of": true,
+      "from": "sla_hours",
+      "compute": {
+        "op": "sla_breached",
+        "sla_field": "sla_hours",
+        "due_field": "due_at",
+        "as_of": "as_of",
+        "formula": "sla_breached = (due_at - opened_at) > sla_hours"
+      },
+      "note": "演示「注入的今天是可替换的」：同一份源换一个 as_of，这个派生值会变"
+    },
+    "source_ref": {
+      "from": "ticket_id",
+      "depends_on_as_of": false,
+      "note": "供 summary.json 做逐条对账（源条目 → 命中规则）；不进 state"
+    },
+    "days_since_opened": {
+      "depends_on_as_of": true,
+      "from": "opened_at",
+      "compute": {
+        "op": "days_between",
+        "from_field": "opened_at",
+        "as_of": "as_of",
+        "unit": "day_unit",
+        "formula": "days_since_opened = (as_of 的日期 - opened_at 的日期) 的自然日数"
+      },
+      "note": "这一项真正依赖注入的「今天」：换 as_of 必须变。run_e2e.py 用它证明注入生效、且代码没偷读系统时钟。"
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "sources": [
+    {
+      "name": "thu-coai/CrossWOZ",
+      "url": "https://github.com/thu-coai/CrossWOZ",
+      "license": "Apache-2.0",
+      "evidence": "https://github.com/thu-coai/CrossWOZ/blob/master/LICENSE（仓库根 LICENSE，Apache License, Version 2.0）；同向证据：https://huggingface.co/datasets/GEM/CrossWOZ README front-matter `license: - apache-2.0`，正文 `licenses: [open license - commercial use allowed]`、`data-copyright: [open license - commercial use allowed]`（见仓根 cwz.json 的 /overview/languages/license 与 /considerations/licenses/*）",
+      "kind": "dialogue"
+    },
+    {
+      "name": "ASAPPresearch/ABCD",
+      "url": "https://github.com/ASAPPresearch/ABCD",
+      "license": "MIT",
+      "evidence": "https://github.com/ASAPPresearch/ABCD/blob/master/LICENSE（仓库根 LICENSE，MIT License / Copyright (c) 2021 ASAPP Research）；README 正文无许可 front-matter，许可证据仅来自根 LICENSE 文件，即卡面「仓库有 LICENSE 文件即视为正文证据」（docs/tasks/T22-多行业语料收集与适用性验证.md:42）",
+      "kind": "dialogue"
+    },
+    {
+      "name": "budzianowski/multiwoz",
+      "url": "https://github.com/budzianowski/multiwoz",
+      "license": "MIT",
+      "evidence": "https://github.com/budzianowski/multiwoz/blob/master/README.md 第 345-347 行（卡面指定位置）「# License / It is released by Paweł Budzianowski from Cambridge Dialogue Systems Group under the MIT License.」；同向：https://github.com/budzianowski/multiwoz/blob/master/LICENSE（MIT License, Copyright 2019 Paweł Budzianowski）",
+      "kind": "dialogue"
+    },
+    {
+      "name": "google-research-datasets/taskmaster1",
+      "url": "https://github.com/google-research-datasets/Taskmaster",
+      "license": "CC BY 4.0",
+      "evidence": "https://github.com/google-research-datasets/Taskmaster/blob/master/TM-1-2019/README.md 第 325 行等（卡面指定位置）：`made available under the Creative Commons Attribution 4.0 License`；同向：https://huggingface.co/datasets/google-research-datasets/taskmaster1 README front-matter `license: - cc-by-4.0`",
+      "kind": "dialogue"
+    },
+    {
+      "name": "AmazonScience/massive",
+      "url": "https://huggingface.co/datasets/AmazonScience/massive",
+      "license": "CC BY 4.0",
+      "evidence": "https://huggingface.co/datasets/AmazonScience/massive/raw/main/README.md 第 432/437 行（卡面指定位置）`### Licensing Information` 段：`Attribution 4.0 International` 与 `Copyright Amazon.com Inc. or its affiliates.`；同向 front-matter `license: - cc-by-4.0`。注：卡面写的是 facebook/massive 正文同位置，此处 URL 取许可正文实际所在页面的直链",
+      "kind": "instruction"
+    },
+    {
+      "name": "xliuhw/NLU-Evaluation-Data",
+      "url": "https://github.com/xliuhw/NLU-Evaluation-Data",
+      "license": "CC BY 4.0",
+      "evidence": "https://github.com/xliuhw/NLU-Evaluation-Data/blob/master/README.md 第 22-23 行（卡面指定位置）；同向：README 第 320-322 行 `### Licensing Information` → `Creative Commons Attribution 4.0 International License (CC BY 4.0)`",
+      "kind": "instruction"
+    },
+    {
+      "name": "babylonhealth/primock57",
+      "url": "https://github.com/babylonhealth/primock57",
+      "license": "CC BY 4.0",
+      "evidence": "https://github.com/babylonhealth/primock57/blob/master/LICENSE.md 第 1 行（卡面指定位置）：CC BY 4.0",
+      "kind": "audio"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "RiSAWOZ",
+      "reason": "仓库/平台标签与正文冲突：正文写 CC BY-NC（非商用），与许可标签不一致 → 按 README 正文优先、禁商用一律拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:36「`RiSAWOZ`（仓库 MIT vs 正文 CC BY-NC）」"
+    },
+    {
+      "name": "SLURP",
+      "reason": "许可为 CC BY-NC（禁商用）→ 硬拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`SLURP`（CC BY-NC）」"
+    },
+    {
+      "name": "Fluent Speech Commands",
+      "reason": "许可为 CC BY-NC-ND 且限仅学术使用（禁商用 + 禁衍生）→ 硬拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`Fluent Speech Commands`（CC BY-NC-ND + 仅学术）」"
+    },
+    {
+      "name": "MagicData SLR68",
+      "reason": "许可为 NC-ND（禁商用 + 禁衍生）→ 硬拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:37「`MagicData SLR68`（NC-ND）」"
+    },
+    {
+      "name": "yangzailu/*",
+      "reason": "平台标签写 Apache 但正文写「仅学习研究」，标签与正文冲突 → 以正文为准，许可不明/限非研究用途，拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:38「`yangzailu/*`（标签 Apache vs 正文\"仅学习研究\"）」"
+    },
+    {
+      "name": "market.aliyun/GBZET_*",
+      "reason": "平台 license=other，无可识别的开放许可条款 → 证据不足，拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:38「`market.aliyun/GBZET_*`（license=other）」"
+    },
+    {
+      "name": "数据堂全系（DataTang）",
+      "reason": "正文声明「商用数据」，非开放许可 → 硬拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:39「数据堂全系（正文\"商用数据\"）」"
+    },
+    {
+      "name": "tor24/smart-home-voice-commands-v1",
+      "reason": "许可不明且规模不足（仅 10 行，不构成统计意义上的模板化率估计）→ 拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:39「`tor24/smart-home-voice-commands-v1`（仅 10 行）」"
+    },
+    {
+      "name": "Angeriod/in_car_commands",
+      "reason": "空集，无任何可用样本（同时说明「车机指令」在公开渠道无可用语料）→ 拒收",
+      "evidence": "docs/tasks/T22-多行业语料收集与适用性验证.md:40「`Angeriod/in_car_commands`（空集）」"
+    },
+    {
+      "name": "babylonhealth/primock57 的第三方镜像（sdialog/Primock-57、utsav2000/Primock57 等）",
+      "reason": "只能找到第三方上传镜像，镜像的许可声明不能当作原仓库证据 → 许可不明，只认源仓库，镜像拒收",
+      "evidence": "卡面 T22 仅给源仓库 babylonhealth/primock57 的 LICENSE.md 第 1 行作许可证据（docs/tasks/T22-多行业语料收集与适用性验证.md:30）；本次选源未联网复核镜像，按「许可不明的源放 rejected」处理"
+    }
+  ]
+}

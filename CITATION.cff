@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: "vox-type"
+message: >-
+  If you use this software, please cite it using these metadata.
+
+type: software
+authors:
+  - name: starmcainiao
+description: >-
+  Pre-cast voice asset layer + duplex behaviour controller for voice agents.
+  Pre-bakes the process-determined portion of a voice agent's dialogue into
+  audited, versioned audio assets and plays them on a hit. On a miss the plan
+  aborts by default (fail-closed, rc=5, no audio written); degrading to the
+  host's own slow-path TTS requires an explicit --allow-fallback and is traced
+  in full.
+  A drop-in overlay for the voice stack: sits between the LLM and TTS in a
+  cascaded chain, or bypasses a whole turn for an end-to-end S2S model.
+  Zero third-party dependencies (Python >= 3.12 standard library only).
+date-created: 2026-09-21
+date-released: 2026-09-28
+url: "https://github.com/starmcainiao/vox-type"
+repository-code: "https://github.com/starmcainiao/vox-type"
+license: Apache-2.0
+keywords:
+  - speech-to-text
+  - text-to-speech
+  - voice agent
+  - precast voice assets
+  - IVR
+  - fail-closed
+  - voice assistant
+  - zero-dependency
+  - voice pipeline
+  - duplex speech
+version: "0.2.0"

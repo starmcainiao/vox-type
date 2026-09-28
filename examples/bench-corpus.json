@@ -1,0 +1,31 @@
+{
+  "corpus_id": "heat_kefu__demo",
+  "version": 1,
+  "notes": "示例语料：text 逐字取自 packs/heat_kefu/phrases.json（key 一一对应），rate/variant 取该条首个可用值。",
+  "units": [
+    {
+      "key": "opening__1",
+      "text": "您好，我是供热智能客服小暖。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "opening__2",
+      "text": "报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "transfer_ready",
+      "text": "已为您转接人工坐席，请稍候。",
+      "rate": "normal",
+      "variant": 0
+    },
+    {
+      "key": "farewell",
+      "text": "好的，再见，祝您生活愉快！",
+      "rate": "normal",
+      "variant": 0
+    }
+  ]
+}

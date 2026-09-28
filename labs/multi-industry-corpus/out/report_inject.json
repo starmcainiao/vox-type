@@ -1,0 +1,475 @@
+{
+  "_schema": "vox-multi-industry-flow-occupancy/1",
+  "run_at": "2026-09-22T12:02:19+08:00",
+  "repeat_min": 5,
+  "caliber": {
+    "flow_decided_rate": "系统/助手侧话轮里，由流程（而非当场内容）决定说什么话的占比",
+    "reusable_rate": "同一份语料内，去实体值后的句式骨架出现 ≥5 次的话轮占比（与客服 1.8% 同一判据）",
+    "criteria_source": "判据与 labs/corpus-harvest/cross_check_template_rate.py 的 skeleton()/REPEAT_MIN 同源（见 common.py）；流程决定词表对齐 labs/corpus-harvest/README.md §六 的「问候/确认身份/告别/合规提示/请稍等/未听清重试/转人工」七类",
+    "flow_decided_rate_note": "各集口径强弱不同，不可直接横比数值，只能比「量级」——见每集的 method 字段"
+  },
+  "kefu_baseline": {
+    "n_turns": 25810,
+    "flow_decided_rate": 0.23,
+    "reusable_rate": 0.018,
+    "compress_ratio": 1.03,
+    "zero_hit_dialog_rate": 0.757,
+    "note": "labs/corpus-harvest/README.md §六，1855 通真实电话"
+  },
+  "inject_all_flow": true,
+  "corpora": {
+    "thu-coai/CrossWOZ（系统侧，中文五域）": {
+      "side": "system",
+      "method": "标注驱动（sys dialog_act 的 intent ∈ {welcome,greet,thank,bye,reqmore}）",
+      "method_strength": "强",
+      "n_turns": 50813,
+      "n_dialogues": 6012,
+      "flow_decided_turns": 50813,
+      "flow_decided_rate": 1.0,
+      "reusable_rate": 0.2758,
+      "compress_ratio": 1.461,
+      "n_skeletons": 34772,
+      "dialogues_with_zero_flow_turns": 386,
+      "flow_da_histogram": {
+        "Inform/餐馆": 27476,
+        "Inform/景点": 24715,
+        "Inform/酒店": 19727,
+        "General/welcome": 5585,
+        "Recommend/景点": 3362,
+        "Recommend/酒店": 2659,
+        "Recommend/餐馆": 2075,
+        "Inform/出租": 1673,
+        "NoOffer/餐馆": 1634,
+        "Inform/地铁": 1630,
+        "NoOffer/景点": 722,
+        "NoOffer/酒店": 628,
+        "General/bye": 454,
+        "General/greet": 315,
+        "General/reqmore": 66
+      },
+      "top_skeletons": [
+        {
+          "count": 2519,
+          "skeleton": "不客气。"
+        },
+        {
+          "count": 1047,
+          "skeleton": "电话是#-#。"
+        },
+        {
+          "count": 584,
+          "skeleton": "不用客气！"
+        },
+        {
+          "count": 439,
+          "skeleton": "评分是#分。"
+        },
+        {
+          "count": 351,
+          "skeleton": "不客气！祝您生活愉快！再见！"
+        },
+        {
+          "count": 320,
+          "skeleton": "电话是#。"
+        },
+        {
+          "count": 267,
+          "skeleton": "不客气！"
+        },
+        {
+          "count": 229,
+          "skeleton": "营业时间是周一至周日 #:#-#:#。"
+        }
+      ],
+      "kefu_delta_pp": 0.77
+    },
+    "ASAPPresearch/ABCD（agent 侧，英文电商客服）": {
+      "side": "system(agent) + action",
+      "method": "agent 话轮走文本形态启发式 + action 话轮（业务动作埋点）直接计流程决定",
+      "method_strength": "中（action 埋点是强证据；agent 部分仍是启发式）",
+      "n_turns": 131611,
+      "n_dialogues": 10042,
+      "agent_turns": 95129,
+      "action_turns": 36482,
+      "flow_decided_turns": 131611,
+      "flow_decided_rate": 1.0,
+      "agent_flow_rate_text_only": 0.424,
+      "reusable_rate": 0.7623,
+      "compress_ratio": 4.744,
+      "n_skeletons": 20052,
+      "top_skeletons": [
+        {
+          "count": 2974,
+          "skeleton": "@ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2673,
+          "skeleton": "@ @ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2438,
+          "skeleton": "@ @ @ @ @ @?"
+        },
+        {
+          "count": 2097,
+          "skeleton": "@ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2014,
+          "skeleton": "@ @ @ @ @?"
+        },
+        {
+          "count": 1969,
+          "skeleton": "@, @ @ @ @ @ @?"
+        },
+        {
+          "count": 1853,
+          "skeleton": "@, @ @ @ @ @?"
+        },
+        {
+          "count": 1772,
+          "skeleton": "@ @ @ @ @ @ @ @?"
+        }
+      ],
+      "kefu_delta_pp": 0.77
+    },
+    "ASAPPresearch/ABCD（agent 侧 delexed 口径，同数据的去实体化版本）": {
+      "side": "system(agent)",
+      "method": "ABCD 自带的 delexed 字段（实体替换成 [slot : value] 占位符）—— 与客服原始转写同档",
+      "method_strength": "口径可比性修正项，不是独立结论",
+      "n_turns": 95129,
+      "flow_decided_rate": null,
+      "flow_decided_turns": null,
+      "kefu_delta_pp": null,
+      "reusable_rate": 0.7615,
+      "compress_ratio": 4.721,
+      "n_skeletons": 20150,
+      "top_skeletons": [
+        {
+          "count": 2973,
+          "skeleton": "@ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2671,
+          "skeleton": "@ @ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2437,
+          "skeleton": "@ @ @ @ @ @?"
+        },
+        {
+          "count": 2096,
+          "skeleton": "@ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2014,
+          "skeleton": "@ @ @ @ @?"
+        },
+        {
+          "count": 1969,
+          "skeleton": "@, @ @ @ @ @ @?"
+        },
+        {
+          "count": 1853,
+          "skeleton": "@, @ @ @ @ @?"
+        },
+        {
+          "count": 1771,
+          "skeleton": "@ @ @ @ @ @ @ @?"
+        }
+      ]
+    },
+    "budzianowski/multiwoz 2.2（SYSTEM 侧，英文七域）": {
+      "side": "system",
+      "method": "纯文本形态启发式（2.2 无对话行为标注；frame 里的 slots/actions 只作旁证）",
+      "method_strength": "弱（无标注，只能下界估计）",
+      "n_turns": 71522,
+      "n_dialogues": 10437,
+      "sys_turns_with_slots": 7344,
+      "sys_turns_with_actions": 0,
+      "flow_decided_turns": 71522,
+      "flow_decided_rate": 1.0,
+      "reusable_rate": 0.4706,
+      "compress_ratio": 2.108,
+      "n_skeletons": 33930,
+      "top_skeletons": [
+        {
+          "count": 992,
+          "skeleton": "@ @ @ @ @ @ @?"
+        },
+        {
+          "count": 857,
+          "skeleton": "@ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 849,
+          "skeleton": "@ @ @ @ @ @?"
+        },
+        {
+          "count": 792,
+          "skeleton": "@ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 697,
+          "skeleton": "@ @ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 402,
+          "skeleton": "@ @ @ @ @?"
+        },
+        {
+          "count": 383,
+          "skeleton": "@ @ @ @."
+        },
+        {
+          "count": 363,
+          "skeleton": "@ @ @ @!"
+        }
+      ],
+      "kefu_delta_pp": 0.77
+    },
+    "budzianowski/multiwoz 2.1（SYSTEM 侧，含 SYSTEM-* 对话行为）": {
+      "side": "system",
+      "method": "标注驱动（2.1 系统侧 dialog_act：general-reqmore/bye/welcome + *-request + *-offerbook → 流程）",
+      "method_strength": "中（act 名是系统行为标签，但语义粒度粗于 CrossWOZ 的 intent）",
+      "n_turns": 71524,
+      "n_dialogues": 10438,
+      "sys_turns_with_state": 71524,
+      "act_histogram": {
+        "general-reqmore": 13769,
+        "general-bye": 9105,
+        "Hotel-Inform": 8222,
+        "Restaurant-Inform": 8066,
+        "Train-Inform": 7203,
+        "Attraction-Inform": 6973,
+        "Booking-Inform": 5701,
+        "Train-Request": 5520,
+        "Booking-Book": 5253,
+        "general-welcome": 4785,
+        "Hotel-Request": 3213,
+        "Restaurant-Request": 3079,
+        "Train-OfferBook": 3032,
+        "Booking-Request": 2708,
+        "Train-OfferBooked": 2308
+      },
+      "flow_decided_turns": 71524,
+      "flow_decided_rate": 1.0,
+      "reusable_rate": 0.4448,
+      "compress_ratio": 2.006,
+      "n_skeletons": 35657,
+      "top_skeletons": [
+        {
+          "count": 990,
+          "skeleton": "@ @ @ @ @ @ @?"
+        },
+        {
+          "count": 855,
+          "skeleton": "@ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 847,
+          "skeleton": "@ @ @ @ @ @?"
+        },
+        {
+          "count": 790,
+          "skeleton": "@ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 695,
+          "skeleton": "@ @ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 402,
+          "skeleton": "@ @ @ @ @?"
+        },
+        {
+          "count": 384,
+          "skeleton": "@ @ @ @."
+        },
+        {
+          "count": 360,
+          "skeleton": "@ @ @ @!"
+        }
+      ],
+      "kefu_delta_pp": 0.77
+    },
+    "google-research-datasets/Taskmaster TM-1（ASSISTANT 侧，英文六域）": {
+      "side": "system(assistant)",
+      "method": "纯文本形态启发式（TM-1 只有实体标注，无对话行为）",
+      "method_strength": "弱（无标注，只能下界估计）",
+      "n_turns": 156971,
+      "n_dialogues": 13215,
+      "flow_decided_turns": 156971,
+      "flow_decided_rate": 1.0,
+      "reusable_rate": 0.72,
+      "compress_ratio": 3.965,
+      "n_skeletons": 39586,
+      "instruction_histogram": {
+        "uber-lyft-1": 1004,
+        "pizza-ordering-1": 970,
+        "coffee-ordering-1": 766,
+        "restaurant-table-1": 632,
+        "movie-tickets-2": 613,
+        "movie-tickets-1": 424,
+        "restaurant-table-2": 399,
+        "auto-repair-1": 361,
+        "auto-repair-2": 338
+      },
+      "top_skeletons": [
+        {
+          "count": 4980,
+          "skeleton": "@ @ @ @ @ @ @?"
+        },
+        {
+          "count": 4514,
+          "skeleton": "@ @ @ @ @?"
+        },
+        {
+          "count": 4408,
+          "skeleton": "@ @ @ @ @ @?"
+        },
+        {
+          "count": 3697,
+          "skeleton": "@, @ @ @ @ @?"
+        },
+        {
+          "count": 3331,
+          "skeleton": "@ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2677,
+          "skeleton": "@ @ @ @?"
+        },
+        {
+          "count": 2663,
+          "skeleton": "@ @ @ @ @ @ @ @ @?"
+        },
+        {
+          "count": 2414,
+          "skeleton": "@ @ @?"
+        }
+      ],
+      "kefu_delta_pp": 0.77
+    }
+  },
+  "user_side_instruction_sets": {
+    "note": "**这些不是主指标**——它们测的是「用户怎么说话」（指令模板化率），不能用来估「系统说什么由流程决定」。混用会让整卡退回。",
+    "xliuhw/NLU-Evaluation-Data (HWU64)": {
+      "side": "user",
+      "n_turns": 25685,
+      "n_rows": 25716,
+      "reusable_rate": 0.8579,
+      "compress_ratio": 8.123,
+      "n_skeletons": 3162,
+      "intent_histogram": {
+        "query": 5981,
+        "set": 1748,
+        "music": 1205,
+        "quirky": 1088,
+        "factoid": 1052,
+        "remove": 986,
+        "negate": 939,
+        "praise": 785,
+        "sendemail": 694,
+        "explain": 684,
+        "repeat": 585,
+        "affirm": 554
+      },
+      "top_skeletons": [
+        {
+          "count": 1295,
+          "skeleton": "@ @ @ @ @"
+        },
+        {
+          "count": 1255,
+          "skeleton": "@ @ @ @"
+        },
+        {
+          "count": 1119,
+          "skeleton": "@ @ @ @ @ @"
+        },
+        {
+          "count": 945,
+          "skeleton": "@ @ @ @ @ @ @"
+        },
+        {
+          "count": 915,
+          "skeleton": "@ @ @"
+        },
+        {
+          "count": 893,
+          "skeleton": "@ @ @ @ @ @."
+        },
+        {
+          "count": 881,
+          "skeleton": "@ @ @ @ @."
+        },
+        {
+          "count": 811,
+          "skeleton": "@ @ @ @ @ @ @."
+        }
+      ]
+    }
+  },
+  "comparison_table": [
+    {
+      "corpus": "thu-coai/CrossWOZ（系统侧，中文五域）",
+      "side": "system",
+      "method_strength": "强",
+      "n_turns": 50813,
+      "flow_decided_rate": 1.0,
+      "kefu_delta_pp": 0.77,
+      "reusable_rate": 0.2758
+    },
+    {
+      "corpus": "ASAPPresearch/ABCD（agent 侧，英文电商客服）",
+      "side": "system(agent) + action",
+      "method_strength": "中（action 埋点是强证据；agent 部分仍是启发式）",
+      "n_turns": 131611,
+      "flow_decided_rate": 1.0,
+      "kefu_delta_pp": 0.77,
+      "reusable_rate": 0.7623
+    },
+    {
+      "corpus": "ASAPPresearch/ABCD（agent 侧 delexed 口径，同数据的去实体化版本）",
+      "side": "system(agent)",
+      "method_strength": "口径可比性修正项，不是独立结论",
+      "n_turns": 95129,
+      "flow_decided_rate": null,
+      "kefu_delta_pp": null,
+      "reusable_rate": 0.7615
+    },
+    {
+      "corpus": "budzianowski/multiwoz 2.2（SYSTEM 侧，英文七域）",
+      "side": "system",
+      "method_strength": "弱（无标注，只能下界估计）",
+      "n_turns": 71522,
+      "flow_decided_rate": 1.0,
+      "kefu_delta_pp": 0.77,
+      "reusable_rate": 0.4706
+    },
+    {
+      "corpus": "budzianowski/multiwoz 2.1（SYSTEM 侧，含 SYSTEM-* 对话行为）",
+      "side": "system",
+      "method_strength": "中（act 名是系统行为标签，但语义粒度粗于 CrossWOZ 的 intent）",
+      "n_turns": 71524,
+      "flow_decided_rate": 1.0,
+      "kefu_delta_pp": 0.77,
+      "reusable_rate": 0.4448
+    },
+    {
+      "corpus": "google-research-datasets/Taskmaster TM-1（ASSISTANT 侧，英文六域）",
+      "side": "system(assistant)",
+      "method_strength": "弱（无标注，只能下界估计）",
+      "n_turns": 156971,
+      "flow_decided_rate": 1.0,
+      "kefu_delta_pp": 0.77,
+      "reusable_rate": 0.72
+    }
+  ],
+  "verification_gate": {
+    "expect_not_all": false,
+    "problems": [],
+    "status": "pass"
+  }
+}

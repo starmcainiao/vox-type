@@ -1,0 +1,285 @@
+{
+  "_schema": "vox-corpus-lock/2",
+  "_note": "由 labs/corpus-harvest/fetch.py 生成；size/sha256 均为实测并已与平台声明交叉核对（verified_against_platform=false 表示平台未提供哈希，仅记录了实测值）。路径值一律写成 ${CORPUS_ROOT}/<相对>：台账随仓公开分发，不得记录机器绝对路径（T36）；按同一个环境变量即可还原为本机路径（--recheck 自动还原）。",
+  "entries": [
+    {
+      "id": "ASLP-lab/WenetSpeech-Wu-Bench",
+      "platform": "hf-mirror",
+      "kind": "dataset",
+      "revision": "main",
+      "license_spdx": "apache-2.0",
+      "license_platform_raw": "apache-2.0",
+      "license_readme_raw": "apache-2.0",
+      "license_evidence_url": "https://hf-mirror.com/datasets/ASLP-lab/WenetSpeech-Wu-Bench/blob/main/README.md",
+      "size_bytes": 1030709745,
+      "sha256": "837f9fef955793fcd5fc19eee1551dce450f37ba05e602952f8b1bf14b464618",
+      "files": [
+        {
+          "path": "understanding/asr.parquet",
+          "size_bytes": 1030709745,
+          "sha256": "d053f15173548df0517200f7af94153ab4d0c53e18b484a9974510c7c0c4e041",
+          "declared_sha256": "d053f15173548df0517200f7af94153ab4d0c53e18b484a9974510c7c0c4e041",
+          "is_lfs": true,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/ASLP-lab__WenetSpeech-Wu-Bench/understanding/asr.parquet"
+        }
+      ],
+      "fetched_at": "2026-09-18T23:57:07+08:00",
+      "local_path": "${CORPUS_ROOT}/ASLP-lab__WenetSpeech-Wu-Bench",
+      "why": "吴语 ASR benchmark（上海话/苏州话/普通话混说 9.75 小时，按 CER 评测）——方言链路的正解来源。许可干净：front-matter 与正文均无禁商用条款（已全文核过）。",
+      "notes": "**本批不下载**：asr.parquet 单文件 1030.7 MB，且 parquet 需 pyarrow 才能读（本机主解释器未装、pypi 吞吐实测极低）。留作批 3（方言链路）的可选项，一行命令可拉。**不要**下整库——另有 ast/age/emotion/gender 四个 parquet 共 1.35 GB 与本项目无关。"
+    },
+    {
+      "id": "QingshanAI/ecom-after-sale-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "license_spdx": "apache-2.0",
+      "license_platform_raw": "Apache License 2.0",
+      "license_readme_raw": "Apache License 2.0",
+      "license_evidence_url": "https://modelscope.cn/datasets/QingshanAI/ecom-after-sale-synthetic/blob/master/README.md",
+      "size_bytes": 268510,
+      "sha256": "b2c20e3d8f80c29900ff29ffe3279f05972b00921b408f76ec3ff2c7cd56eb48",
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "size_bytes": 583,
+          "sha256": "99c78042e7f61a365013c5171c0decb45a6c96210a8b9cbb0f835a1a892f17fd",
+          "declared_sha256": "99c78042e7f61a365013c5171c0decb45a6c96210a8b9cbb0f835a1a892f17fd",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-after-sale-synthetic/LICENSE.txt"
+        },
+        {
+          "path": "README.md",
+          "size_bytes": 2839,
+          "sha256": "39a9084d348fd207c6812fcd5a278a5394427a3f5adfb9758c8b57e423a7ecdd",
+          "declared_sha256": "39a9084d348fd207c6812fcd5a278a5394427a3f5adfb9758c8b57e423a7ecdd",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-after-sale-synthetic/README.md"
+        },
+        {
+          "path": "data.jsonl",
+          "size_bytes": 264864,
+          "sha256": "b84df0ac6a7408ba17223ed3c0ca1afe8adb2fd9f8beea8edc75f7f35be9cb91",
+          "declared_sha256": "b84df0ac6a7408ba17223ed3c0ca1afe8adb2fd9f8beea8edc75f7f35be9cb91",
+          "is_lfs": true,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-after-sale-synthetic/data.jsonl"
+        },
+        {
+          "path": "dataset_infos.json",
+          "size_bytes": 224,
+          "sha256": "e68e46fb8c54f2aa6c1e8048434ec31461ecce00468cc75ba54f380e4a255ae3",
+          "declared_sha256": "e68e46fb8c54f2aa6c1e8048434ec31461ecce00468cc75ba54f380e4a255ae3",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-after-sale-synthetic/dataset_infos.json"
+        }
+      ],
+      "fetched_at": "2026-09-18T22:50:31+08:00",
+      "local_path": "${CORPUS_ROOT}/QingshanAI__ecom-after-sale-synthetic",
+      "why": "电商售后场景合成对话，用于跨场景对照（同一套 key 体系换场景还能不能用）。",
+      "notes": ""
+    },
+    {
+      "id": "QingshanAI/ecom-customer-service-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "license_spdx": "apache-2.0",
+      "license_platform_raw": "Apache License 2.0",
+      "license_readme_raw": "Apache License 2.0",
+      "license_evidence_url": "https://modelscope.cn/datasets/QingshanAI/ecom-customer-service-synthetic/blob/master/README.md",
+      "size_bytes": 186633,
+      "sha256": "fc009195a95577c5552d85c5581f76b4a42198f71b742381667c194d45cd4a6b",
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "size_bytes": 819,
+          "sha256": "e6523b5fcf545a17c8d1f4957be75a4e85228871ddfbae5d64dd35a655509cbb",
+          "declared_sha256": "e6523b5fcf545a17c8d1f4957be75a4e85228871ddfbae5d64dd35a655509cbb",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-customer-service-synthetic/LICENSE.txt"
+        },
+        {
+          "path": "README.md",
+          "size_bytes": 2776,
+          "sha256": "842bcc4db54527be5933ec19f89a7a3899212831fcf0ca1218fdb621692426f5",
+          "declared_sha256": "842bcc4db54527be5933ec19f89a7a3899212831fcf0ca1218fdb621692426f5",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-customer-service-synthetic/README.md"
+        },
+        {
+          "path": "data.jsonl",
+          "size_bytes": 182808,
+          "sha256": "79001833b1306feae239e6330b07e0137dd9b7263b04f183bd61720f2217a869",
+          "declared_sha256": "79001833b1306feae239e6330b07e0137dd9b7263b04f183bd61720f2217a869",
+          "is_lfs": true,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-customer-service-synthetic/data.jsonl"
+        },
+        {
+          "path": "dataset_infos.json",
+          "size_bytes": 230,
+          "sha256": "3011359df39cd34539e619c91c250a79b0e8f9d221faade9adf1291db87ef3c2",
+          "declared_sha256": "3011359df39cd34539e619c91c250a79b0e8f9d221faade9adf1291db87ef3c2",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-customer-service-synthetic/dataset_infos.json"
+        }
+      ],
+      "fetched_at": "2026-09-18T22:50:30+08:00",
+      "local_path": "${CORPUS_ROOT}/QingshanAI__ecom-customer-service-synthetic",
+      "why": "电商客服合成语料，字段 scene/user/bot/tone 天然是「用户说法 ↔ 客服应答」配对，可直接喂 golden set。",
+      "notes": ""
+    },
+    {
+      "id": "QingshanAI/ecom-logistics-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "license_spdx": "apache-2.0",
+      "license_platform_raw": "Apache License 2.0",
+      "license_readme_raw": "Apache License 2.0",
+      "license_evidence_url": "https://modelscope.cn/datasets/QingshanAI/ecom-logistics-synthetic/blob/master/README.md",
+      "size_bytes": 265424,
+      "sha256": "c35d1f0b11dd859afc5c17dba24b80b1118b80a98ba7343e2aa6d51145a9a221",
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "size_bytes": 583,
+          "sha256": "a536f1ce2d8364d9c1bc53c518f345b3b1a32ca6259204099f57d91ed1277a64",
+          "declared_sha256": "a536f1ce2d8364d9c1bc53c518f345b3b1a32ca6259204099f57d91ed1277a64",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-logistics-synthetic/LICENSE.txt"
+        },
+        {
+          "path": "README.md",
+          "size_bytes": 3214,
+          "sha256": "3757a03069a41b09ecd55fe2b3218f51012d0ab3e200bf976e27c12ac6565db3",
+          "declared_sha256": "3757a03069a41b09ecd55fe2b3218f51012d0ab3e200bf976e27c12ac6565db3",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-logistics-synthetic/README.md"
+        },
+        {
+          "path": "data.jsonl",
+          "size_bytes": 261404,
+          "sha256": "035986b0e9f574c5110ee0fd55e4f48de71ef5fd7073fc69d2a85c781079cc51",
+          "declared_sha256": "035986b0e9f574c5110ee0fd55e4f48de71ef5fd7073fc69d2a85c781079cc51",
+          "is_lfs": true,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-logistics-synthetic/data.jsonl"
+        },
+        {
+          "path": "dataset_infos.json",
+          "size_bytes": 223,
+          "sha256": "c703037e1e4713db69648640cd1ee0c0f6d0ba351b01d67344affdd8809f139d",
+          "declared_sha256": "c703037e1e4713db69648640cd1ee0c0f6d0ba351b01d67344affdd8809f139d",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/QingshanAI__ecom-logistics-synthetic/dataset_infos.json"
+        }
+      ],
+      "fetched_at": "2026-09-18T22:50:32+08:00",
+      "local_path": "${CORPUS_ROOT}/QingshanAI__ecom-logistics-synthetic",
+      "why": "电商物流查询场景合成对话，用于跨场景对照。",
+      "notes": ""
+    },
+    {
+      "id": "tomsawyerhu/cantonese-dialect",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "license_spdx": "apache-2.0",
+      "license_platform_raw": "Apache License 2.0",
+      "license_readme_raw": "Apache License 2.0",
+      "license_evidence_url": "https://modelscope.cn/datasets/tomsawyerhu/cantonese-dialect/blob/master/README.md",
+      "size_bytes": 1027958,
+      "sha256": "20f8a1ed174641acc9ed97bcdc5cdad6bda7e370f0ca04daf67c5f49864f5758",
+      "files": [
+        {
+          "path": "README.md",
+          "size_bytes": 1490,
+          "sha256": "563948a10f7b93bc381ef0f24c539ef7c28bd8bba1259cb62000c414d7dc6364",
+          "declared_sha256": "563948a10f7b93bc381ef0f24c539ef7c28bd8bba1259cb62000c414d7dc6364",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect/README.md"
+        },
+        {
+          "path": "cantonese-dialect.json",
+          "size_bytes": 254,
+          "sha256": "b65fa004ff0c61d85ca38618b18c081ed220fc8e68d47383b5c3df521697a1a0",
+          "declared_sha256": "b65fa004ff0c61d85ca38618b18c081ed220fc8e68d47383b5c3df521697a1a0",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect/cantonese-dialect.json"
+        },
+        {
+          "path": "cantonese_dialect_trainsets.csv",
+          "size_bytes": 823377,
+          "sha256": "398ca71c01e6f3242894b5b6284f651c7d31d0584caccb42acca126a9dc05a5a",
+          "declared_sha256": "398ca71c01e6f3242894b5b6284f651c7d31d0584caccb42acca126a9dc05a5a",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect/cantonese_dialect_trainsets.csv"
+        },
+        {
+          "path": "cantonese_dialect_valsets.csv",
+          "size_bytes": 202619,
+          "sha256": "9a60e7105e0e4066ced8e3ec4fab14bb72ec9ee0c43b5cad881f583305bd0e5d",
+          "declared_sha256": "9a60e7105e0e4066ced8e3ec4fab14bb72ec9ee0c43b5cad881f583305bd0e5d",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect/cantonese_dialect_valsets.csv"
+        },
+        {
+          "path": "dataset_infos.json",
+          "size_bytes": 218,
+          "sha256": "cf3d17b5caaf7b947f837c2d3e4f64aeae0e27a95163fc304e30d1fb80a143fd",
+          "declared_sha256": "cf3d17b5caaf7b947f837c2d3e4f64aeae0e27a95163fc304e30d1fb80a143fd",
+          "is_lfs": false,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect/dataset_infos.json"
+        }
+      ],
+      "fetched_at": "2026-09-18T22:50:34+08:00",
+      "local_path": "${CORPUS_ROOT}/tomsawyerhu__cantonese-dialect",
+      "why": "粤语转写语料。**注意：本仓只有转写清单、不含音频**（CSV 指向仓外的 Common Voice wav 路径，该目录不存在）。因此只能作为「粤语说法文本」来源，不能用于方言 ASR 评测。",
+      "notes": "实测：仓内文件只有 CSV/JSON，wav 路径指向不存在的 cantonese_dialect_small/。原调研判定「可跑通方言链路」不成立，已改为文本用途。"
+    },
+    {
+      "id": "tongyi_dianjin/DianJin-CSC-Data",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "license_spdx": "mit",
+      "license_platform_raw": "mit",
+      "license_readme_raw": "mit",
+      "license_evidence_url": "https://modelscope.cn/datasets/tongyi_dianjin/DianJin-CSC-Data/blob/master/README.md",
+      "size_bytes": 9037158,
+      "sha256": "248f88b9ce02401eec8aabd5d1cb645b923670848a92024549f7039d379609db",
+      "files": [
+        {
+          "path": "data/CSConv.json",
+          "size_bytes": 9037158,
+          "sha256": "6f99edead55084986eb8bc7da31f6be0e7a0a8fa82cadb4c7209567fb215a8c9",
+          "declared_sha256": "6f99edead55084986eb8bc7da31f6be0e7a0a8fa82cadb4c7209567fb215a8c9",
+          "is_lfs": true,
+          "verified_against_platform": true,
+          "local_file": "${CORPUS_ROOT}/tongyi_dianjin__DianJin-CSC-Data/data/CSConv.json"
+        }
+      ],
+      "fetched_at": "2026-09-18T22:50:29+08:00",
+      "local_path": "${CORPUS_ROOT}/tongyi_dianjin__DianJin-CSC-Data",
+      "why": "1855 组真实客户-坐席对话（50587 话轮），客服话轮带 12 类策略标注，8 类业务域；直接可当预铸 key 的分类体系。首批里唯一「真实对话 + 许可干净 + 自带功能标注」的语料。",
+      "notes": "66 MB，角色扮演生成数据（非真实对话），价值低，先不下。"
+    }
+  ]
+}

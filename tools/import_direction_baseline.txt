@@ -1,0 +1,31 @@
+# import 方向闸门的例外基线（tools/check_import_direction.py 读取）
+#
+# ── 条目格式（一条一行，顺序无所谓）──────────────────────────────
+#   <rule> <file>:<line>  <理由>
+#
+#   <rule>   只认两个值：frozen-import / private-name
+#            frozen-import = 冻结区 import 扩展区（core/ rules/ compiler/ assets/
+#                            runtime/ eval/ cli/ → adapters/ packs/ trigger/）
+#            private-name  = 跨包 `from x import _y`（下划线私有名）
+#   <file>   仓内 POSIX 相对路径，必须是 .py
+#   <line>   import 语句的**结束行**（多行 import 取最后一行，与门禁报告一致）
+#   <理由>   **必须非空**。缺理由的条目会让门禁退出 2 —— 这不是判红，是判「条目
+#            本身是坏的」。基线存在的意义就是「已知例外且说清了为什么」，
+#            没有理由的登记等于没登记。
+#
+# ── 基线本身也在门禁之下（防「往基线里随便加一条」）─────────────
+#   1. 条目必须有非空理由        → 缺则退出 2
+#   2. 条目必须与真实违规配对    → 对不上（陈旧或凭空写的）退出 2
+#   3. 同键（rule + file + line）不可重复 → 重复退出 2
+#   因此：修掉一处违规后，它对应的基线条目会立刻变成「与违规不配对」而判红，
+#   必须**显式删掉那一行**才算闭环——基线不会自己悄悄变绿。
+#
+# ── 当前基线条数：2 ─────────────────────────────────────────────
+#   1. adapters/framework_kefu/hit_query.py:38  —— T63 复核发现的既存破口。
+#   2. tools/feedback_mining/miner.py:65        —— tools/README 明文要求
+#                                                  「一律 import 产品代码，不复制」。
+#   两条**都不是**为了让门禁绿而放宽判据：判据没有动过，破口仍然可见、可数、可追。
+#   登记 ≠ 认可：这两条都是「已知债务」，不是「合规」。
+
+private-name adapters/framework_kefu/hit_query.py:38  T63 复核登记的既存破口：framework_kefu 跨包引用 adapters.textmatch.hit 的下划线私有名 _sequence_candidates。方向是 adapter→adapter（不是 adapter→冻结区），内核边界没破，但违反 adapters/AGENTS.md「不得 import 内部私有名，只走公开 __all__」。本卡（T63）只登记不修——修它需要给 adapters.textmatch.hit 开一个公开 API，属另一张卡的范围。
+private-name tools/feedback_mining/miner.py:65  tools/README.md 明文要求「归一化与单句判据一律 import 产品代码，不复制」，本行是那条纪律的执行形态（tools/tests/test_feedback_mining.py 用 assertIs 钉住与产品同一对象）。_SENTENCE_TERMINATORS 在 compiler.source 无公开别名，这是跨包私有引用的已知代价，待 compiler 补公开常量时一并移除本条。

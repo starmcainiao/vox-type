@@ -1,0 +1,278 @@
+{
+  "card": "docs/tasks/T27d-assets-只读契约收口.md",
+  "what": "AssetPack.lookup：线性遍历 + 每次重算 sha256 → 惰性身份索引（值带 index）+ 预计算指纹 + O(1) 签名守卫 + 命中时 is 校验（语义零变化）",
+  "headline": "热路径快 10²–10⁴ 倍：守卫是 O(1) 的 (id, len) 签名（不再是 T27 第一轮的 O(n) 内容签名），查表 O(1)，命中时再付一次 O(1) 的 is 校验。代价是**冷启动**（首次 lookup 建索引 + 预计算指纹，O(n)）与**契约**：包是只读产物，运行期改 assets 后必须显式调 invalidate_lookup_caches()——不调则缓存可能陈旧（契约外行为，不保证）。逐量级数字见 sizes；fp-mismatch 臂的 ≤0.2us 反向单列在 measurement_floor_reversals（机械分辨率，不是回归）。",
+  "measurement": {
+    "main_arm": "未命中身份臂 + 指纹不匹配臂 + 命中臂按位置分档，stat 用内存 stub 隔离，只测「定位 + 指纹」",
+    "stat_arm": "命中臂走真实 Path.exists()，单列不进主对比",
+    "why_isolated": "Path.exists() 在本机磁盘单次约数百微秒，会淹没定位成本；而 stat 不缓存是保险丝（本卡硬约束②），它必须留在实现里，但不该混进定位成本的对比",
+    "baseline_arm": "本文件 legacy_lookup：T27 之前的 lookup 本体，逐语句照抄；指纹算法调 assets.fingerprint，不复制",
+    "ratio_field": "ratio_old_over_new_p50 = 旧 P50 / 新 P50；>1 表示旧更慢"
+  },
+  "env": {
+    "machine": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "machine_model": "arm64",
+    "python": "3.14.6",
+    "py_impl": "cpython",
+    "repeat": 3
+  },
+  "sizes": {
+    "n=10000": {
+      "n_assets": 10000,
+      "cold_first_lookup_us": {
+        "new_includes_index_build_and_guard": 7000.3,
+        "old": 16.3
+      },
+      "miss_key_arm_no_stat": {
+        "new_index": {
+          "p50_us": 0.209,
+          "p99_us": 0.25,
+          "min_us": 0.125,
+          "max_us": 5973.458,
+          "mean_us": 2.188,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 61.333,
+          "p99_us": 77.459,
+          "min_us": 58.375,
+          "max_us": 285.0,
+          "mean_us": 63.188,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 293.46
+      },
+      "fingerprint_mismatch_arm_no_stat": {
+        "new_index": {
+          "p50_us": 0.792,
+          "p99_us": 1.0,
+          "min_us": 0.708,
+          "max_us": 17.583,
+          "mean_us": 0.796,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 32.083,
+          "p99_us": 39.667,
+          "min_us": 31.083,
+          "max_us": 70.0,
+          "mean_us": 32.535,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 40.51
+      },
+      "hit_first_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.708,
+          "min_us": 0.458,
+          "max_us": 13.0,
+          "mean_us": 0.572,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.708,
+          "p99_us": 0.792,
+          "min_us": 0.625,
+          "max_us": 7.542,
+          "mean_us": 0.707,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 1.31
+      },
+      "hit_mid_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.625,
+          "min_us": 0.5,
+          "max_us": 2.584,
+          "mean_us": 0.549,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 32.625,
+          "p99_us": 39.959,
+          "min_us": 31.125,
+          "max_us": 78.208,
+          "mean_us": 32.92,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 60.19
+      },
+      "hit_last_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.625,
+          "min_us": 0.458,
+          "max_us": 5.708,
+          "mean_us": 0.552,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 72.667,
+          "p99_us": 85.963,
+          "min_us": 69.791,
+          "max_us": 116.375,
+          "mean_us": 73.574,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 134.07
+      },
+      "cost_breakdown_no_stat": {
+        "new_index_plus_guard": 0.209,
+        "new_index_only_no_guard": 0.125,
+        "guard_alone_ensure_lookup_caches": 0.125,
+        "old_linear_scan_full": 61.333,
+        "note": "拆开看：索引查表与守卫都是 O(1)（守卫是 (id, len) 签名），两者相加远小于线性遍历——这是 T27d 与 T27 第一轮的差别。T27 第一轮的守卫是逐条目 id() 的内容签名（O(n)），正是它把节省抵消掉了（历史数字见 report.json 的 history_first_round 字段）"
+      },
+      "hit_arm_with_real_stat": {
+        "new_index_p50_us": 4.4,
+        "old_linear_p50_us": 4.6,
+        "note": "命中臂必须做一次真实的 Path.exists()（stat 不缓存是保险丝）。该成本主导且两条实现相同，因此单列、不进主对比。"
+      }
+    },
+    "n=200000": {
+      "n_assets": 200000,
+      "cold_first_lookup_us": {
+        "new_includes_index_build_and_guard": 172967.8,
+        "old": 62.7
+      },
+      "miss_key_arm_no_stat": {
+        "new_index": {
+          "p50_us": 0.208,
+          "p99_us": 0.292,
+          "min_us": 0.166,
+          "max_us": 191037.0,
+          "mean_us": 63.894,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 1898.271,
+          "p99_us": 2674.392,
+          "min_us": 1676.625,
+          "max_us": 9752.416,
+          "mean_us": 1956.973,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 9126.3
+      },
+      "fingerprint_mismatch_arm_no_stat": {
+        "new_index": {
+          "p50_us": 0.833,
+          "p99_us": 0.917,
+          "min_us": 0.708,
+          "max_us": 23.25,
+          "mean_us": 0.829,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 739.521,
+          "p99_us": 1304.242,
+          "min_us": 652.333,
+          "max_us": 1914.042,
+          "mean_us": 771.705,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 887.78
+      },
+      "hit_first_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.667,
+          "min_us": 0.5,
+          "max_us": 15.208,
+          "mean_us": 0.581,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 0.708,
+          "p99_us": 0.833,
+          "min_us": 0.583,
+          "max_us": 6.5,
+          "mean_us": 0.711,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 1.31
+      },
+      "hit_mid_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.709,
+          "min_us": 0.458,
+          "max_us": 12.125,
+          "mean_us": 0.57,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 735.25,
+          "p99_us": 1126.232,
+          "min_us": 652.0,
+          "max_us": 6572.5,
+          "mean_us": 763.498,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 1356.55
+      },
+      "hit_last_no_stat": {
+        "new_index": {
+          "p50_us": 0.542,
+          "p99_us": 0.625,
+          "min_us": 0.458,
+          "max_us": 8.75,
+          "mean_us": 0.563,
+          "n_samples": 3000
+        },
+        "old_linear": {
+          "p50_us": 2075.979,
+          "p99_us": 2724.195,
+          "min_us": 1841.916,
+          "max_us": 3103.917,
+          "mean_us": 2121.292,
+          "n_samples": 3000
+        },
+        "ratio_old_over_new_p50": 3830.22
+      },
+      "cost_breakdown_no_stat": {
+        "new_index_plus_guard": 0.208,
+        "new_index_only_no_guard": 0.125,
+        "guard_alone_ensure_lookup_caches": 0.125,
+        "old_linear_scan_full": 1898.271,
+        "note": "拆开看：索引查表与守卫都是 O(1)（守卫是 (id, len) 签名），两者相加远小于线性遍历——这是 T27d 与 T27 第一轮的差别。T27 第一轮的守卫是逐条目 id() 的内容签名（O(n)），正是它把节省抵消掉了（历史数字见 report.json 的 history_first_round 字段）"
+      },
+      "hit_arm_with_real_stat": {
+        "new_index_p50_us": 4.5,
+        "old_linear_p50_us": 4.6,
+        "note": "命中臂必须做一次真实的 Path.exists()（stat 不缓存是保险丝）。该成本主导且两条实现相同，因此单列、不进主对比。"
+      }
+    }
+  },
+  "text_arm_find_hit": {
+    "n_assets": 10000,
+    "p50_us": 16409.5,
+    "p99_us": 23815.3,
+    "note": "文本档每次调用都会重建 build_text_index（O(n)），T27 只影响其中 confirm → pack.lookup 的定位成本"
+  },
+  "problems": [],
+  "measurement_floor_reversals": [],
+  "measurement_caveats": {
+    "clock_tick_ns": 42,
+    "tick_source": "time.perf_counter_ns() 相邻两次采样的中位数（本机实测）",
+    "floor_line_us": 0.2,
+    "floor_line_basis": "≈5 × 41.67ns 时钟步长",
+    "probe_position": "指纹不匹配臂的探针取**包中段**（不是首条）。原因：旧实现在命中首条时成本最低（0.5–0.7us，本就不付 O(n)），拿它当基准会制造一个≈0.21us 的伪回归——该差值是 1–2 个时钟步长级的位置偏差，不是新实现的开销。命中臂（hit_first/mid/last）保留了\"旧实现随命中位置变慢\"的完整证据。",
+    "cold_first_lookup_us": "冷启动单列，不摊进热路径 P50。首次 lookup 要付一次 O(n) 的建索引 + 全表预计算指纹；旧实现在此几乎为零（它没有索引）。这是索引化的真实代价，用摊销口径比较，不用热路径口径。"
+  },
+  "history_first_round": {
+    "card": "docs/tasks/T27-assets-热路径索引化.md",
+    "note": "历史数字，仅留证：T27 第一轮用逐条目 id() 的内容签名守卫（O(n)），那一步把索引的节省抵消掉了。T27d 换成 (id(assets), len(assets)) 的 O(1) 签名后，守卫不再是瓶颈。以下数字**不是** T27d 的实测值，来自 T27 第一轮的报告。",
+    "n=10000": {
+      "guard_alone_ensure_lookup_caches_p50_us": 233.791,
+      "old_linear_scan_full_p50_us": 60.708,
+      "hit_last_no_stat_new_p50_us": 472.02
+    },
+    "n=200000": {
+      "guard_alone_ensure_lookup_caches_p50_us": 6431.52,
+      "old_linear_scan_full_p50_us": 2043.854
+    }
+  }
+}

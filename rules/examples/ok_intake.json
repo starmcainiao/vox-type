@@ -1,0 +1,7 @@
+[
+  {"key": "greeting_welcome", "rate": "normal", "variant": 1},
+  {"key": "step_verify_identity", "rate": "slow", "variant": 1},
+  {"key": "step_confirm_amount", "rate": "slow", "slots": {"amount": "¥500"}},
+  {"key": "step_final_summary", "rate": "normal", "variant": 1},
+  {"key": "closing_thank_you", "rate": "normal", "variant": 1}
+]

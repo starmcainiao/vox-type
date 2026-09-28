@@ -1,0 +1,100 @@
+{
+  "_schema": "vox-corpus-sources/1",
+  "_comment": "首批语料来源声明。许可判定走 fetch.py 的 fail-closed 规则（docs/11 §11.3），不信任平台 license 标签、也不信任 front-matter 单独一面之词。",
+  "sources": [
+    {
+      "id": "tongyi_dianjin/DianJin-CSC-Data",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "files": ["data/CSConv.json"],
+      "expect_license": ["mit"],
+      "why": "1855 组真实客户-坐席对话（50587 话轮），客服话轮带 12 类策略标注，8 类业务域；直接可当预铸 key 的分类体系。首批里唯一「真实对话 + 许可干净 + 自带功能标注」的语料。",
+      "skip": {
+        "data/RoleCS.json": "66 MB，角色扮演生成数据（非真实对话），价值低，先不下。"
+      }
+    },
+    {
+      "id": "QingshanAI/ecom-customer-service-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "files": ["*"],
+      "expect_license": ["apache-2.0"],
+      "why": "电商客服合成语料，字段 scene/user/bot/tone 天然是「用户说法 ↔ 客服应答」配对，可直接喂 golden set。"
+    },
+    {
+      "id": "QingshanAI/ecom-after-sale-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "files": ["*"],
+      "expect_license": ["apache-2.0"],
+      "why": "电商售后场景合成对话，用于跨场景对照（同一套 key 体系换场景还能不能用）。"
+    },
+    {
+      "id": "QingshanAI/ecom-logistics-synthetic",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "files": ["*"],
+      "expect_license": ["apache-2.0"],
+      "why": "电商物流查询场景合成对话，用于跨场景对照。"
+    },
+    {
+      "id": "tomsawyerhu/cantonese-dialect",
+      "platform": "modelscope",
+      "kind": "dataset",
+      "revision": "master",
+      "files": ["*"],
+      "expect_license": ["apache-2.0"],
+      "why": "粤语转写语料。**注意：本仓只有转写清单、不含音频**（CSV 指向仓外的 Common Voice wav 路径，该目录不存在）。因此只能作为「粤语说法文本」来源，不能用于方言 ASR 评测。",
+      "notes_override": "实测：仓内文件只有 CSV/JSON，wav 路径指向不存在的 cantonese_dialect_small/。原调研判定「可跑通方言链路」不成立，已改为文本用途。"
+    },
+    {
+      "id": "ASLP-lab/WenetSpeech-Wu-Bench",
+      "platform": "hf-mirror",
+      "kind": "dataset",
+      "revision": "main",
+      "files": ["understanding/asr.parquet"],
+      "expect_license": ["apache-2.0"],
+      "optional": true,
+      "why": "吴语 ASR benchmark（上海话/苏州话/普通话混说 9.75 小时，按 CER 评测）——方言链路的正解来源。许可干净：front-matter 与正文均无禁商用条款（已全文核过）。",
+      "notes_override": "**optional：缺省跑不碰它**（1 GB 不该在例行跑里被拉；要更新用 --only）。asr.parquet 单文件 1030.7 MB，parquet 需 pyarrow 才能读（本机主解释器是 Python 3.14，PyPI 与清华镜像都无 3.14 wheel）→ 读它要换解释器。**文件已实际下载并校验通过**（sha256 与平台 LFS oid 逐字相符）。**不要**下整库——另有 ast/age/emotion/gender 四个 parquet 共 1.35 GB 与本项目无关。"
+    }
+  ],
+  "rejected_sources": [
+    {
+      "id": "MagicDataTech/magicdata-dialect-wu-chinese-tts-lite",
+      "platform": "hf-mirror",
+      "reason": "front-matter 与平台 cardData 都写 apache-2.0，但 README 正文表格写 CC BY-NC-ND 4.0 并注明 for non-commercial use only → 以正文为准，禁商用，不可用。",
+      "rejected_at": "2026-09-18",
+      "significance": "本条的漏网会直接污染一个要公开分发的仓；它是「只信 front-matter」这个审计漏洞的实物证据。"
+    },
+    {
+      "id": "MagicHub/magicdata-dialect-northeastern-chinese-tts-lite",
+      "platform": "hf-mirror",
+      "reason": "README front-matter 无 license 字段；正文明写 CC BY-NC-ND 4.0、for non-commercial use only。",
+      "rejected_at": "2026-09-18",
+      "significance": "与上一条同数据、不同组织上传，许可表述不同——证明「同名镜像等价」这个假设不成立。"
+    },
+    {
+      "id": "ASLP-lab/WenetSpeech-Yue",
+      "platform": "hf-mirror",
+      "reason": "cardData.license = cc-by-nc-4.0（禁商用）。",
+      "rejected_at": "2026-09-18"
+    },
+    {
+      "id": "TwinkStart/KeSpeech",
+      "platform": "hf-mirror",
+      "reason": "无 license 字段，无 front-matter 许可声明 → 证据不足。",
+      "rejected_at": "2026-09-18"
+    },
+    {
+      "id": "（粤语类，搜索首页 20 个）",
+      "platform": "hf-mirror",
+      "reason": "raptorkwok/ziyou-li/alvanlii/indiejoseph 等 20 个粤语相关数据集 lic 全部为 None → 证据不足，一律不下载。",
+      "rejected_at": "2026-09-18"
+    }
+  ]
+}

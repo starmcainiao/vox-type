@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="836" viewBox="0 0 980 836" role="img" aria-labelledby="t d">
+  <title id="t">前置包价值对比：命中即播 vs 现场合成（同机同句首音）</title>
+  <desc id="d">0.71 ms 对 2.34 s，对数刻度横条；数值取自 labs/frontpack-value/report.json</desc>
+
+  <style>
+    .title{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:21px;font-weight:600;fill:#1b2430}
+    .deck{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:13px;fill:#5b6775}
+    .axis{font-family:-apple-system,"PingFang SC",sans-serif;font-size:12px;fill:#7a8592}
+    .rowlabel{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:14px;font-weight:600;fill:#1b2430}
+    .value{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:13px;font-weight:600;fill:#1b2430}
+    .micro{font-family:-apple-system,"PingFang SC",sans-serif;font-size:11.5px;fill:#5b6775}
+    .foot{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:11.5px;fill:#5b6775}
+    .sect{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:12px;font-weight:600;fill:#5b6775}
+  </style>
+
+  <rect x="0" y="0" width="980" height="836" fill="#ffffff"/>
+  <text x="48" y="46" class="title">前置包：命中即播 vs 现场合成 —— 同一台机器、同一批话术</text>
+  <text x="48" y="72" class="deck">横轴为首音延迟（对数刻度，单位 ms / s）。快路 = vox run 命中即播（磁盘读，零 TTS 调用）；</text>
+  <text x="48" y="92" class="deck">慢路 = oMLX Qwen3-TTS-12Hz-0.6B 全链路（合成 + 归一 16k + 落盘）。快路 N=50（10 句 × 5 次），慢路 N=10。</text>
+    <line x1="236.0" y1="152.0" x2="236.0" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="236.0" y="532.0" text-anchor="middle" class="axis">0.10 ms</text>
+    <line x1="360.2" y1="152.0" x2="360.2" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="360.2" y="532.0" text-anchor="middle" class="axis">1.00 ms</text>
+    <line x1="484.3" y1="152.0" x2="484.3" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="484.3" y="532.0" text-anchor="middle" class="axis">10.00 ms</text>
+    <line x1="608.5" y1="152.0" x2="608.5" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="608.5" y="532.0" text-anchor="middle" class="axis">100 ms</text>
+    <line x1="732.6" y1="152.0" x2="732.6" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="732.6" y="532.0" text-anchor="middle" class="axis">1 s</text>
+    <line x1="856.8" y1="152.0" x2="856.8" y2="508.0" stroke="#dfe4ea" stroke-width="1"/>
+    <text x="856.8" y="532.0" text-anchor="middle" class="axis">10 s</text>
+  <line x1="236.0" y1="508.0" x2="916.0" y2="508.0" stroke="#9aa5b1" stroke-width="1.5"/>
+  <text x="576.0" y="562.0" text-anchor="middle" class="axis">首音延迟（对数刻度）</text>
+
+  <g>
+    <text x="220.0" y="236.0" text-anchor="end" class="rowlabel">快路 命中即播（P50）</text>
+    <rect x="320.0" y="202.0" width="117.2" height="56" rx="3" fill="#1f7a4d" fill-opacity="0.32"/>
+    <line x1="342.1" y1="202.0" x2="342.1" y2="258.0" stroke="#1f7a4d" stroke-width="5"/>
+    <text x="356.1" y="235.0" class="value">P50 0.71 ms ｜ 区间 0.47 ms–4.18 ms</text>
+  </g>
+  <g>
+    <text x="220.0" y="412.0" text-anchor="end" class="rowlabel">慢路 现场合成（P50）</text>
+    <rect x="735.4" y="378.0" width="97.8" height="56" rx="3" fill="#b3402f" fill-opacity="0.32"/>
+    <line x1="778.4" y1="378.0" x2="778.4" y2="434.0" stroke="#b3402f" stroke-width="5"/>
+    <text x="792.4" y="411.0" class="value">P50 2.336 s ｜ 区间 1.052 s–6.454 s</text>
+  </g>
+  <line x1="48" y1="552" x2="932" y2="552" stroke="#e6ebf0" stroke-width="1"/>
+    <text x="48" y="574" class="sect">逐句对照（快路 5 次中位 / 慢路 1 次墙钟，同一句；同源 report.json per_key）</text>
+    <text x="236.0" y="596.0" class="micro">opening__1：快 0.72 ms ｜ 慢 2.1 s</text>
+    <text x="236.0" y="616.0" class="micro">opening__2：快 0.78 ms ｜ 慢 6.13 s</text>
+    <text x="236.0" y="636.0" class="micro">transfer_ready：快 0.64 ms ｜ 慢 3.66 s</text>
+    <text x="236.0" y="656.0" class="micro">farewell：快 0.75 ms ｜ 慢 3.28 s</text>
+    <text x="236.0" y="676.0" class="micro">chat_smalltalk__2：快 0.71 ms ｜ 慢 1.69 s</text>
+    <text x="236.0" y="696.0" class="micro">pay_no_bills：快 0.71 ms ｜ 慢 1.97 s</text>
+    <text x="236.0" y="716.0" class="micro">clarify_work_order__2：快 0.70 ms ｜ 慢 2.57 s</text>
+    <text x="236.0" y="736.0" class="micro">repair_ask_userNo：快 0.69 ms ｜ 慢 6.45 s</text>
+    <text x="236.0" y="756.0" class="micro">work_order_empty：快 0.73 ms ｜ 慢 1.61 s</text>
+    <text x="236.0" y="776.0" class="micro">clarify_repair__1：快 0.52 ms ｜ 慢 1.05 s</text>
+  <line x1="48" y1="790" x2="932" y2="790" stroke="#e6ebf0" stroke-width="1"/>
+  <text x="48" y="808" class="foot">附注：P50/P50 ≈ 3,267×。保守端：快路上界 4.18 ms 对慢路最小 1.05 s ≈ 252×；快路中位对慢路上界 6.45 s ≈ 9,026×。倍数只作旁注（受采样波动影响），口径以 report.json 原值为准。</text>
+  <text x="48" y="826" class="foot">慢路实时倍率中位数 rtf_median=0.941（墙钟秒 / 产物音频秒，≈1 即恰好实时，&gt;1 表示比实时慢）；快路口径不含 Python 进程启动，测的是引擎就绪后首音。</text>
+</svg>

@@ -1,0 +1,4 @@
+[
+  {"key": "greeting_welcome", "rate": "normal", "variant": 1},
+  {"key": "nonexistent_key", "rate": "normal", "variant": 1}
+]

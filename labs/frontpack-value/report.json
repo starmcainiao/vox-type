@@ -1,0 +1,233 @@
+{
+  "arms": {
+    "fast": {
+      "n": 50,
+      "p50_ms": 0.715,
+      "min_ms": 0.475,
+      "max_ms": 4.176,
+      "per_sentence_ms": [
+        0.721,
+        0.784,
+        0.641,
+        0.751,
+        0.714,
+        0.712,
+        0.704,
+        0.694,
+        0.727,
+        0.518
+      ],
+      "tts_calls_total": 0
+    },
+    "slow": {
+      "n": 10,
+      "p50_ms": 2336.0,
+      "min_ms": 1052.3,
+      "max_ms": 6453.6,
+      "rtf_median": 0.941,
+      "audio_s_median": 2.428
+    }
+  },
+  "corpus_keys": [
+    "opening__1",
+    "opening__2",
+    "transfer_ready",
+    "farewell",
+    "chat_smalltalk__2",
+    "pay_no_bills",
+    "clarify_work_order__2",
+    "repair_ask_userNo",
+    "work_order_empty",
+    "clarify_repair__1"
+  ],
+  "machine": {
+    "generated_at_utc": "2026-09-24T05:42:52+00:00",
+    "python": "3.14.6",
+    "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "cpu": 10,
+    "ffmpeg": "/opt/homebrew/bin/ffmpeg",
+    "endpoint_connected": true,
+    "tts_model": "Qwen3-TTS-12Hz-0.6B-Base-bf16",
+    "tts_model_loaded": true,
+    "endpoint": "http://127.0.0.1:10099",
+    "available_models": [
+      "DeepSeek-OCR-2-6bit",
+      "Gemma-4-E4B-Reasoning",
+      "MiniCPM5-2B-CRACK-JANG_8M",
+      "MiniCPM5-2B-MLX",
+      "Ornith-1.5-9B-MLX-4bit",
+      "PaddleOCR-VL-1.5-bf16",
+      "Qwen3-0.6B-4bit",
+      "Qwen3-ASR-0.6B-8bit",
+      "Qwen3-Embedding-8B-4bit-DWQ",
+      "Qwen3-Reranker-0.6B-mlx-8Bit",
+      "Qwen3-TTS-12Hz-0.6B-Base-bf16",
+      "Qwen3-VL-4B-Instruct-MLX-4bit",
+      "Qwen3.5-9B-MLX-4bit",
+      "Qwen3.5-VL-4B-JANG_4S-CRACK",
+      "Qwen3.5-VL-9B-JANG_4S-CRACK",
+      "Voxtral-4B-TTS-2603-mlx-4bit",
+      "bge-m3-mlx-fp16",
+      "functiongemma-270m-it-4bit",
+      "gemma-4-e4b-it-8bit",
+      "mlx-community--Breeze-TTS-2-mlx",
+      "mlx-community--Qwen3.5-4B-MLX-4bit",
+      "mlx-community--RIFE-4.25",
+      "mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit",
+      "mlx-community:VibeVoice-ASR-4bit",
+      "mtp",
+      "openbmb:VoxCPM2",
+      "parakeet-tdt-0.6b-v2",
+      "translategemma-4b-it-4bit",
+      "MarkItDown"
+    ],
+    "tts_endpoint_error": null,
+    "slow_warmup_s": 2.131428249998862,
+    "repeats_fast": 5,
+    "skip_slow": false,
+    "pack_build": {
+      "allow_partial": true,
+      "rc": 4,
+      "total": 69,
+      "synthesized": 69,
+      "failed": 0,
+      "quality_issues": 1,
+      "corpus_missing": [],
+      "corpus_all_present": true,
+      "note": "采样型引擎的归一自检会随机拒产物（头/尾静音超标），整包 clean=False 属环境事实；本卡接受部分包但硬断言语料 10 句全部铸出。"
+    },
+    "examples_plan_cross": {
+      "cmd": "run plan.json --pack pack --out cross-81b2c0eb.wav",
+      "rc": 0,
+      "command": "run",
+      "pack_dir": "<系统临时目录>/frontpack-fast-rnr1fadx/pack",
+      "plan_id": "vox-cli",
+      "turn_id": 1,
+      "hit_count": 4,
+      "miss_count": 0,
+      "fallback_count": 0,
+      "tts_calls": 0,
+      "first_audio_ms": 0.7220000006782357,
+      "total_duration_ms": 17735,
+      "out_path": "<系统临时目录>/frontpack-fast-rnr1fadx/cross-81b2c0eb.wav",
+      "events": [
+        {
+          "ts": "2026-09-24T05:42:52.285493Z",
+          "turn_id": 1,
+          "plan_id": "vox-cli",
+          "key": "opening__1",
+          "part": 1,
+          "rate": "normal",
+          "variant": 0,
+          "reason": "",
+          "pack_version": "1",
+          "first_audio_ms": 0.7220000006782357,
+          "hit": true
+        },
+        {
+          "ts": "2026-09-24T05:42:52.285634Z",
+          "turn_id": 1,
+          "plan_id": "vox-cli",
+          "key": "opening__2",
+          "part": 2,
+          "rate": "normal",
+          "variant": 0,
+          "reason": "",
+          "pack_version": "1",
+          "first_audio_ms": 0.7220000006782357,
+          "hit": true
+        },
+        {
+          "ts": "2026-09-24T05:42:52.285638Z",
+          "turn_id": 1,
+          "plan_id": "vox-cli",
+          "key": "transfer_ready",
+          "part": 3,
+          "rate": "normal",
+          "variant": 0,
+          "reason": "",
+          "pack_version": "1",
+          "first_audio_ms": 0.7220000006782357,
+          "hit": true
+        },
+        {
+          "ts": "2026-09-24T05:42:52.285640Z",
+          "turn_id": 1,
+          "plan_id": "vox-cli",
+          "key": "farewell",
+          "part": 4,
+          "rate": "normal",
+          "variant": 0,
+          "reason": "",
+          "pack_version": "1",
+          "first_audio_ms": 0.7220000006782357,
+          "hit": true
+        }
+      ]
+    }
+  },
+  "notes": "快路 first_audio_ms 来自 `vox run` 子进程 JSON 输出（产品口径首音，磁盘读+拼接，不含 Python 进程启动那几十 ms；tts_calls_total=0 表示零 TTS 调用）。 慢路为 OmlxTts 全链路墙钟（服务端合成+ffmpeg 归一 16k+落盘+契约复验），先 1 次热身不计统计（实际耗时记在 machine.slow_warmup_s）；rtf_median=墙钟秒/产物音频秒，≈1 即恰好实时，>1 表示比实时慢。 同机同句同 16k 契约可比；快路每句重复 5 次取中位数（N=50），慢路逐句 1 次（N=10）。 P50/P50 ≈ 3267×（附注，非测量值）；保守区间（快路取上界/慢路取最小，反向亦然）见 README「怎么读这个数字」与 SVG 脚注。铸包用 --allow-partial（采样型引擎的归一自检会随机拒产物，整包不 clean 就重铸到干净会让本卡不可复跑），并硬断言语料 10 句全部铸出——见 machine.pack_build.corpus_all_present。",
+  "arm_definition": {
+    "fast": "vox run 子进程命中即播；first_audio_ms 取 CLI JSON 输出（产品口径首音，不含进程启动）",
+    "slow": "OmlxTts 全链路墙钟：合成 + ffmpeg 归一 16k + 落盘 + 契约复验；1 次热身不计统计"
+  },
+  "background_reference": {
+    "note": "云端 / 端到端数字只引既有落盘值，口径不同、不直接相减，不进本图。",
+    "sources": [
+      "labs/cloud-bench/report.json",
+      "labs/e2e-vs-cascade/report.json"
+    ]
+  },
+  "per_key": [
+    {
+      "key": "opening__1",
+      "fast_ms": 0.721,
+      "slow_ms": 2102.9
+    },
+    {
+      "key": "opening__2",
+      "fast_ms": 0.784,
+      "slow_ms": 6130.1
+    },
+    {
+      "key": "transfer_ready",
+      "fast_ms": 0.641,
+      "slow_ms": 3662.7
+    },
+    {
+      "key": "farewell",
+      "fast_ms": 0.751,
+      "slow_ms": 3280.0
+    },
+    {
+      "key": "chat_smalltalk__2",
+      "fast_ms": 0.714,
+      "slow_ms": 1685.4
+    },
+    {
+      "key": "pay_no_bills",
+      "fast_ms": 0.712,
+      "slow_ms": 1968.9
+    },
+    {
+      "key": "clarify_work_order__2",
+      "fast_ms": 0.704,
+      "slow_ms": 2569.1
+    },
+    {
+      "key": "repair_ask_userNo",
+      "fast_ms": 0.694,
+      "slow_ms": 6453.6
+    },
+    {
+      "key": "work_order_empty",
+      "fast_ms": 0.727,
+      "slow_ms": 1613.0
+    },
+    {
+      "key": "clarify_repair__1",
+      "fast_ms": 0.518,
+      "slow_ms": 1052.3
+    }
+  ]
+}

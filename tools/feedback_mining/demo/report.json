@@ -1,0 +1,279 @@
+{
+  "_schema": "vox-feedback-mining/1",
+  "counts": {
+    "candidates": 9,
+    "rejected": 4,
+    "rejected_by_rule": {
+      "B1": 1,
+      "B2": 2,
+      "B3": 0,
+      "B4": 1,
+      "B5": 0
+    },
+    "suggestions": 5
+  },
+  "cross_check_t22": {
+    "candidates_by_group_hits": {
+      ">=10": 208,
+      ">=20": 58,
+      ">=3": 737,
+      ">=50": 10
+    },
+    "method": "labs/multi-industry-corpus/mine_recompute.py（外部语料挖掘，非回流）",
+    "note": "sample_candidates 只有 8 条（T22 的样本），不能外推到 737 条候选；且形式条款全过不等于可入包——A1/A2 与禁入项 ⅰ–ⅳ 必须人工判（本工具的边界）",
+    "samples_checked": 8,
+    "samples_passing_form_rules": 8,
+    "samples_rejected": 0,
+    "samples_rejected_by_rule": {},
+    "t22_report_file": "labs/multi-industry-corpus/out/mine_candidates.json",
+    "total_candidates": 737
+  },
+  "provenance": {
+    "inputs": {
+      "events": {
+        "path": "tools/feedback_mining/demo/inputs/events.jsonl",
+        "sha256": "005b8d140a79942e96ab16336c4736ccbe08f5efc788271dd8c837350df72fbe"
+      },
+      "ledger": {
+        "path": "tools/feedback_mining/demo/inputs/turns.jsonl",
+        "sha256": "af3110412721b7fff43dfcbb78d096943d1a4bb15a822d2e10bab3f093c03582"
+      }
+    },
+    "max_candidate_chars": 60,
+    "normalizer": "adapters.framework_kefu.normalize.normalize_text",
+    "repo_commit": "deef1efb3e774f32a53ad8632bdb95f4ba862811",
+    "sentence_terminators": "。！？!?",
+    "shuffle": false
+  },
+  "rejected_candidates": [
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:32:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "原文含 3 个句末标点，不是「一句」：长流程必须拆成多个 key（字模最小粒度 = 一句）",
+            "rule": "B1"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:32:02Z",
+      "raw_texts": [
+        "工单已受理！请保持电话畅通！师傅会尽快联系您。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-004"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "工单已受理!请保持电话畅通!师傅会尽快联系您.",
+      "turn_ids": [
+        "t-004"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:24:02Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "含槽位占位符 {date}：槽值一律运行时现场合成，不得进 variant 原文（docs/14 B2）",
+            "rule": "B2"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:24:02Z",
+      "raw_texts": [
+        "已为您预约 {date} 下午上门服务，请保持手机畅通。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-003"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "已为您预约{date}下午上门服务,请保持手机畅通.",
+      "turn_ids": [
+        "t-003"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:32:01Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "归一化后 80 字 > 上限 60 字：超长话术多为多步流程拼接，必须拆成多个 key",
+            "rule": "B4"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:32:01Z",
+      "raw_texts": [
+        "您好，已为您登记供暖报修工单，当前状态为待受理，我们会在工作日内派单，派单后维修师傅会在约定时间上门，如需变更上门时间请回复修改时间，如需人工服务请回复转人工。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-004"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "您好,已为您登记供暖报修工单,当前状态为待受理,我们会在工作日内派单,派单后维修师傅会在约定时间上门,如需变更上门时间请回复修改时间,如需人工服务请回复转人工.",
+      "turn_ids": [
+        "t-004"
+      ]
+    },
+    {
+      "a1a2_class": "pending_human",
+      "count": 1,
+      "first_seen": "2026-09-22T09:24:03Z",
+      "forbidden_check": {
+        "i_from_user_utterance": "pending_human",
+        "ii_semantic_ambiguous": "pending_human",
+        "iii_template_reuse": "pending_human",
+        "iv_frequency_claim": "pending_human"
+      },
+      "form": {
+        "checked_rules": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5"
+        ],
+        "status": "fail",
+        "violations": [
+          {
+            "reason": "含槽位占位符 [小区名]：槽值一律运行时现场合成，不得进 variant 原文（docs/14 B2）",
+            "rule": "B2"
+          }
+        ]
+      },
+      "last_seen": "2026-09-22T09:24:03Z",
+      "raw_texts": [
+        "您的地址在 [小区名] 附近，维修师傅 30 分钟内到达。"
+      ],
+      "reasons": [
+        "say_live_text"
+      ],
+      "sample_turn_ids": [
+        "t-003"
+      ],
+      "states": [
+        "miss"
+      ],
+      "suggested_key": null,
+      "text": "您的地址在[小区名]附近,维修师傅30分钟内到达.",
+      "turn_ids": [
+        "t-003"
+      ]
+    }
+  ],
+  "run_at": "2026-09-22T09:40:02Z",
+  "samples": {
+    "distinct_normalized_candidates": 9,
+    "event_records": 14,
+    "ledger_coverage": {
+      "candidate_turn_ids": 5,
+      "found_in_ledger": 5,
+      "missing_from_ledger": []
+    },
+    "ledger_records": 5,
+    "live_texts_considered": 13,
+    "rejected": 4,
+    "rejected_by_rule": {
+      "B1": 1,
+      "B2": 2,
+      "B3": 0,
+      "B4": 1,
+      "B5": 0
+    },
+    "states_referenced": [
+      "fallback",
+      "miss"
+    ],
+    "suggestions": 5,
+    "turn_ids_in_both": 5,
+    "turn_ids_in_ledger": 5,
+    "turn_ids_with_live_text": 5,
+    "units_by_state": {
+      "fallback": 2,
+      "hit": 1,
+      "miss": 11,
+      "other": 0
+    }
+  },
+  "scope": {
+    "inputs": [
+      "轮级留痕 JSONL（T17）",
+      "事件流 JSONL（T07，含 live_text）"
+    ],
+    "max_candidate_chars": 60,
+    "mined_states": [
+      "miss",
+      "fallback"
+    ],
+    "normalizer": "adapters.framework_kefu.normalize.normalize_text（import，非复制）",
+    "single_sentence_rule": "compiler.source._SENTENCE_TERMINATORS（import，非复制）",
+    "text_field": "live_text"
+  },
+  "tool": "tools/feedback_mining/miner.py"
+}

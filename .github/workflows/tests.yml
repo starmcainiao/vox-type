@@ -1,0 +1,217 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unittest:
+    # macOS runner：本项目 TTS 引擎实现为 macOS say（零第三方依赖的前提），
+    # cli/adapters 的预铸夹具需要真实 TTS 可用；Linux runner 无 say → 夹具失败。
+    # 注：本卡（T49）明确不动 runs-on（治理项见 docs/13 §五#27）。
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # ── 关卡 1/3：结构预算 ─────────────────────────────────────────────
+      # R09 结构预算此前只在本机靠人记，CI 里等于不存在（T49 头号缺口）。
+      # --no-write 必须带：不带会重写 tools/structure_budget/{LEDGER.md,snapshot.json}，
+      # 在 CI 里等于「只读门禁反过来改被查物」——本仓已踩过这个坑。
+      - name: 关卡1 结构预算（只读，不改台账）
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::结构预算（--no-write）"
+          python3 tools/structure_budget/check.py --no-write
+          echo "::endgroup::"
+          echo "PASS 关卡1 结构预算"
+
+      # 保留：packs 根的真包断言依赖它（不构建则诚实 skip）。
+      # 注意这一条仍走 macsay 适配器（本卡不改，属既有行为）。
+      - name: 构建 heat-kefu 包（packs 的真包断言依赖它；不构建则诚实 skip）
+        run: sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
+
+      # 测试跑批改走单一真源（T48）：删掉手抄的逐目录 shell 循环。
+      # 之前 CI 与 CONTRIBUTING.md 各抄一份，两处会漂移。
+      # run_all_tests.py 失败时非零退出并逐个点名 FAILED 根，无静默通过路径。
+      - name: 全量测试（单一真源 tools/run_all_tests.py，零第三方依赖）
+        run: python3 tools/run_all_tests.py
+
+      # ── 关卡 2/3：CLI 冒烟 + 退出码契约 ────────────────────────────────
+      # docs/08-CLI口径.md 冻结的 0/2/3/4/5 是**对外契约**，此前 CI 一条都没验过。
+      # 本关卡逐条比对真实退出码，任一条不符 → 整步非零退出（末尾 exit $failed）。
+      # 「故意错误」那两条是本关卡的核心：验「该红时真的红」，堵死假绿。
+      - name: 关卡2 CLI 冒烟与退出码契约（docs/08 冻结码 0/2/3/4/5）
+        shell: bash
+        run: |
+          # 本步**故意不开 errexit**：要逐条比对退出码并把全部条目都打出来，
+          # set -e 会在第一条非零处直接中止，看不到后面的条目。
+          # 「整关卡红」由末尾的 `exit $failed` 显式给出，不靠 set -e。
+          set +e
+          set -uo pipefail
+
+          failed=0
+          OUT="$(mktemp)"
+
+          # 逐条比对：expect <说明> <期望退出码> <命令...>
+          expect() {
+            local label="$1"; shift
+            local want="$1"; shift
+            "$@" >"$OUT" 2>&1
+            # 必须与声明同行：`local rc` 单独一行会把 $? 覆盖成 0（local 自己返回 0），
+            # 于是**所有**负例都会被读成 rc=0 而误判 PASS——这正是 docs/13 §八#22 的假绿。
+            # 本条曾真实踩中：修复前两条负例都报 rc=0，实际是 2 与 5。
+            local rc="$?"
+            if [ "$rc" -eq "$want" ]; then
+              echo "PASS  $label  rc=$rc"
+            else
+              echo "FAIL  $label  rc=$rc  期望 rc=$want"
+              echo "---- 该条命令输出（前 20 行）----"
+              head -20 "$OUT"
+              echo "--------------------------------"
+              failed=1
+            fi
+          }
+
+          # 正例：合法输入 → 0
+          expect "pack check 合法包源 packs/heat_kefu" 0 \
+            sh bin/vox pack check packs/heat_kefu --json
+          expect "verify 本步刚铸出的包" 0 \
+            sh bin/vox verify packs/heat_kefu_build/heat-kefu-1 --json
+          expect "verify 随仓自证包 examples/prebuilt-pack" 0 \
+            sh bin/vox verify examples/prebuilt-pack --json
+          # run 用 adapters.tts_omlx:OmlxTts：与 examples/prebuilt-pack 的 manifest
+          # 引擎元数据（voice=default / Qwen3-TTS-12Hz-0.6B-Base-bf16）一致，故全命中快路，
+          # tts_calls=0 —— **不碰任何 TTS 引擎、不联网**（下面另有断言钉住这一点）。
+          expect "run 全命中 plan（prebuilt-pack，零引擎调用）" 0 \
+            sh bin/vox run examples/plan.json --pack examples/prebuilt-pack \
+              --adapter adapters.tts_omlx:OmlxTts --json
+
+          # 负例：该红时必须红
+          # rc=2 用法/参数错误：包目录不存在
+          expect "pack check 不存在的包 → rc=2（不得静默 0）" 2 \
+            sh bin/vox pack check packs/__ci_no_such_pack__ --json
+          # rc=5 fail-closed：换引擎（macsay）播 oMLX 铸的包 → engine_mismatch 中止。
+          # 引擎检查先于合成，故这条**不调用 say**（已用假 say 置于 PATH 首位实测验证），
+          # 也不联网。
+          expect "run 引擎不一致 → rc=5 fail-closed（不触引擎）" 5 \
+            sh bin/vox run examples/plan.json --pack examples/prebuilt-pack \
+              --adapter adapters.tts_macsay:MacSayTts --json
+
+          # 附加断言：上面那条 rc=0 的 run 必须是**纯快路**。
+          # 只断言退出码会漏掉「悄悄退化成慢路去调引擎」——那正是本仓要消除的静默降级。
+          echo "---- 快路零引擎调用断言 ----"
+          sh bin/vox run examples/plan.json --pack examples/prebuilt-pack \
+            --adapter adapters.tts_omlx:OmlxTts --json >"$OUT" 2>/dev/null
+          if python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); k=("hit_count","miss_count","fallback_count","tts_calls"); got=[d[x] for x in k]; want=[4,0,0,0]; assert got==want, ("快路断言不符 got=", dict(zip(k,got)), "want=", dict(zip(k,want)), "（tts_calls 必须为 0：不得调引擎）"); print("hit=4 miss=0 fallback=0 tts_calls=0")' "$OUT"; then
+            echo "PASS  快路纯命中、零引擎调用（tts_calls=0）"
+          else
+            echo "FAIL  快路断言不符：出现未命中/降级/引擎调用"
+            failed=1
+          fi
+
+          rm -f "$OUT"
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::关卡2 CLI 冒烟与退出码契约失败（见上 FAIL 行）"
+            exit 1
+          fi
+          echo "PASS 关卡2 CLI 冒烟与退出码契约"
+
+      # ── 关卡 3/3：发布树卫生 ──────────────────────────────────────────
+      # 分发排除（packs/*/golden/** 与 labs 语义档探针原文）靠 .gitattributes
+      # 的 export-ignore 机器强制（docs/20）。历史上正是「第一次推送就漏了 1,193 KB
+      # 逐字语料」才发现这条排除从未被执行者。这里持续验它没被违反。
+      #
+      # 为什么不写其他断言：本关卡能稳定复跑的部分只有「导出树里不该有的路径确实没有」。
+      # 「导出树里该有的都在」需要维护一份必须包含清单，那是 docs/20 的分发口径，
+      # 不在本卡范围，也不该由本仓自证。宁可少断言，不写永远绿的假断言。
+      - name: 关卡3 发布树卫生（git archive 零排除违规）
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::git archive HEAD | tar -t"
+          git archive HEAD | tar -t > /tmp/vox_archive_list.txt
+          echo "导出条目数：$(wc -l < /tmp/vox_archive_list.txt | tr -d ' ')"
+          # 用 awk 计数/列名，而不是 `grep -c` 加忽略退出码的兜底：
+          # grep 无匹配时退出码为 1，加了忽略兜底就会把「无匹配」与「管道某段真失败」
+          # 混成同一种绿——这正是 docs/13 §八#22 说的假绿。awk 恒退 0，两种情况分得开，
+          # 而 git archive / tar 的真失败仍由上面的 set -euo pipefail 兜住。
+          violations="$(awk '/packs\/.*\/golden\/|semantic_probe\.jsonl/ {print}' /tmp/vox_archive_list.txt)"
+          if [ -n "$violations" ]; then
+            echo "::error::关卡3 发布树卫生失败：导出树里出现了应被 export-ignore 排除的路径"
+            echo "$violations"
+            exit 1
+          fi
+          echo "::endgroup::"
+          echo "PASS 关卡3 发布树卫生（零违规）"
+
+      # ── 关卡 4/4：发布树卫生的加强版 ─────────────────────────────────────
+      # 关卡 3 只验「该被 export-ignore 排除的路径没漏出去」，管不到**内容**。
+      # 本关卡补两条内容门禁（判据本身收在 tools/ 里，workflow 只留调用——
+      # 判据的正则若写在本文件里，它会扫到写它的那一行，恒非零，即判据自指）：
+      #
+      #   4a  tools/check_no_machine_paths.py —— 全仓（入库 + 未跟踪）机器绝对路径
+      #   4b  tools/pack_phrase_audit.py      —— 凭据 / 内网地址两类硬失败
+      #
+      # 4b **只接 credential 与 internal-endpoint 两类**：
+      # verbatim-overlap / structured-label 是「某段话术能否对外发布」的商业判断，
+      # 处置三路径截至 2026-09-28 全部未决（docs/20 §四），把未经裁定的判断
+      # 焊成 CI 硬门禁＝用机器固化一个还没人做的决定。脚本对这两类出报告、退出 0，
+      # 并带 policy="pending-business-decision"；业务方拍板后只改那一个字段。
+      #
+      # ⚠️ 约束（独立验收人 ⑧）：**关卡 2 是全 workflow 唯一 set +e 的步骤**，
+      #    靠手工累加 `failed` 变量收口。将来任何人新增断言，**必须落在 `expect()`
+      #    内或两处 `failed=1` 累积点内**，否则失败会被无声吞掉。
+      #    本关卡用的是 errexit（任一非零即整步红），不受那条约束影响——
+      #    但若日后有人把关卡 2 的 `set +e` 复制过来，那条约束立即生效。
+      - name: 关卡4 发布树卫生加强版（绝对路径 + 凭据/内网地址）
+        shell: bash
+        run: |
+          # errexit：任一脚本非零 → 整步非零退出。不做手工累加，也就没有漏收口的可能。
+          set -euo pipefail
+          echo "::group::4a 机器绝对路径门禁"
+          python3 tools/check_no_machine_paths.py
+          echo "::endgroup::"
+          echo "PASS 关卡4a 机器绝对路径（零违规）"
+          # 4b 公开 CI 没有 kefu 仓 → 逐字/结构化两类无法评估，脚本会**响亮**降级
+          # （stderr 提示 + JSON 里 degraded=true），退出码只由两类硬失败决定。
+          # 这与 packs 根既有 skip 纪律同形，不是静默通过；要「取不到即失败」加 --require-yaml。
+          echo "::group::4b 凭据与内网地址门禁"
+          python3 tools/pack_phrase_audit.py
+          echo "::endgroup::"
+          echo "PASS 关卡4b 凭据与内网地址（零违规）"
+
+      # ── 关卡 5/5：import 方向（D3「适配器不改内核」/ D8「宿主无关」）──────
+      # D3 与 D8 此前 100% 是散文：tools/structure_budget/ 只管行数，
+      # 「冻结区反向 import 扩展区」这条纪律没有任何一行代码在守，靠人读评审。
+      # 本关卡把两条判据收进 tools/check_import_direction.py（AST 扫描，
+      # **不用正则**——正则分不清 `import adapters` 和字符串里的 "import"）：
+      #   frozen-import   冻结区（core/ rules/ compiler/ assets/ runtime/ eval/ cli/）
+      #                   import 扩展区（adapters/ packs/ trigger/）
+      #   private-name    跨包 `from x import _y`（下划线私有名）
+      #
+      # 「挂上即绿」是靠**基线**，不是靠放宽判据：仓内既有的两处破口登记在
+      # tools/import_direction_baseline.txt，每条必须带非空理由、且必须与
+      # **真实存在的违规**一一配对。修掉某处违规后，它对应的基线条目会立刻
+      # 判「与违规不配对」而红——必须显式删掉那一行才算闭环，基线不会自己变绿。
+      # 基线条目缺理由 / 与违规不配对 / 同键重复 / 显式基线文件缺失 → 退出 2。
+      #
+      # 只读：本脚本主路径不写任何文件（故本步不需要 --no-write；
+      # --self-test 仅在 tempfile.mkdtemp 里造临时树并在 finally 删除，
+      # 若临时目录落在真仓内会直接中止，绝不在真仓造脏）。
+      - name: 关卡5 import 方向闸门（D3 适配器不改内核 / D8 宿主无关）
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::5a import 方向（冻结区→扩展区 / 跨包私有名）"
+          python3 tools/check_import_direction.py
+          echo "::endgroup::"
+          echo "PASS 关卡5 import 方向"
+

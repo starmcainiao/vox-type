@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" role="img" aria-label="vox-type 架构图">
+  <rect x="0" y="0" width="1000" height="500" fill="#FFFFFF"/>
+  <g font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <text x="40" y="30" font-size="19" font-weight="700" fill="#111827">vox-type · 预铸语音资产层 + 双工行为控制器</text>
+    <text x="40" y="50" font-size="12" fill="#6B7280">把流程决定的话术预铸成可审核资产；命中即拼接播出；未命中默认 fail-closed 中止（rc=5），显式 --allow-fallback 才降级走慢路并留痕</text>
+
+    <defs>
+      <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#4B5563"/>
+      </marker>
+      <marker id="arx" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#B35A2B"/>
+      </marker>
+    </defs>
+
+    <!-- packs -->
+    <rect x="40" y="86" width="210" height="112" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="58" y="110" font-size="14" font-weight="700" fill="#111827">packs/&lt;业务&gt;/</text>
+    <text x="58" y="128" font-size="12" fill="#4B5563">（源，扩展区）</text>
+    <text x="58" y="150" font-size="12" fill="#111827">phrases.json · script.json</text>
+    <text x="58" y="167" font-size="12" fill="#111827">话术与剧本，纯文本</text>
+    <text x="58" y="185" font-size="11" fill="#6B7280">业务侧只碰这里，内核一行不改</text>
+
+    <!-- bin/vox -->
+    <rect x="280" y="86" width="210" height="112" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="298" y="110" font-size="14" font-weight="700" fill="#111827">bin/vox</text>
+    <text x="298" y="128" font-size="12" fill="#4B5563">（校验 / 预铸）</text>
+    <text x="298" y="150" font-size="12" fill="#111827">check · build · bench</text>
+    <text x="298" y="167" font-size="12" fill="#111827">verify · run</text>
+    <text x="298" y="185" font-size="11" fill="#6B7280">五类规则 + 四属性校验</text>
+
+    <!-- trigger -->
+    <rect x="40" y="230" width="240" height="136" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="58" y="254" font-size="14" font-weight="700" fill="#111827">trigger</text>
+    <text x="58" y="274" font-size="12" fill="#4B5563">（决策表，扩展区）</text>
+    <text x="58" y="300" font-size="12" fill="#111827">state → 选 key → plan</text>
+    <text x="58" y="320" font-size="12" fill="#111827">规则按序匹配，显式兜底</text>
+    <text x="58" y="340" font-size="12" fill="#111827">轮级留痕</text>
+    <text x="58" y="358" font-size="10" fill="#6B7280">2026-09-19 自 adapters 迁入</text>
+
+    <!-- assets -->
+    <rect x="406" y="230" width="240" height="128" rx="10" fill="#FBEEE7" stroke="#B35A2B" stroke-width="2"/>
+    <text x="424" y="254" font-size="14" font-weight="700" fill="#111827">assets 包</text>
+    <text x="424" y="274" font-size="12" fill="#4B5563">key → 音频 + 指纹 + TTL</text>
+    <text x="424" y="300" font-size="12" fill="#111827">+ 变体池 + 语速档</text>
+    <text x="424" y="320" font-size="12" fill="#111827">16k 单声道 16-bit</text>
+    <text x="424" y="344" font-size="11" fill="#6B7280">文本指纹防「文音不符」，过期拒播</text>
+
+    <!-- runtime -->
+    <rect x="406" y="380" width="240" height="98" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="424" y="396" font-size="14" font-weight="700" fill="#111827">runtime</text>
+    <text x="424" y="412" font-size="12" fill="#4B5563">（线性执行器）</text>
+    <text x="424" y="426" font-size="12" fill="#111827">命中即拼接读出，未命中：中止</text>
+    <text x="424" y="441" font-size="10" fill="#6B7280">首音口径见 README「先听声音」</text>
+    <text x="424" y="456" font-size="12" fill="#111827">不写文件、不播其余</text>
+    <text x="424" y="470" font-size="11" fill="#6B7280">双工：耐心窗 / 打断 / 语速收敛</text>
+
+    <!-- 慢路引擎 -->
+    <rect x="794" y="230" width="166" height="98" rx="10" fill="#FBEEE7" stroke="#B35A2B" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="812" y="254" font-size="13" font-weight="700" fill="#111827">慢路引擎</text>
+    <text x="812" y="274" font-size="11" fill="#4B5563">tts_omlx · tts_macsay</text>
+    <text x="812" y="298" font-size="12" fill="#111827">需显式 --allow-fallback</text>
+    <text x="812" y="318" font-size="12" fill="#111827">模型合成，逐次留痕</text>
+
+    <!-- 宿主接入 -->
+    <rect x="794" y="352" width="166" height="88" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.6"/>
+    <text x="812" y="378" font-size="13" font-weight="700" fill="#111827">宿主接入</text>
+    <text x="812" y="400" font-size="11" fill="#4B5563">adapters/framework_kefu</text>
+    <text x="812" y="416" font-size="10" fill="#6B7280">已验证真链路，非兜底分支</text>
+    <text x="812" y="431" font-size="9" fill="#6B7280">证据：README「真链路命中」段</text>
+
+    <!-- 接入形态 -->
+    <text x="40" y="382" font-size="11" font-weight="700" fill="#4B5563">接入形态</text>
+    <rect x="40" y="396" width="118" height="72" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.4"/>
+    <text x="54" y="418" font-size="13" font-weight="700" fill="#111827">CLI</text>
+    <text x="86" y="418" font-size="11" fill="#4B5563">bin/vox</text>
+    <text x="54" y="436" font-size="10" fill="#6B7280">五命令 + 退出码</text>
+    <text x="54" y="450" font-size="10" fill="#6B7280">docs/08 · docs/22</text>
+
+    <rect x="166" y="396" width="118" height="72" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.4"/>
+    <text x="180" y="418" font-size="13" font-weight="700" fill="#111827">Python 库</text>
+    <text x="180" y="436" font-size="10" fill="#6B7280">import runtime</text>
+    <text x="180" y="450" font-size="8.5" fill="#6B7280">docs/25 §3</text>
+    <text x="180" y="463" font-size="8.5" fill="#6B7280">examples/embed_demo</text>
+
+    <rect x="288" y="396" width="114" height="72" rx="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.4"/>
+    <text x="302" y="418" font-size="13" font-weight="700" fill="#111827">MCP stdio</text>
+    <text x="302" y="436" font-size="10" fill="#6B7280">adapters/mcp_vox</text>
+    <text x="302" y="450" font-size="9" fill="#6B7280">mcp_vox/README.md</text>
+
+    <!-- 三件核心抽象 -->
+    <text x="40" y="490" font-size="11" fill="#4B5563"><tspan font-weight="700" fill="#111827">三件核心抽象</tspan>：plan（控制面，JSON） · asset registry（数据面，key→音频+版本+TTL+变体池+语速档） · duplex controller（行为面，配置+策略）</text>
+
+    <!-- 箭头 -->
+    <line x1="250" y1="142" x2="276" y2="142" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="256" y="135" font-size="10" fill="#6B7280">包源</text>
+
+    <line x1="386" y1="198" x2="530" y2="226" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="440" y="212" font-size="10" fill="#6B7280">预铸</text>
+
+    <line x1="280" y1="290" x2="402" y2="290" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="298" y="283" font-size="10" fill="#6B7280">注册 key</text>
+
+    <line x1="530" y1="358" x2="530" y2="376" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="538" y="374" font-size="10" fill="#6B7280">读包</text>
+
+    <line x1="280" y1="346" x2="406" y2="392" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="300" y="374" font-size="10" fill="#6B7280">plan</text>
+
+    <line x1="646" y1="306" x2="790" y2="306" stroke="#B35A2B" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arx)"/>
+    <text x="660" y="299" font-size="10" fill="#B35A2B">未命中 且 显式允许降级</text>
+
+    <line x1="646" y1="436" x2="790" y2="398" stroke="#4B5563" stroke-width="1.6" marker-end="url(#ar)"/>
+    <text x="660" y="444" font-size="10" fill="#6B7280">宿主进程内直连</text>
+  </g>
+</svg>
