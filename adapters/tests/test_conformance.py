@@ -6,7 +6,9 @@ adapters.tests.test_conformance — TTS 适配器接口一致性测试（跨适�
   - rate_map 包含 slow/normal/fast 三档
   - rate_value 返回有限正数，且 slow < normal < fast（量纲无关，见 AC4 注释）
   - synthesize 空文本抛 TtsError
-  - 有 say 时真实合成 WAV 格式校验
+  - 有 say 时真实合成 WAV 格式校验（T77：逐适配器再问一次「现在能不能真合成」，
+    适配器实现可选类方法 `probe_availability()` 且报不可用 → 该用例 skip；
+    不实现 = 永远可用，仍真跑）
 
 扩展方式（T62，2026-09-28 起）：**新增 tts-* 适配器不需要改这个文件**。
 `ADAPTER_CLASSES` 由 `test_conformance_discovery.discover_adapters()` 扫
@@ -247,6 +249,33 @@ class TestSynthesizeEmptyText(unittest.TestCase):
 # ============================================================
 # 4. 真实合成 WAV 格式校验（需 say 可用，否则 skip）
 # ============================================================
+# 4.0 逐适配器可用性（T77）：守卫粒度必须对齐循环粒度
+#
+# 上面的类级门 `skipUnless(shutil.which("say"))` 判的是「本机有没有 say」，
+# 但下面的循环是 `for tts in self.adapters:` **逐适配器**跑——
+# 「有 say」不等于「所有适配器都能合成」：tts_omlx 的可用性取决于
+# 远端服务在不在跑，与 say 无关（模拟 runner 条件：有 say、无 oMLX 服务 → errors=2）。
+# 于是这里在循环内、每个适配器合成**之前**问它一句。
+#
+# 纪律（本卡最易做错的地方）：判定只许放在 `synthesize` 调用**之前**。
+# 调用之后冒出来的任何异常都必须照常上抛——把真实合成失败也吞成 skip
+# 等于空套件假绿灯，与 discover_adapters() 的「空套件必须报错」直接相反。
+def skip_unless_available(self, tts) -> None:
+    """逐适配器判定可用性：不可用则 `skipTest`，消息点名适配器与缺失原因。
+
+    适配器可不实现可选类方法 `probe_availability()`（返回 `(可用, 原因)`）——
+    **不实现 = 永远可用**，所以 tts_macsay 等无远端依赖的适配器行为完全不变、仍然真跑。
+    hook 按**类**查（`type(tts)`）：实例上塞个同名属性不算实现。
+    本函数不捕获任何异常，也不包 `try/except`；见 `test_conformance_probe`。
+    """
+    probe = getattr(type(tts), "probe_availability", None)
+    if probe is None:
+        return
+    ok, reason = probe()
+    if not ok:
+        self.skipTest(f"{tts.name}: {reason}")
+
+
 @unittest.skipUnless(shutil.which("say"), "macOS say 命令不可用，跳过真实合成用例")
 class TestSynthesizeWavFormat(unittest.TestCase):
     """有 say 时：产出 WAV 必须为 16kHz/单声道/16-bit。"""
@@ -261,6 +290,7 @@ class TestSynthesizeWavFormat(unittest.TestCase):
     def test_wav_is_mono_16bit_16000hz(self):
         """每个适配器合成的 WAV 必须满足 channels=1, sampwidth=2, framerate=16000。"""
         for tts in self.adapters:
+            skip_unless_available(self, tts)  # 判在合成之前；合成失败仍照常冒泡，不许吞成 skip
             out = Path(self.tmp_dir) / f"{tts.name}_test.wav"
             tts.synthesize("接口一致性测试", out)
             with wave.open(str(out), "rb") as wf:
@@ -284,6 +314,7 @@ class TestSynthesizeWavFormat(unittest.TestCase):
     def test_synthesize_with_each_rate(self):
         """每个适配器分别以 slow/normal/fast 合成，格式均合法。"""
         for tts in self.adapters:
+            skip_unless_available(self, tts)  # 判在合成之前；合成失败仍照常冒泡，不许吞成 skip
             for rate in ("slow", "normal", "fast"):
                 out = Path(self.tmp_dir) / f"{tts.name}_{rate}.wav"
                 tts.synthesize("速率测试", out, rate_key=rate)

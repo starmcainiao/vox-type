@@ -7,7 +7,7 @@
 
 ## [0.2.0] - 2026-09-28
 
-本版本是 `[0.1.0]` 首发之后的全部累积（`git log --oneline | wc -l` = **173** 个提交，首个提交
+本版本是 `[0.1.0]` 首发之后的全部累积（`git log --oneline | wc -l` = **179** 个提交，首个提交
 `0eefd1c docs: 立项前设计文档`，无历史重写）。本节按 **Added / Changed / Fixed** 三段写给外部读者，
 末尾的「内部批次」小节保留 T 卡号索引（给维护者与验收方检索，外部用户可跳过）。
 数字一律附出处；**口径不同的数字不并列、不相减**。
@@ -69,6 +69,20 @@
 
 ### Fixed
 
+- **一致性套件把「类整体跳过」错当成「逐适配器跳过」**（T77 · 推送前 CI 代理试跑撞出，
+  同一轮里的第二盏红灯）：`TestSynthesizeWavFormat` 带着类级
+  `@unittest.skipUnless(shutil.which("say"), …)`，里面却是 `for tts in self.adapters:`
+  **逐适配器**循环——「本机有 `say`」并不等于「每个适配器现在都能真合成」。
+  `tts_omlx` 的可用性取决于远端服务在不在跑，与 `say` 无关：
+  在**有 `say`、无 oMLX** 的机器上（即 CI runner 的常态）报 **`errors=2`**。
+  现改为：适配器可选实现类方法 `probe_availability() -> (bool, str)`，
+  自报不可用则该适配器 skip，**skip 消息同时点名适配器与原因**；不实现 = 永远可用，照常真跑。
+  判定只许发生在 `synthesize` 调用**之前**——`synthesize` 周围没有任何 `try/except`，
+  真实合成失败照常上抛。负控实测：把 `macsay` 换成产 8 kHz 坏 WAV 后
+  `failures=2 errors=0 skipped=0`（`AssertionError: 8000 != 16000 : macsay: 采样率应为 16000 Hz`），
+  **真失败没有被 skip 吃掉**。新增 8 条用例，且它们 import 的是套件里那处真实判定。
+  同批修掉 `docs/23`（新增 TTS 引擎指南）两处已失效的指引：T62 起注册表是自动发现的，
+  原文仍教人改一个**已不存在的字面量**；断言表 8 行行号与两处实测条数（12/302 → 16/369）均已重标。
 - **绝对路径门禁在「根卷 checkout」上退化成裸 `/`**（T76 · 推送前 CI 代理试跑撞出）：
   `build_prefixes` 里 `home` 与 `tmp` **都有** `!= "/"` 守卫，唯独 `mount` 三样没有；
   而 `_mount_ancestor` 在根卷 checkout 上返回的正是 `Path("/")`，
@@ -128,6 +142,17 @@
 - **T63** · import 方向闸门 + 机器路径前缀补全（新增只读工具 + CI）
 - **T64** · 开源运营件补齐（PR 模板 / issue 模板配置 / README 首屏 / 本 CHANGELOG /
   `LICENSE` 权利人 / `CITATION.cff`——**零代码、零冻结区**）
+- **T66–T68** · 三张**待开批**卡（引擎身份取自实际适配器 / 适配器契约提成可 import 的声明 /
+  Linux·Windows 贡献者可验证）——均属冻结区，**尚未执行**
+- **T69** · oMLX 端点可靠性基线（先取证，不先修）
+- **T70** · yaml 缺失时的 skip 契约没覆盖第二个前置条件
+- **T71** · MCP 启动器 + 三形态速查（扩展区）
+- **T72** · 架构图追平 + 三处口径修正（非冻结区）
+- **T73** · 修订卡：清掉 T71/T72 独立验收指出的 8 项必改
+- **T74** · 可读性整改：让新人 30 秒看懂、5 分钟跑通
+- **T75** · 通用 Agent 技能包 `SKILL.md`（国产宿主优先，不造私有格式）
+- **T76** · 绝对路径门禁在「根卷仓」上的前缀退化（`volume-mount` 派生出裸 `/`）
+- **T77** · 一致性套件按「适配器自身可用性」跳过，而非按类整体跳过
 
 ### 口径提醒（对外引用前必读）
 
@@ -140,7 +165,7 @@
   （数十毫秒量级）没有 harness、没有 `report.json`——想引用就得自己量并标机器与命令。
 - **测试数没有永久值**：一切以 `python3 tools/run_all_tests.py` 的末行实跑输出为准；
   引用文档里的抄件等于引用一个会过期的数字。**2026-09-28 本机实跑：
-  `ran=1637 skipped=0 executed=1637 failed=1 failures=1 errors=0 roots=11`**（那 1 条是 `packs` 同源指纹断言发现仓外 kefu yaml 变更、门禁按设计报警）——
+  `ran=1645 skipped=0 executed=1645 failed=1 failures=1 errors=0 roots=11`**（那 1 条是 `packs` 同源指纹断言发现仓外 kefu yaml 变更、门禁按设计报警）——
   T50 定的 26 条 skip 基线已被 T51/T53 作废，`ran=1601`（T55 新增夹具槽位完整性守卫**之前**）
   与 `ran=1602`（T61–T63 之前）同样已作废。**`skipped=0` 是本机状态、不是契约**。
 - **`cli` 根是平台相关的**：它走 macOS 自带的 `say`（缺省适配器 `adapters.tts_macsay:MacSayTts`）。

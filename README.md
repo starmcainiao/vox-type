@@ -123,7 +123,7 @@ sh bin/vox verify /tmp/vox-demo/heat-kefu
 #    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。上面 Status 一节的
 #    测试数就是这条命令的输出抄件；要数字请重跑它，不要抄文档。
 python3 tools/run_all_tests.py
-# → ran=1637 skipped=0 executed=1637 failed=1 failures=1 errors=0 roots=11
+# → ran=1645 skipped=0 executed=1645 failed=1 failures=1 errors=0 roots=11
 #   （本机实跑抄件，2026-09-28。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
 #   ⚠️ 那条 failed=1 是 `packs` 根的**同源指纹断言**在按设计报警：它盯着仓外可选的
 #     kefu-agent 集成源 yaml（见下方 Status 一节）。那个 yaml 一改，这条断言就红 ——
@@ -195,7 +195,7 @@ python3 tools/run_all_tests.py
 
 ## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
 
-- **测试：11 个测试根，当前 `ran=1637 failed=1`**（2026-09-28 本机实测；`skipped` 随环境变，不是契约）。
+- **测试：11 个测试根，当前 `ran=1645 failed=1`**（2026-09-28 本机实测；`skipped` 随环境变，不是契约）。
   那 1 条是下述同源指纹断言在按设计报警，**其余全绿**；公开仓不含被监视的 yaml，克隆者看到的是 `failed=0`。
   唯一出处 = 命令，重跑它拿你自己的数：`python3 tools/run_all_tests.py`
   yaml 可达 × PyYAML 四组合口径表与各根 skip 条件见 [`tools/README.md`](tools/README.md)；该表未覆盖、故在此保留：

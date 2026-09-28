@@ -164,16 +164,19 @@ python3 tools/structure_budget/check.py --no-write
 
 ## 4. 怎么验：接口一致性测试
 
-测试文件头就写了扩展方式：「在 `ADAPTER_CLASSES` 列表中追加新适配器类即可，无需重写断言」
-（`adapters/tests/test_conformance.py:11`）。注册表目前只有
-`ADAPTER_CLASSES = [MacSayTts]`（`adapters/tests/test_conformance.py:26-28`）。
+**第一步，把自己放进 `adapters/tts_*/`**（T62 起不用再手工登记）。
+目录名以 `tts_` 开头、里面有一个 `adapter.py`，就算一个适配器；`ADAPTER_CLASSES` 由
+`test_conformance_discovery.discover_adapters()` 在**导入时**扫出来
+（`adapters/tests/test_conformance.py:38`）。两条硬要求：
 
-**第一步，把自己加进注册表**（编辑 `adapters/tests/test_conformance.py`）：
+- **类放哪儿都行**：`adapters.tts_yours.adapter` 里，或者由包级 `__init__` 导出
+  （`tts_omlx` 是后者——`adapter.py` 里并没有同名符号）。定位按「成员齐备」这个
+  形态约束找，不按类名；按名字就得为这两种布局各写一条分叉。
+- **少一样都不算适配器**：缺 `adapter.py` 的 `tts_*/` 目录会被跳过，
+  否则一个还没写完的空目录会让整套件炸掉；一个都没扫到则**导入即抛** `RuntimeError`
+  ——空套件比没有套件更坏，它给「全都合规」一个毫无依据的绿灯。
 
-```python
-from adapters.tts_yours.adapter import YourTts   # 顶部补 import
-ADAPTER_CLASSES = [MacSayTts, YourTts]
-```
+`asr_*/` 目前没有对应套件，发现到会往 stderr 打一行显式留痕，不假装覆盖了。
 
 **第二步，跑它**（本仓不装第三方依赖，用 `unittest`）：
 
@@ -181,7 +184,7 @@ ADAPTER_CLASSES = [MacSayTts, YourTts]
 python3 -m unittest discover -s adapters/tests -p "test_conformance.py"
 ```
 
-本仓实测：`Ran 12 tests ... OK`，退出码 0。
+本仓实测：`Ran 16 tests ... OK`，退出码 0。
 
 **第三步，把这一层全跑一遍**：
 
@@ -189,28 +192,47 @@ python3 -m unittest discover -s adapters/tests -p "test_conformance.py"
 python3 -m unittest discover -s adapters
 ```
 
-本仓实测：`Ran 302 tests ... OK`，退出码 0。
+本仓实测：`Ran 369 tests ... OK`，退出码 0。
 
-**这 12 条断言会卡你什么**（`test_conformance.py`）：
+上面两个条数是 2026-09-28 的实跑抄件，**样例而非契约**：条数随各层增删变化，
+真值一律由这两条命令当场产出——要数字请重跑，不要抄这里。
+
+**这些断言会卡你什么**（`test_conformance.py`；行号对着 2026-09-28 的版本）：
 
 | 组 | 断言 | 行号 |
 |---|---|---|
-| 属性完整性 | `name` / `model_version` / `requires_core` 非空 | 40-62 |
-| 属性完整性 | `rate_map` 含 `slow` / `normal` / `fast` | 64-80 |
-| `rate_value` | 已知三档返回 `int` | 92-98 |
-| `rate_value` | 未知档抛 `TtsError` | 100-105 |
-| `rate_value` | 错误消息**包含那个 key 名** | 107-113 |
-| `synthesize` | 空文本抛 `TtsError`，消息提及「空」 | 125-131 |
-| 真实合成 | `channels=1`、`sampwidth=2`、`framerate=16000`、帧数 > 0 | 149-170 |
-| 真实合成 | 三档各自合成，格式均合法 | 172-181 |
+| 属性完整性 | `name` / `model_version` / `requires_core` / `voice` 非空 | 50-82 |
+| 属性完整性 | `rate_map` 含 `slow` / `normal` / `fast` | 83-103 |
+| `rate_value` | 已知三档返回有限正数 | 111-146 |
+| `rate_value` | 未知档抛 `TtsError` | 195-206 |
+| `rate_value` | 错误消息**包含那个 key 名** | 207-214 |
+| `rate_value` | 异常类型是 `RuntimeError` 子类 | 215-233 |
+| `synthesize` | 空文本抛 `TtsError`，消息提及「空」 | 240-253 |
+| 真实合成 | `channels=1`、`sampwidth=2`、`framerate=16000`、帧数 > 0 | 290-313 |
+| 真实合成 | 三档各自合成，格式均合法 | 314-333 |
 
-两条容易忽略的：
+三条容易忽略的：
 
-- 「错误消息包含 key 名」是独立断言（`test_conformance.py:107-113`）——只抛 `TtsError` 不算过，
+- 「错误消息包含 key 名」是独立断言（`test_conformance.py:207-214`）——只抛 `TtsError` 不算过，
   消息里得真的出现 `"nonexistent_rate_xyz"`。
-- 真实合成那组带 `@unittest.skipUnless(shutil.which("say"), ...)`（`test_conformance.py:137`），
-  **没有 `say` 的命令会静默跳过**，绿≠真过。如果你的引擎靠外部命令，自己补一个等价探针。
-  （非 macOS 的机器可以照 `README.md:107-118` 改走 `adapters.tts_omlx:OmlxTts`。）
+- 真实合成那组带类级 `@unittest.skipUnless(shutil.which("say"), ...)`（`test_conformance.py:279`），
+  **没有 `say` 的机器会整类静默跳过**，绿≠真过。（非 macOS 的机器可以照 `README.md:107-118`
+  改走 `adapters.tts_omlx:OmlxTts`。）
+- **类级那道门只判「本机有没有 `say`」，不判「每个适配器现在能不能真合成」**（T77）。
+  循环是逐适配器跑的，于是「有 `say`、但 oMLX 服务没起」的机器上，
+  `tts_omlx` 会一路错到 `errors=` 而不是 skip。
+  你的引擎如果也依赖外部服务，实现一个**可选**的类方法把这件事说清楚：
+
+  ```python
+  @classmethod
+  def probe_availability(cls) -> tuple[bool, str]:
+      """返回 (能不能用, 不能用的原因)。不实现 = 永远可用，套件照常真跑。"""
+  ```
+
+  报 `(False, "端点不可用：…")` 则该适配器在真实合成那两条用例里 skip（skip 消息点名是谁、
+  为什么）；报 `(True, "")` 就真跑。判定只许发生在 `synthesize` **调用之前**——
+  真实合成失败必须照常上抛，吞成 skip 就是空套件假绿灯。
+  现有实现见 `adapters/tts_omlx/adapter.py` 的 `probe_availability`。
 
 ---
 
@@ -356,10 +378,10 @@ class YourTts:
 ## 7. 提交前清单
 
 ```sh
-# ① 契约齐全：一致性测试（本仓实测 Ran 12 tests OK，rc=0）
+# ① 契约齐全：一致性测试（本仓实测 Ran 16 tests OK，rc=0）
 python3 -m unittest discover -s adapters/tests -p "test_conformance.py"
 
-# ② 本层全绿（本仓实测 Ran 302 tests OK，rc=0）
+# ② 本层全绿（本仓实测 Ran 369 tests OK，rc=0）
 python3 -m unittest discover -s adapters
 
 # ③ 结构预算：只判定不落盘（本仓实测 rc=0，「结构预算：全部合规」）

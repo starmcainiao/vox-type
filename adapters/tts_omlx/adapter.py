@@ -16,17 +16,20 @@ import hashlib
 import math
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import wave
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from . import postprocess
 from .transport import (MAX_RETRIES, NORMALIZE_FAIL_MARKER, OmlxTtsTransport,
                         RETRY_DELAYS, TtsError)
 
 BASE_URL = "http://127.0.0.1:10099"
+PROBE_TIMEOUT = 2  # 探活超时（秒）：取值与 tests/test_adapter.py 的 _service_up() 同值
 SPEECH_ENDPOINT = "/v1/audio/speech"
 DEFAULT_MODEL = "Qwen3-TTS-12Hz-0.6B-Base-bf16"
 CLONE_MODEL_VERSION = "qwen3-tts-0.6b-base-clone"
@@ -98,6 +101,32 @@ class OmlxTts:
     def endpoint(self) -> str:
         # 完整合成端点 URL（base_url 已剥尾随斜杠，不会出现双斜杠）。
         return self.base_url + SPEECH_ENDPOINT
+
+    @classmethod
+    def probe_availability(cls) -> tuple[bool, str]:
+        # 可选自报钩子（T77）：一致性套件按适配器**逐个**问「现在能不能真合成」用。
+        # 子类可不实现——不实现 = 永远可用，所以无远端依赖的适配器（如 tts_macsay）行为完全不变。
+        # 判据与 tests/test_adapter.py 的 _service_up() 同源：socket.create_connection + 短超时，
+        # OSError 即判不可用——沿用仓内既有先例，不另发明一套探活。
+        # 基址按与 __init__ 完全相同的回落链取（env VOX_TTS_ENDPOINT → 常量 BASE_URL）；
+        # 刻意不用 `or`：设了但为空的 env 要响亮失败，而不是悄悄打回默认端点（见 __init__ 的 WHY）。
+        # 本方法是类方法、拿不到实例的 base_url，所以探的是「无参构造会打的那个端点」——
+        # 一致性套件本来就是无参 `cls()` 后测的，探与打是同一个地址。
+        base = (os.environ.get("VOX_TTS_ENDPOINT", BASE_URL)).strip().rstrip("/")
+        parts = urlsplit(base)
+        try:
+            host, port = parts.hostname, parts.port
+        except ValueError:
+            host, port = None, None
+        if not host or not port:
+            # 解析不出主机与端口（env 设了空串之类的非法值）：同样记为不可用并把那个值点出来，
+            # 不猜端点。无参构造下这条走不到——__init__ 会先抛 ValueError，套件以 error 响亮失败。
+            return (False, f"端点不可用：{base}")
+        try:
+            with socket.create_connection((host, port), timeout=PROBE_TIMEOUT):
+                return (True, "")
+        except OSError:
+            return (False, f"端点不可用：{base}")
 
     def _payload(self, text: str, rate: float) -> dict:
         # 克隆请求体带 base64 ref_audio + ref_text 且不带 voice；默认音色只带 voice，
