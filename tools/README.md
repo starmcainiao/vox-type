@@ -27,9 +27,122 @@
 | `corpus_fetch/baseline_literal.py` | 逐字档基线（`docs/11 §11.5` 的实验①） | 复用产品归一化，不另写一份 |
 | `feedback_mining/miner.py` | 回流闭环挖掘（T23 / 立项 M3）：轮级留痕 + 事件流 → `suggestions.json` + `rejected.json` + `report.json` | 归一化与单句判据一律 **import** 产品代码，不复制；A1/A2 恒写 `pending_human` |
 | `feedback_mining/make_demo_inputs.py` | 造挖掘器的演示输入（T17 留痕 + T07 事件流，全部自造话术） | 不读时钟、不随机 |
+| `run_all_tests.py` | **「跑全量测试」的单一真源**（T48）：逐根跑十一个测试根、累计 ran/skipped/failures/errors、打印**分项**汇总行、任一根红即非零退出并点名失败根 | 零第三方依赖（纯标准库）；每根一个独立子进程（十一个 `tests` 包名全撞，同进程必串味） |
+| `check_no_machine_paths.py` | **发布树绝对路径门禁**（T58）：扫「入库 + 未跟踪」全量文件，按本机家目录/外接卷挂载点/启动卷临时目录三类**推导出的**前缀判红，输出机器可读 JSON | 只读（不写任何文件）；判据自带豁免机制（`# scan-exempt: <理由>`）而不靠「悄悄不查」；前缀不写死 |
+| `pack_phrase_audit.py` | **发布树话术比对门禁**（T58）：`admission.md` × 仓外 yaml 逐 key 机械比对，**分级**四类命中（凭据/内网地址 = 硬失败；逐字重合/结构化标签 = 只报告） | 只输出 key 名与类别，**绝不输出原文**；逐字类退出 0 并带 `policy="pending-business-decision"`（业务判断未裁定，见 `docs/20 §四`）；零第三方依赖（不 import PyYAML） |
 
 测试：`tools/tests/test_corpus_fetch.py`、`tools/tests/test_derive_golden.py`、
-`tools/tests/test_feedback_mining.py`（38 条，覆盖 T23 的验收 1–7 与负例实测）。
+`tools/tests/test_feedback_mining.py`（38 条，覆盖 T23 的验收 1–7 与负例实测）、
+`tools/tests/test_run_all_tests.py`（T48：汇总口径分项、失败根点名、仓根入 `sys.path`、
+`discover` 静默 0 条的堵漏、端到端判红/判绿）。
+
+### run_all_tests（T48 · 「跑全量」的单一真源）
+
+```bash
+cd （仓库根）
+python3 tools/run_all_tests.py            # 全量（十一个根），任一根红 → exit 1
+python3 tools/run_all_tests.py --root core --root cli   # 只跑指定根
+python3 tools/run_all_tests.py --json     # 额外打逐根明细 + 汇总（机器出处用）
+```
+
+末行汇总**必须分项**，不要只给一个总数：
+
+```
+ran=1602 skipped=0 executed=1602 failed=0 failures=0 errors=0 roots=11
+FAILED roots: (none)
+```
+
+（上面这行是 2026-09-28 在 yaml 可达的本机上的实跑值，**样例而非契约**：条数随各层增删变化，
+真值一律由本命令当场产出——这正是「数字必须有出处」的意思。）
+口径（写死在这一节，改这里等于改对外口径）：
+
+- `ran` = 所有根 `TestResult.testsRun` 之和，**含** skip、**含**失败用例；
+- `skipped` = `@unittest.skip` / `@unittest.skipUnless` 的条数。
+  **`skipped` 是环境相关量，不是契约**——同一个仓在不同的机器/环境下必然不同，
+  任何对外数字都不许拿它当定值引用。真值只有一条出处：**本命令当场产出**。
+  触发条件（2026-09-28 实测，`ran=1602` 口径下）：
+
+  | 环境 | `skipped` | 触发条件 |
+  |---|---|---|
+  | 本机 kefu 仓 yaml **可达** | **0** | `packs` 根的同源断言真跑，不 skip |
+  | kefu 仓 yaml **不可达**（公开 CI 常态） | **25** | 全部来自 `packs` 根的 4 组 `@unittest.skipUnless(YAML_PATH.is_file(), …)`；`KEFU_HEAT_YAML` 未设且 3 条候选路径均不存在 |
+
+  ```bash
+  # 复跑上面第二行（可复现，不靠人记）：把 yaml 显式指到一个不存在的路径
+  KEFU_HEAT_YAML=/nonexistent/供热预设.yaml python3 tools/run_all_tests.py
+  ```
+
+  `packs` 之外各根也有自己的 `@unittest.skipUnless`，**与 yaml 无关**，按环境各自成立：
+
+  | 条件 | 影响的根 |
+  |---|---|
+  | `shutil.which("say")` / macOS `say` 或可用音色不可用 | `adapters`（`test_conformance` / `tts_macsay`）、`runtime`、`compiler` |
+  | `say` 可用**且** tmpdir 与仓库在不同设备 | `adapters`（`test_crossvolume`） |
+  | `shutil.which("ffmpeg")` 不可用 | `adapters`（`tts_omlx` 真实合成冒烟） |
+  | `packs/heat_kefu` 的构建产物不在仓内（公开 CI 常态） | `assets`、`adapters/framework_kefu` 的真包等价性断言 |
+
+  即：`skipped` 的具体条数是**「哪几个环境前提在这台机器上不成立」的函数**。
+  要引用就引用本命令的当场输出，并写清是在什么环境下跑的。
+- `executed` = `ran - skipped`（**含**失败用例；失败数单列，不许从 executed 里抹掉）；
+- `failed` = `failures + errors`，其中 `errors` 含**发现期异常**（根不存在、import 失败、包名冲突）。
+
+**为什么分项**：`ran` 与 `executed` 的差恒等于 `skipped`，只报一个总数时无法自查，
+仓内曾出现对外宣称 1,547、而任何实跑口径都给不出该数的悬案（T48 前）。
+
+三条硬约束：
+
+1. **每根一个独立子进程**：十一个根的 `tests/` **包名全叫 `tests`**，同一解释器内
+   `sys.modules` 会串味（后一根静默拿到前一根的模块）。进程隔离是唯一不改动任何测试文件的隔离方式。
+2. **失败必须显形**：任一根 `failed > 0` → 退出码非 0 + 逐个点名失败根。
+   子进程退出码与回报计数**互相交叉校验**（任一为红都算红），哨兵行缺失记 error。
+   依据 `AGENTS.md`「跑批铁律」：失败会被产物数量掩盖。
+3. **零第三方依赖**：只用标准库。`python3 -m pytest` 装没装都不影响本脚本
+   （仓根 `conftest.py` 只服务 pytest 的收集，全量口径走 unittest）。
+
+### check_no_machine_paths · pack_phrase_audit（T58 · 两条发布树内容门禁）
+
+这两个脚本是**成对的**，解决的是同一个毛病：**判据只以文字/正则的形式活在文档里，
+于是它既不可复跑、也不可自动化**。T56 把 79 行绝对路径清到 2 行，但那 2 行删不得——
+它们是判据自己的正则（**判据自指**：判据的正则会扫到写判据的那一行，
+于是任何扫描恒非零，门禁事实上不存在）。T58 把判据收进代码，文档里只留调用。
+
+```bash
+cd （仓库根）
+python3 tools/check_no_machine_paths.py ; echo "rc=$?"     # 0=零违规 1=有违规 2=用法/环境错
+python3 tools/pack_phrase_audit.py      ; echo "rc=$?"     # 0=无硬失败 1=有硬失败 2=用法错
+```
+
+四条共同纪律（**违反任何一条都不叫门禁，叫装饰**）：
+
+1. **只读**。两个脚本都不写任何文件；`--json` 只输出到 stdout。门禁改被查物，
+   等于自证——本仓已经在 `structure_budget` 上踩过这个坑（故它必须带 `--no-write`）。
+2. **前缀/正则只住在脚本里**。文档（尤其被扫描的文档）里只准出现调用。
+   写在文档里的判据会扫到自己。
+3. **豁免必须显式**。`check_no_machine_paths.py` 只认两种豁免：脚本自己，
+   以及行内标了 `# scan-exempt: <理由>` 的行。没有「悄悄不查」的后门。
+4. **假绿比红更坏**。取不到文件清单 → 退出 2 而不是 0；yaml 取不到 →
+   `degraded=true` + stderr 响亮提示（要「取不到即失败」加 `--require-yaml`）。
+
+`pack_phrase_audit.py` 的**分级**是刻意设计，不是妥协：凭据与内网地址进公开仓
+没有「可公开」一说（硬失败，退出 1）；「某段话术能否对外发布」是**商业判断**，
+处置路径截至 2026-09-28 全部未决（`docs/20 §四`），把它焊成 CI 硬门禁等于
+用机器固化一个还没人做的决定。这两类只出报告、退出 0，并带
+`policy="pending-business-decision"`——业务方拍板后**只改这一个字段**，
+判据与 CI 都不必动。CI 关卡 4 因此只接前两类。
+
+`pack_phrase_audit.py` 的两条阈值判据（写在代码里，可复跑，不靠人眼）：
+
+| 类别 | 判据 | 阈值 |
+|---|---|---|
+| `verbatim-overlap` | §2/§3 表**逐行**取「yaml 文本（节选）」列，在**该行自己的 key** 的 yaml 值里找最长逐字连续重合 | ≥ 8 字 |
+| `structured-label` | yaml 里**值类型非 `str`** 的 key（dict/list，键名表与覆盖表）及其下标量出现在文档里 | ≥ 4 字 |
+
+**为什么逐字那一类必须「逐行 + 同 key」约束**：拿某 key 的话术去和整份
+`admission.md` 求最长公共子串，会把两句话共有的客套话（8 个汉字的重合在中文里
+是常事）算成逐字泄漏。本机实测：不加同 key 约束时命中 34 个 key，其中 12 个的
+重合占比 ≤ 0.33，明显是碰巧；加上约束后命中数与 `docs/13 §五#29` 登记的
+**24 条**逐条对上（其中 22 条整段逐字、2 条节选前缀），与 T57 在公开树上的
+22 条也可对齐。**同一判据从两边跑出同一个数**——这正是 #29 验收标准第 ① 条要的。
 
 ### feedback_mining（T23 · 立项 M3「回流闭环」）
 

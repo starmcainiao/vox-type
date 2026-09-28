@@ -16,6 +16,7 @@ yaml 不在本仓（公开 CI 没有 kefu 仓）时：依赖 yaml 的测试一�
 import hashlib
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -27,15 +28,82 @@ if str(REPO_ROOT) not in sys.path:
 
 PACK_DIR = REPO_ROOT / "packs" / "heat_kefu"
 
-# yaml 原文绝对路径（数据分级：公开级，docs/15 §四 已拍板）
-YAML_PATH = Path(  # kefu 预设原文；仅本机有 kefu 仓时做同源断言，否则按设计 skip
-    os.environ.get(
-        "KEFU_HEAT_YAML",
-        str(Path(__file__).resolve().parents[3].parent / "kefu-agent" / "organs" / "客服" / "brain" / "prompts" / "供热预设.yaml"),
-    )
-)
+# ---------------------------------------------------------------------------
+# yaml 原文路径：多候选探测（数据分级：公开级，docs/15 §四 已拍板）
+# ---------------------------------------------------------------------------
+# 为什么不写死一条路径：kefu 仓是**仓外**私有仓，位置随开发机而异。历史上这里只拼了
+#   `<repo>/../kefu-agent/...` 一条，本机真实仓在别处 → 24 条同源断言**恒 skip**，
+#   即项目唯一的生产性证据（真链路 sha256 字节级命中）在默认环境下从不执行
+#   （docs/13 §五#20 登记为低 severity，实际比登记的更硬）。
+#
+# 约束（两条红线）：
+#   ① **不许写死机器绝对路径**（docs/13 §八#20 的发布树红线）——所有候选都是
+#      相对本仓推导或走环境变量。
+#   ② **不许用假路径骗过 skip**——skip 的唯一判据自始至终是 `YAML_PATH.is_file()`，
+#      探测只影响 YAML_PATH 取哪一条，不影响「找不到就 skip」这个行为。
+#
+# 候选（按序，取第一个真实存在的）：
+#   ① $KEFU_HEAT_YAML             —— 显式指定，优先级最高
+#   ② <repo>/../kefu-agent/...    —— 历史缺省，保留兼容
+#   ③ <repo>/../../kefu-agent/... —— docs/13 §五#20 的第二候选（kefu 仓与本仓同级）
+#   ④ $HOME/kefu-agent/...        —— 常见位置
+#
+# **显式指定即权威（关键语义）**：设了 $KEFU_HEAT_YAML 就只认它，**不回退**去试 ②③④。
+#   回退会把「用户指定的文件不存在」悄悄换成「另一个文件」——那是静默降级
+#   （项目纪律 4），比不跑更坏。所以显式指定失效时走 **skip**（诚实 skip）：
+#   是修环境变量还是撤掉它，由人决定，不由代码猜。
+# 全部候选都不存在 → 同样诚实 skip（公开 CI 没有 kefu 仓，skip 是正确行为，不是失败）。
+_YAML_REL_PARTS = ("organs", "客服", "brain", "prompts", "供热预设.yaml")
+
+
+def _yaml_candidates(env=None):
+    """按优先级列出 yaml 候选路径。只拼路径、不读内容（数据分级：仅做存在性探测）。
+
+    env 缺省取 os.environ（便于把「设了/没设显式指定」两种情形都走同一份逻辑）。
+    """
+    env = os.environ if env is None else env
+    cands = []
+    explicit = env.get("KEFU_HEAT_YAML")
+    if explicit:
+        cands.append(Path(explicit))  # ① 显式指定：唯一被采信的那条（见上方「显式指定即权威」）
+    rel = Path(*_YAML_REL_PARTS)
+    cands.append(REPO_ROOT.parent / "kefu-agent" / rel)  # ②
+    cands.append(REPO_ROOT.parent.parent / "kefu-agent" / rel)  # ③
+    home = env.get("HOME")
+    if home:
+        cands.append(Path(home) / "kefu-agent" / rel)  # ④
+    return cands
+
+
+def _resolve_yaml_path(env=None):
+    """取生效的 yaml 路径。
+
+    **显式指定即权威**：设了 $KEFU_HEAT_YAML 就只返回它，绝不因它不存在而回退去试
+    ②③④——那会让「用户指定的文件失效」被悄悄换成「另一个文件」（静默降级，纪律 4）。
+    未设时才按候选顺序取第一个真实存在的；都不存在则返回最高优先级那条。
+
+    返回的那条若不存在，`YAML_PATH.is_file()` 为假 → 依赖 yaml 的测试照设计 skip
+    （不 fail、不换文件、不降级）。
+    """
+    cands = _yaml_candidates(env)
+    if (os.environ if env is None else env).get("KEFU_HEAT_YAML"):
+        return cands[0]  # 显式指定：唯一被采信的那条，存在与否都如实反映
+    for c in cands:
+        if c.is_file():
+            return c
+    return cands[0]
+
+
+YAML_PATH = _resolve_yaml_path()  # kefu 预设原文；仅探测到时才做同源断言，否则按设计 skip
 # yaml 指纹：变更即钩子自动不命中（fail-closed），admission.md 文首有同一份记录
-YAML_SHA256 = "a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44"
+# 2026-09-28 T53 重对账：T31 基线（kefu 侧 commit 3b296a2）之后上游连改 4 次
+#   （d59255a/9fc9cd4 9-23 报修话术落题面锚点 · bd0ae3d 9-24 模糊澄清守卫+转人工三拆表
+#     + 拒答去内部字样 · e16a777 9-24 拒答泄露内部实现修复），
+#   本指纹在**三张清单逐条对账 + phrases.json 拆句边界同步**完成之后才更新（T53 卡 §三.3 顺序要求）。
+#   旧基线指纹值**不在本文件保留**（T53 AC2 要求零命中，避免两份"当前有效"指纹并存）。
+#   本包拆句清单目前是**人工产物**（见 packs/AGENTS.md「拆句清单的来源与漂移处理」），
+#   下次上游再改仍需按 T53 的同一顺序重做；方案 A（拆句从 yaml 现算）未做。
+YAML_SHA256 = "d893fee86625b26c1e327236146e3d02c07dafae3ec3e3f18cb4ee1a2c9fc652"
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +137,13 @@ MULTI_CLAUSE_KEYS = (
 # T33：14 条多分句整段按 `__1..__N` 拆句铸入（29 条 key）——
 #   整段本身仍不在包内（`find_hit` 对整段不回归未命中），
 #   整段由 `find_hit_sequence` 逐段覆盖命中（docs/10 §10.7）。
+#
+# ⚠️ **本清单是人工产物，不是机器产物**（T53 裁定，见 packs/AGENTS.md）：
+#   `__N` 的个数与顺序是 T33 执行时按 yaml 手推的，与 yaml 的失配**不会**由本清单自查发现，
+#   只能靠「拼回原文 == yaml 原文」和「每段是 yaml 连续子串」两条断言 + 指纹门禁报红。
+#   2026-09-28 T53 重对账实测：14 个源 key 的段数与 key 集合**均未变**（仍是 29 条），
+#   漂移的只是 3 段**文本**（`repair_confirm_question__1/__2`、`inject_refuse__1`），
+#   已按当前 yaml 现算同步进 phrases.json。方案 A（自动拆句）**未做**。
 SEQ_KEYS = (
     "opening__1", "opening__2",
     "chat_smalltalk__1", "chat_smalltalk__2",
@@ -107,7 +182,10 @@ SLOT_FILL_EXAMPLES = {
         "statusName": "待上门",
         "endReason": "-",
     },
-    "repair_create_ok": {"orderNo": "R99999999"},
+    # T53 重对账：`repair_create_ok` 上游新增槽位 `{rawType}`（bd0ae3d），假值表补齐。
+    # 这是**补齐夹具**不是迁就数据——断言本身没动：填完的文本仍必须查不到包。
+    # 假值沿用同表的"明显不是真实会话"口径。
+    "repair_create_ok": {"orderNo": "R99999999", "rawType": "示例类型"},
     "realtime_reply": {
         "building": "999", "house": "9", "roomTemp": "18.5", "time": "00:00:00",
     },
@@ -827,6 +905,65 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# E. 夹具完整性守卫（T55）
+# ---------------------------------------------------------------------------
+# 为什么需要这条：2026-09-28 T53 记录的 ④ 号漂移形态是**夹具自己崩掉**——
+# 上游给 `repair_create_ok` 加了新槽位，而 `SLOT_FILL_EXAMPLES` 的假值表没跟上，
+# 于是 `test_slot_filled_results_not_hit` 里的 `yaml_text.format(**values)` 直接抛
+# `KeyError`：**断言体根本没执行**，门禁不是「说不合格」而是「自己 error」。
+# 那比 mismatch 更差——mismatch 会指名哪几条，error 只说「炸了」。
+#
+# 本守卫把这一形态提前到**断言层**：夹具的槽位集合与上游文本的占位符集合必须相等，
+# 双向指名——多了指名「夹具多出的占位符」，少了指名「上游有而夹具没有的占位符」
+# （后者正是 `.format()` 会抛 KeyError 的那一个）。
+#
+# 纪律：本守卫**只读** yaml、**不写**任何文件；yaml 不在（公开 CI）→ skip，与本文件既有
+# 约定一致（诚实 skip，不是失败）。
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+
+
+class TestFixtureSlotCompleteness(unittest.TestCase):
+    """夹具槽位完整性：`SLOT_FILL_EXAMPLES` 的键集合必须等于上游对应 key 文本的占位符集合。"""
+
+    def test_fixture_slots_match_yaml_placeholders(self):
+        if not YAML_PATH.is_file():
+            self.skipTest("kefu yaml 不在本仓——夹具槽位完整性无法对账（诚实 skip）")
+        doc = _load_yaml()
+        fixture_extra = []    # 夹具里多出的占位符（上游没有）
+        fixture_missing = []  # 上游有、夹具没有的占位符（.format() 会抛 KeyError）
+        format_errors = []    # 真的 format 一下，把 KeyError 转成指名失败
+        for key, values in SLOT_FILL_EXAMPLES.items():
+            yaml_text = str(_yaml_lookup(doc, key))
+            yaml_slots = set(_PLACEHOLDER_RE.findall(yaml_text))
+            fixture_slots = set(values)
+            for name in sorted(fixture_slots - yaml_slots):
+                fixture_extra.append(f"{key}: 夹具含占位符 {{{name}}}，但上游该 key 文本里没有")
+            for name in sorted(yaml_slots - fixture_slots):
+                fixture_missing.append(
+                    f"{key}: 上游该 key 文本含占位符 {{{name}}}，但夹具没有"
+                    "（.format() 会抛 KeyError——这就是本守卫要拦的形态）"
+                )
+            try:
+                yaml_text.format(**values)
+            except KeyError as exc:
+                format_errors.append(f"{key}: .format() 抛 KeyError({exc})")
+        # 三个方向分别断言：任一非空即红，且红的原因指名到具体占位符
+        self.assertEqual(
+            fixture_extra, [],
+            f"{len(fixture_extra)} 处夹具占位符在上游无对应（夹具可能已过期）: {fixture_extra}",
+        )
+        self.assertEqual(
+            fixture_missing, [],
+            f"{len(fixture_missing)} 处上游占位符在夹具里缺失"
+            f"（.format() 会 KeyError）: {fixture_missing}",
+        )
+        self.assertEqual(
+            format_errors, [],
+            f"{len(format_errors)} 处填充仍然抛 KeyError（守卫的兜底）: {format_errors}",
+        )
+
+
+# ---------------------------------------------------------------------------
 # 跑法（packs 层第一根测试；本文件也是 packs 层唯一测试）
 # ---------------------------------------------------------------------------
 #   python3 -m unittest discover -s packs
@@ -838,7 +975,11 @@ class TestAssertionBreaksOnTamper(unittest.TestCase):
 #   `heat_kefu` 下划线形式，`-t packs` 下的 `_splitext` 截断问题不存在）。
 #   但真断言（B/C/D 段依赖 yaml 与构建产物）需要两个前置，否则**诚实 skip**：
 #       ① `sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1`
-#       ② `KEFU_HEAT_YAML=<kefu 供热预设 yaml>` 环境变量
+#       ② kefu 供热预设 yaml 可达 —— **默认多候选自动探测**（见本文件顶部 `_yaml_candidates`，
+#          仓与本仓同级 `<repo>/../../kefu-agent/...` 即可命中），不必设环境变量；
+#          只有当你的 kefu 仓在以上候选之外时才需要 `KEFU_HEAT_YAML=<绝对路径>`。
+#          该变量一旦设置即**唯一权威**：指向不存在的文件不会回退去试别的候选，
+#          而是照常 skip（见顶部「显式指定即权威」）。
 #   两者都在时 packs 段才是完整真包断言（否则 A 段包源结构测试照常跑）。
 #   本文件自带 `sys.path` 兜底（同 labs/ 先例），不依赖调用方环境变量。
 

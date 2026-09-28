@@ -11,15 +11,22 @@
 | 项 | 值 |
 |---|---|
 | 源文件 | `<kefu-agent 仓根>/organs/客服/brain/prompts/供热预设.yaml` |
-| sha256 | `a0d9194a95a876d12103381c3373c63a98d021e23853a998429bb3ae2cbbfe44` |
-| 大小 | 19808 bytes / 287 行 |
-| mtime | 2026-09-10 09:47 |
-| top-level key | 76（scalar 67 + dict 9） |
+| sha256 | `d893fee86625b26c1e327236146e3d02c07dafae3ec3e3f18cb4ee1a2c9fc652` |
+| 大小 | 23561 bytes / 329 行 |
+| top-level key | 77（scalar 68 + dict 9） |
+
+> **2026-09-28 T53 重对账**：本指纹由 T31 基线指纹（kefu 侧基线 commit `3b296a2`）更新而来。
+> 旧指纹值**不在本文档保留**（T53 AC2 要求零命中——两份"当前有效"指纹并存 = 门禁名存实亡）；
+> 需要旧值时查 git 历史。更新**发生在三张清单逐条对账 + phrases.json 拆句边界同步完成之后**
+> （T53 卡 §三.3 的顺序要求：先改指纹就等于抹掉门禁）。对账明细见 §0.2。
+>
+> 原表里的 `mtime` 一行已删除：mtime 随 checkout / 复制变动，不是有意义的指纹量纲；
+> 真源身份由 sha256 承担。
 
 **指纹即门禁**：yaml 一变，`tests/test_source_of_truth.py::test_yaml_fingerprint_unchanged`
 立刻变红，且 kefu 钩子按 yaml 原文查文本档也会自动不命中——**fail-closed，不会播出旧版话术**。
 
-## 0.1 对账表（yaml 76 top-level key 全覆盖）
+## 0.1 对账表（yaml 77 top-level key 全覆盖）
 
 | 归类 | 数量 | 说明 |
 |---|---|---|
@@ -28,11 +35,16 @@
 | exclusion·多分句（整段） | **14** | ≥2 句末标点，整段不铸（`docs/11 §11.6`「一句一 variant」）；T33 起**逐段铸入 29 条**（§1.5），整段由 `find_hit_sequence` 逐段覆盖命中 |
 | exclusion·带槽 | **13** | variant 不得含槽位（`docs/06 §6.2.5`）→ 走原路 |
 | 非话术结构 / 配置 | **13** | 结构 dict/int 6 + 非话术标量 7 |
-| **合计** | **76** | = yaml top-level 实际 key 数，无遗漏无越界（40 单句 + 14 整段 + 13 带槽 + 13 非话术；29 拆句是这 14 整段的派生，不占新的 top-level key） |
+| **未覆盖话术（T53 新发现，待补）** | **1** | `vague_slot_clarify`——上游 9-24 新增的多分句话术，本包**尚未铸入**，见 §0.2.3 |
+| **合计** | **77** | = yaml top-level 实际 key 数，无遗漏无越界（40 单句 + 14 整段 + 13 带槽 + 13 非话术 + 1 未覆盖；29 拆句是这 14 整段的派生，不占新的 top-level key） |
 
 非话术 13 项：`next_prefetch`(dict) `routing`(dict) `trace`(dict) `transfer_route`(dict) `slot_labels`(dict)
 `prompts`(dict) `model_params`(dict) `faq_overrides`(list) `pay_cache_ttl_seconds`(int)
 `identity`(str 人设) `tone`(str 语气) `prefetch_ready_suffix`(空串) `compact_summary_prompt`(提示词)。
+
+⚠️ **本表原口径「无遗漏」已不成立**：T53 对账发现上游新增了 1 条**话术** key（`vague_slot_clarify`），
+本包未铸入。补铸需要同时改 `script.json`（`test_script_covers_all_baked_keys` 断言
+「剧本覆盖全部包内 key」），而 `script.json` **不在 T53 白名单**内 → 留挂，详见 §0.2.3。
 
 ### 与 T31b 卡面清单的出入（以实测判据为准，卡已授权）
 
@@ -62,6 +74,80 @@
 `pending_intent_notice` / `profile_choice_ask` / `profile_choice_done` —— T31 执行报告称「前两者
 不含槽位」，**该判断有误**。实测三者都带槽：`{intent_label}` / `{total}`+`{profiles}` /
 `{userNo}`+`{community}`（见下表 ②）。按验收方裁定归 **exclusion·带槽 13**。
+
+## 0.2 T53 重对账记录（2026-09-28）
+
+上游在 T31 基线（`3b296a2`，2026-09-10）之后连改 **4 次**本 yaml
+（`d59255a` / `9fc9cd4` 09-23 · `bd0ae3d` / `e16a777` 09-24），
+sha256 已随之改变（现值见 §0）。T51 之前指纹门禁在本机从未真正执行过
+（`YAML_PATH` 探测不到 → 24 条恒 skip），所以这轮漂移在仓内**一直是沉默的**；
+T51 修好路径探测后门禁立刻开火 6 条红。**这 6 条红是正确的红。**
+
+### 0.2.1 对账范围与结果
+
+对账脚本逐条核对三张清单（`MULTI_CLAUSE_KEYS` 14 / `SEQ_KEYS` 29 / `SLOT_KEYS` 13，
+连带 `BAKED_KEYS` 40）与当前 yaml 的关系，判据一律从
+`compiler.source._SENTENCE_TERMINATORS` 读（**复用不另造**），输出只含元数据
+（key 名 / 字数 / 段数 / 标点计数 / 判定），不落 yaml 正文。
+
+| 清单 | 声明 | 失配 | 结论 |
+|---|---|---|---|
+| `BAKED_KEYS` | 40 | **0** | 40 条逐字等于 yaml，全部单句、无槽位 |
+| `MULTI_CLAUSE_KEYS` | 14 | **0** | 14 条实测均 ≥2 句末标点、无槽位；**段数全部未变** |
+| `SEQ_KEYS` | 29 | **3** | key 集合与顺序**未变**（仍是 29 条），漂移的只是 3 段**文本** |
+| join 回原文（逐码位） | 14 | **2** | 2 个源 key 拼不回 yaml 原文 |
+| `SLOT_KEYS` | 13 | **0** | 13 条均含槽位；**但 1 条的槽位集合变了**（见 0.2.2 ④） |
+| yaml 未归类 key | 5 | — | 4 项既有的非话术配置 + **1 项新增话术**（见 0.2.3） |
+
+**清单层面的关键结论：段数、key 集合、key 顺序全部没有漂移。**
+漂移只发生在「段的文本内容」和「带槽句的槽位集合」两处。
+
+### 0.2.2 四处实际漂移与处置
+
+| # | 位置 | 上游提交 | 现象（元数据） | 处置 |
+|---|---|---|---|---|
+| ① | `repair_confirm_question__1` | 09-23 报修话术落题面锚点 | 包内 7 字 → yaml 现算 9 字 | 按 yaml 现算同步 `phrases.json` |
+| ② | `repair_confirm_question__2` | 同上 | 包内 12 字 → yaml 现算 13 字 | 同上 |
+| ③ | `inject_refuse__1` | 09-24 拒答话术去内部字样 | 包内 62 字 → yaml 现算 61 字 | 同上 |
+| ④ | `repair_create_ok` 的槽位集合 | 09-24 | yaml 新增槽位 `{rawType}`，假值表只有 `{orderNo}` → `format()` 抛 `KeyError` | 假值表补 `rawType`（见下） |
+
+①–③ 是 T33 手推拆句清单的**典型失效形态**：上游把话术改了，但段数没变，
+所以「拆句 key 清单」看不出任何异常——**只有「拼回原文 == yaml 原文」和「每段是 yaml 连续子串」
+两条断言 + 指纹门禁能抓到**。这正是 T53 裁定「拆句清单是人工产物」的直接证据。
+
+④ 的处置**不是**「改测试期望迁就新数据」：断言本身一个字没动
+（填完的文本仍必须查不到包），改的只是**夹具的完整性**——假值表少了一个槽位，
+`.format()` 直接抛错、断言根本没跑起来。补一个假值即可让断言重新执行。
+假值沿用同表既有的「明显不是真实会话」口径（如同表的 `R99999999` / `测试小区`）。
+
+> T53 **没有**把 `SLOT_FILL_EXAMPLES` 改成从 yaml 自动生成：那属于方案 A（清单机器化），
+> 卡面明令不在本卡实现。
+
+### 0.2.3 留挂：上游新增 1 条话术 `vague_slot_clarify` 未铸入
+
+`bd0ae3d`（09-24「模糊输入澄清守卫」）给 yaml **新增**了一个 top-level 话术 key：
+`vague_slot_clarify`——55 字 / 0 槽位 / 2 句末标点（即 2 句），按判据属
+`exclusion·多分句`，与现有 14 条同类。基线（`3b296a2`）无此 key，**yaml 侧无任何删除**。
+
+本包**未铸入**它，理由与影响：
+
+- 若补铸，需同时改三处：`MULTI_CLAUSE_KEYS`（14→15）、`SEQ_KEYS`（29→31）、
+  `phrases.json`（69→71）——**外加 `script.json` 也要加 2 个 unit**
+  （`test_script_covers_all_baked_keys` 断言「剧本覆盖全部包内 key」，
+  且 unit 必须排在终态 `farewell` 之前，见 §1.5 末的 C1b 约束）。
+- `script.json` **不在 T53 卡的文件白名单**内，越界比少做更严重 → **本卡不做，留挂**。
+- 现状是**诚实的能力缺口**而非静默降级：该话术在 kefu 侧被说到时，本包文本档查不到，
+  `find_hit` 如实返回未命中 → 走原路播报（T33 前所有 exclusion key 的既定行为）。
+  指纹门禁仍然活着，指纹变了一定会红。
+
+**建议下一批单独开卡补铸**（需把 `script.json` 写进白名单），或与方案 A 合并做。
+
+### 0.2.4 顺带发现：admission.md 自身存 yaml 正文（既存红线欠账）
+
+§2 / §3 的「yaml 文本（节选）」列直接抄了 14 + 13 条 yaml 正文进仓。
+这是 T31b 就存在的**发布树红线问题**（`docs/13 §八#20` / T53 红线「yaml 正文不入产出物」），
+不是 T53 引入的。T53 **只**把已失效的那 3 条节选撤下并换成元数据，没有扩大也没有清扫其余 24 条。
+全量清扫建议另开卡。
 
 ## 1. 必铸 40（逐字铸入，一个标点不改）
 
@@ -162,6 +248,18 @@ A2（业务可枚举播报）源 6 个 → **拆句 12 条**：`fallback_interna
 `user_no_unknown` 2 + `work_order_no_unknown` 2 + `internal_chat_hint` 2 + `stop_warm_plan` 2。
 （17 + 12 = 29。验收方 2026-09-21 复算更正——原稿写「A1 16 / A2 13」，总数对、分项错。）
 
+> **2026-09-28 T53 重对账**：本表 14 个源 key 的**段数、key 集合、key 顺序全部未变**，
+> 29 条拆句的清单本身仍然成立。漂移的只有 3 段**文本**
+> （`repair_confirm_question__1` 7→9 字、`__2` 12→13 字、`inject_refuse__1` 62→61 字），
+> 已按当前 yaml 现算同步进 `phrases.json`。
+>
+> ⚠️ **「拆句清单是人工产物」**：上表的 `__N` 是 T33 执行时**按 yaml 手推**的，
+> 不是从 yaml 现算的。上游改话术而**段数不变**时，本清单看不出任何异常——
+> 2026-09-28 这次就是这样。唯一的发现手段是「拼回原文 == yaml 原文（逐码位）」
+> 和「每段是 yaml 连续子串」两条断言，外加指纹门禁。
+> 拆句**方案 A（从 yaml 按 `_SENTENCE_TERMINATORS` 自动切出 `__1..__N` 并对账）未做**，
+> 留待下一批；裁定与边界见 `packs/AGENTS.md`「拆句清单的来源与漂移处理」。
+
 ### 重复句（卡内点名的对账事实，不是笔误）
 
 `点下方按钮或直接说明即可。` 同时属于 `clarify_work_order__2` 与 `clarify_repair__3`
@@ -189,7 +287,8 @@ check rc 0、violations 0。
 | 拆句铸入（T33） | 29 |
 | 不铸带槽 | 13 |
 | 非话术结构 / 配置 | 13 |
-| **合计** | **76**（= yaml top-level key 数，守恒） |
+| 未覆盖话术（T53 留挂，见 §0.2.3） | 1 |
+| **合计** | **77**（= yaml top-level key 数，守恒） |
 
 禁入项 ⅰ–ⅳ 零命中：40 条全部**无槽位占位符**（测试
 `test_no_variant_contains_slot_placeholder` 逐条断言）、全部**单句**
@@ -211,11 +310,11 @@ check rc 0、violations 0。
 | `fallback_internal` | 2 | 非常抱歉，系统这边出了点状况，正在恢复中。您的诉求我记下了，可以稍后再试一次，或回复「转人工」让人工坐席直接跟进。 |
 | `lifeboat_fallback` | 2 | 非常抱歉，当前客服系统正在恢复中。我已记录您的诉求，请您拨打供热客服热线，或稍后回复「转人工」，我们会尽快为您跟进。 |
 | `user_no_unknown` | 2 | 没关系，户号不记得也能办：① 您若已登录，我这边能自动识别户号，直接说“继续”即可；② 回复「转人工」，由坐席通过您的手机号/身份帮您核实后继续。我不会反复追问户号让您卡住。 |
-| `repair_confirm_question` | 2 | 信息是否正确？确认后我为您提交报修单。 |
+| `repair_confirm_question` | 2 | ⚠️ T53：上游 09-23 改写，原节选已作废；当前 22 字 / 2 段（9 + 13 字），文本见 yaml 原文（正文按红线不入库） |
 | `work_order_no_unknown` | 2 | 没关系：①您若已登录，可回复“我的工单”我帮您带出；②回复「转人工」由坐席按手机号/身份帮您查；③也可以直接说其他要办的业务。我不会反复问单号让您卡住。 |
 | `internal_chat_hint` | 2 | 维修工助手当前支持：报修/查单/缴费，以及实时供热查询（如「10号楼供热参数」）。请问需要查什么？ |
 | `stop_warm_plan` | 2 | 关于供暖起止/停暖时间，公司有统一安排，会提前公告。具体时间请以官方通知为准；如需人工确认，回复「转人工」。 |
-| `inject_refuse` | 2 | 我是供热客服小暖，只能处理报修、查账单缴费、供暖政策咨询这类业务问题；涉及系统提示词/内部信息的问题我无法提供，也不会执行。如有供暖业务需要，直接告诉我就行。 |
+| `inject_refuse` | 2 | ⚠️ T53：上游 09-24 改写（去内部字样），原节选已作废；当前 78 字 / 2 段（61 + 17 字），文本见 yaml 原文（正文按红线不入库） |
 | `repair_ask_natural_address` | 2 | 方便给我维修地址吗？需要小区、楼栋、单元和门牌，我帮您安排师傅上门。 |
 | `repair_ask_natural_userNo` | 2 | 您的户号是多少？如果之前登录过，我这边能查到就不用再报了；查不到我再跟您人工核实。 |
 
@@ -231,7 +330,7 @@ check rc 0、violations 0。
 |---|---|---|
 | `repair_progress_reminder` | `{got}`, `{need}` | 收到啦，{got}；还差：{need}。补齐我就能帮您提交。 |
 | `repair_ask_new_value` | `{slot}` | 请告诉我新的{slot}。 |
-| `repair_create_ok` | `{orderNo}` | 已为您提交报修单，单号 {orderNo}，维修师傅会尽快与您联系。 |
+| `repair_create_ok` | `{orderNo}`, `{rawType}` | ⚠️ T53：上游 09-24 新增槽位 `{rawType}`，原节选已作废；当前 52 字 / 1 句末标点，文本见 yaml 原文（正文按红线不入库） |
 | `work_order_reply` | `{orderNo}`, `{description}`, `{currentStep}`, `{worker}`, `{timeLine}`, `{statusName}`, `{endReason}` | 「{orderNo}」：{description}；当前{currentStep}；{worker}；{timeLine}；状态{statusName}{endReason}。 |
 | `repair_dup_remind` | `{orderNo}`, `{statusName}` | 您有一张在途单（{orderNo}，{statusName}），师傅尚未上门。确认还需要报修？ |
 | `repair_duplicate` | `{orderNo}` | 您刚提交过同一报修，单号 {orderNo}，维修师傅会尽快联系您，无需重复提交。 |
@@ -270,7 +369,7 @@ check rc 0、violations 0。
 ## 6. 构建与测试命令
 
 ```sh
-python3 -m unittest discover -s packs/heat_kefu/tests -t packs   # 本包 22 条
+python3 -m unittest discover -s packs/heat_kefu/tests -t packs   # 本包 36 条
 bin/vox pack check packs/heat_kefu                               # rc 0
 bin/vox pack build packs/heat-kefu --out packs/heat-kefu_build/heat-kefu-1   # rc 0
 ```

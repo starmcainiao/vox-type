@@ -20,9 +20,18 @@
 > 想看可跑的示例 → [`examples/`](examples/README.md) · 想加一个 TTS 引擎 → [`docs/23`](docs/23-如何新增一个TTS引擎.md)
 
 **English one-liner**: vox-type pre-bakes the *process-determined* portion of a voice agent's
-dialogue into audited, versioned audio assets, and plays them in ~0.2 ms when the upstream model
-decides to speak them — falling back to your existing TTS path on every miss (fail-closed, fully
-traced). Zero third-party dependencies.
+dialogue into audited, versioned audio assets, and plays them in 0.475–4.176 ms
+(P50 0.715 ms, N=50, measured on one machine) when the upstream model decides to speak them —
+falling back to your existing TTS path on every miss (fail-closed, fully traced).
+Zero third-party dependencies.
+
+> **⚠️ 本仓有「两组首音数字」，口径不同，不可混读或相减**：
+> ① 上面的 `0.715 ms` 与下表同源，唯一真源是
+> [`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)（同机同句同 16 kHz 契约，
+> 快路每句重复 5 次取中位数，N=50；`first_audio_ms` 取自 `vox run` 的 CLI JSON，**不含 Python 进程启动**）。
+> ② [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) 另有一组**链路级对拍**数字
+> （预铸命中 P50 0.232 ms，n=20 vs 链路实时合成 586.7 ms，`say` 口径，n=36）——**不同机器、不同语料、
+> 不同 TTS**，那组数字本身没错，但不能和本表并列比较。
 
 ---
 
@@ -41,6 +50,8 @@ traced). Zero third-party dependencies.
 图见 [`docs/media/value-compare.svg`](docs/media/value-compare.svg)，数字唯一来源是
 [`labs/frontpack-value/report.json`](labs/frontpack-value/report.json)，口径与局限见
 [`labs/frontpack-value/README.md`](labs/frontpack-value/README.md)。
+**链路口径另见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md)**（P50 0.232 ms vs 586.7 ms，`say` 口径）——
+**那是另一台机器、另一批语料、另一种 TTS，与本表不可混读、不可相减**。
 
 1. **流程话术在替慢链路陪跑。** 一通「查一下账单」的电话，用户要等 ASR + LLM 首 token + TTS
    才能听到「请提供您的户号」——这句话由业务流程决定，却陪整条链路等了几秒，还烧一次推理。
@@ -81,7 +92,19 @@ traced). Zero third-party dependencies.
 
 ## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
 
-- **十一个测试根 1,547 条全绿**（CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效）——2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
+- **十一个测试根，分项口径 `ran=1602 skipped=0 executed=1602 failed=0`**
+  （2026-09-28 本机实跑，**唯一出处 = 命令**：`python3 tools/run_all_tests.py`，末行打印；
+  `ran`=各根 `testsRun` 之和含 skip 与失败用例，`executed=ran-skipped`，`failed=failures+errors`。
+  **数字随用例增删漂移——请以命令的实跑输出为准，不要引用本文的抄件**）。
+  **`skipped=0` 是本机状态、不是契约**（T54 刷新；T50 定的 26 条 skip 基线已被 T51/T53 作废）：
+  那 26 条里有 24 条是 `packs` 的 yaml 同源断言，此前因**仓外 kefu 仓 yaml 路径写死**而按设计 skip，
+  **T51 改为多候选路径探测后本机命中，这 24 条现在真跑**（T53 把 `packs` 由 6 红修回全绿）。
+  剩下的跳过条件全在 `adapters`（`@unittest.skipUnless` 门 + 运行时探测）：需 `ffmpeg`、
+  需 macOS `say` 且 tmpdir 与仓库跨设备、需本机 oMLX `:10099` 在跑、需仓内已有 heat-kefu 预铸产物。
+  **换台机器（典型如 Linux CI）这些依赖不在，`skipped` 会重新大于 0、`executed` 随之变小**——
+  本行只对本机成立，**不是「这 1602 条在任何环境都会跑」**；skip 不是失败，也不是「没跑」。
+  CI：Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。
+  2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms** vs 同引擎实时合成 586.7 ms；慢路 515.3 ms；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——
   命中 2 轮返回音频与包内资产 **sha256 字节级相同**，未命中 2 轮诚实走原路；
@@ -93,6 +116,27 @@ traced). Zero third-party dependencies.
 - **双工与失效已落地**：四参数各有可观测行为 + 双工质量三指标可复现（`labs/duplex-quality/`）
   + 资产 TTL 过期拒播；预铸查找热路径索引化（10k 条下 0.5–0.8 µs，旧 61–2115 µs）。
   （以上能力的任务级验收记录见 [`docs/tasks/`](docs/tasks/)）
+
+## 只想听声音？30 秒（零引擎，不需要 TTS 服务）
+
+> 不想先装 oMLX / 铸包？仓里带了一份**预铸好的自证包**，clone 完直接播——
+> 全程磁盘读，**一次合成都没发生**（`tts_calls=0`），端点离线也能跑。
+
+```sh
+git clone https://github.com/starmcainiao/vox-type && cd vox-type
+
+sh bin/vox run examples/plan.json \
+    --pack examples/prebuilt-pack \
+    --adapter adapters.tts_omlx:OmlxTts \
+    --out /tmp/prebuilt.wav
+# → run: 通过（hit=4 miss=0 fallback=0 tts_calls=0 first_audio_ms=<随机器与冷热缓存漂移>）
+
+sh bin/vox verify examples/prebuilt-pack     # 产物可质检 → rc=0
+afplay /tmp/prebuilt.wav                     # 听一下（非 macOS 用别的播放器）
+```
+
+完整推导（为什么 `--adapter` 仍须显式给、预铸包来源与重铸口径）见
+[`examples/README.md`](examples/README.md) 与 [`examples/prebuilt-pack/PROVENANCE.md`](examples/prebuilt-pack/PROVENANCE.md)。
 
 ## Quick Start（纯标准库，Python ≥ 3.12；零第三方依赖）
 
@@ -110,8 +154,11 @@ sh bin/vox pack build packs/heat_kefu --adapter adapters.tts_omlx:OmlxTts --out 
 # 2) 播一句：plan 就是「这一轮要说什么」的 JSON 数组
 printf '[{"key": "opening__1"}, {"key": "opening__2"}]' > /tmp/vox-demo/plan.json
 sh bin/vox run /tmp/vox-demo/plan.json --pack /tmp/vox-demo/heat-kefu --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-demo/out.wav
-# → hit=2 miss=0 tts_calls=0 first_audio_ms=0.5
+# → hit=2 miss=0 tts_calls=0 first_audio_ms=<随机器与冷热缓存漂移，非固定值>
 #    ↑ 「零 TTS 调用」就是本项目的字面价值：这两句是磁盘读，不是合成
+#    ↑ first_audio_ms 的**形状恒定、数值不定**：同一台机冷热不同也会差一个量级
+#      （已实跑到的真值见 examples/README.md 与 labs/frontpack-value/report.json）；
+#      本行不写死数字，因为任何写死的数字都会立刻过期。
 afplay /tmp/vox-demo/out.wav      # 听一下（非 macOS 用别的播放器）
 
 # 3) 查包 / 质检
@@ -119,9 +166,12 @@ sh bin/vox pack check packs/heat_kefu --json
 sh bin/vox verify /tmp/vox-demo/heat-kefu
 
 # 4) 跑全量测试（十一个测试根；不装任何第三方依赖）
-for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do
-  python3 -m unittest discover -s $d 2>&1 | tail -1
-done
+#    单一真源是 tools/run_all_tests.py —— 十一个根的 tests 包名全撞，必须逐根隔离子进程跑，
+#    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。上面 Status 一节的
+#    测试数就是这条命令的输出抄件；要数字请重跑它，不要抄文档。
+python3 tools/run_all_tests.py
+# → ran=1602 skipped=0 executed=1602 failed=0 failures=0 errors=0 roots=11
+#   （本机实跑抄件。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
 ```
 
 > **macOS `say` 应急（可选）**：已有 macOS 且暂不接 TTS 端点时，可在 `pack build` 命令上**省略**

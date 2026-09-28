@@ -25,7 +25,7 @@ MacSayTts().synthesize('跨卷测试', '（仓库根）/.crossdev_probe.wav')
 实测输出（现状）：
 
 ```
-OSError: [Errno 18] Cross-device link: '/var/folders/gq/.../tmpXXXXXXXX.wav' -> '（仓库根）/.crossdev_probe.wav'
+OSError: [Errno 18] Cross-device link: '<macOS 每用户临时目录>/tmpXXXXXXXX.wav' -> '（仓库根）/.crossdev_probe.wav'
 ```
 
 注意两点：

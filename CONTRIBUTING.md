@@ -7,7 +7,12 @@
 - 报告复现问题：给出环境（Python 版本/OS）与完整命令输出。
 
 ## 提 PR 前
-1. **先跑全量测试**：`for d in core rules assets adapters compiler runtime eval cli tools trigger packs; do python3 -m unittest discover -s $d; done`——全绿是底线；
+1. **先跑全量测试**：`python3 tools/run_all_tests.py`——全绿（`exit=0`）是底线。
+   它逐根跑十一个测试根（core rules assets adapters compiler runtime eval cli tools trigger packs），
+   末行打印**分项**汇总 `ran=… skipped=… executed=… failed=0`，
+   任一根红则**非零退出并点名失败根**（跑批铁律：失败会被产物数量掩盖）。
+   **不要再手抄逐根 `unittest discover` 的 shell 循环**：那份循环的唯一副本在
+   `tools/run_all_tests.py`，CI 与本文档都调它（T48）；数字口径见 `tools/README.md`。
 2. **测试必须调用产品 API**（不得在测试内复制被验逻辑——反空转纪律）；
 3. **fail-closed 红线**：未命中/未知输入必须抛错或留痕计数，禁止静默降级；
 4. **包是数据不是代码**：`packs/` 内禁止任何 Python 逻辑；

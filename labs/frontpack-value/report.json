@@ -100,7 +100,7 @@
       "cmd": "run plan.json --pack pack --out cross-81b2c0eb.wav",
       "rc": 0,
       "command": "run",
-      "pack_dir": "/var/folders/gq/9zmsq_ts3wxgxwgn094fr3dc0000gn/T/frontpack-fast-rnr1fadx/pack",
+      "pack_dir": "<系统临时目录>/frontpack-fast-rnr1fadx/pack",
       "plan_id": "vox-cli",
       "turn_id": 1,
       "hit_count": 4,
@@ -109,7 +109,7 @@
       "tts_calls": 0,
       "first_audio_ms": 0.7220000006782357,
       "total_duration_ms": 17735,
-      "out_path": "/var/folders/gq/9zmsq_ts3wxgxwgn094fr3dc0000gn/T/frontpack-fast-rnr1fadx/cross-81b2c0eb.wav",
+      "out_path": "<系统临时目录>/frontpack-fast-rnr1fadx/cross-81b2c0eb.wav",
       "events": [
         {
           "ts": "2026-09-24T05:42:52.285493Z",

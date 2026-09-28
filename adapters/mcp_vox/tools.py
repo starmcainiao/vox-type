@@ -1,8 +1,14 @@
 """tools.py — MCP 最小子集的三个工具（vox_lookup / vox_plan / vox_pack_check）。
 
-只走 `assets` 与 `runtime` 的公开 `__all__`（load_pack / lookup / validate_pack /
-REASON_KEY_NOT_PREBAKED），不 import 任何下划线私有名；只出控制面信息，**不出音频字节**
-（数据面留在进程内 adapter）。
+只走 `assets` / `runtime` / `adapters.textmatch` 的公开 `__all__`（load_pack /
+validate_pack / REASON_KEY_NOT_PREBAKED / find_hit），
+不 import 任何下划线私有名；只出控制面信息，**不出音频字节**（数据面留在进程内 adapter）。
+
+命中口径（T47）：`vox_lookup` / `vox_plan` 的命中判定**不再在本文件自实现**，
+    一律经 `adapters.textmatch.find_hit` —— 与 `framework_kefu` 桥同一份归一化与
+    逐字判据（docs/10 §10.3 / §10.7）。此前这里是裸的文本相等比较（不走归一化），
+    导致「包内 `价格①`、传入 `价格1`」在 kefu 入口命中、在 MCP 入口不命中且无留痕
+    ——正是 AGENTS.md 纪律 4 禁止的静默降级。
 
 工具语义（T46 §三，钉死）：
   - vox_lookup(pack_dir, text|key) → 命中 {hit:true,key,rate_key,variant,duration_ms,model_version}；
@@ -14,8 +20,9 @@ REASON_KEY_NOT_PREBAKED），不 import 任何下划线私有名；只出控制�
 import json
 from pathlib import Path
 
-from assets import load_pack, lookup, validate_pack
+from assets import load_pack, validate_pack
 from runtime import REASON_KEY_NOT_PREBAKED
+from adapters.textmatch import find_hit
 
 PACK_DIR_SCHEMA = {
     "type": "object",
@@ -78,27 +85,21 @@ def _hit_fields(entry, model_version):
 
 
 def _find_entry(pack, key=None, text=None):
-    """按 key 或 text 在包内定位候选条目（包内顺序，首条优先）。"""
-    for entry in pack.assets:
-        if key is not None and entry.key == key:
-            return entry
-        if text is not None and entry.text == text:
-            return entry
-    return None
+    """按 key 或 text 定位命中条目；判定口径由 adapters.textmatch 独家持有。
 
+    WHY 不在本文件遍历比对（docs/10 §10.2 裁定 1）：归一化（§10.3 四步）与逐字
+        命中（§10.7）是**跨入口唯一**的口径。本文件曾自实现一份裸的文本相等比较
+        （不走归一化），实测分歧：包内 `价格①` / 传入 `价格1`
+        在 kefu 入口命中、在本入口不命中，且无任何留痕（纪律 4 的静默降级）。
 
-def _confirmed_hit(pack, entry):
-    """把候选交给 assets 公开 lookup 复验（指纹/文件/失效），None = 未命中。"""
-    if entry is None:
-        return None
-    return lookup(
-        pack,
-        entry.key,
-        entry.part_index,
-        entry.rate_key,
-        entry.variant,
-        entry.text,
-    )
+    WHY 不再叠一层 assets.lookup 复验：`find_hit` 内部已对每个候选走
+        `confirm()`（= `pack.lookup`，含指纹 / 音频存在性校验），未命中的候选
+        本来就不会出现在 `.entry` 里。本函数因此是**已复核**的结论，不是候选。
+
+    异常：
+        ValueError: key / text 不是恰好一种（透传自 find_hit，由 call_tool 转 isError）
+    """
+    return find_hit(pack, key=key, text=text).entry
 
 
 def _manifest_keys(root):
@@ -121,7 +122,8 @@ def _lookup(arguments):
     text = arguments.get("text")
     if not key and not text:
         raise ValueError("vox_lookup 需要 text 或 key 之一")
-    hit = _confirmed_hit(pack, _find_entry(pack, key=key, text=text))
+    # 空串按「没给」处理（与上面那道门同一口径），保证只往 find_hit 递一种表示
+    hit = _find_entry(pack, key=key or None, text=text or None)
     if hit is None:
         return {"hit": False, "reason": REASON_KEY_NOT_PREBAKED}, False
     return {"hit": True, **_hit_fields(hit, pack.model_version)}, False
@@ -134,7 +136,7 @@ def _plan(arguments):
         raise ValueError("vox_plan 的 keys 必须是数组")
     plan, misses = [], []
     for key in keys:
-        hit = _confirmed_hit(pack, _find_entry(pack, key=key))
+        hit = _find_entry(pack, key=key)
         if hit is None:
             misses.append(key)
         else:
