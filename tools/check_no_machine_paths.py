@@ -359,8 +359,8 @@ def decode_lines(raw: bytes):
     这样剥掉的 NUL 不会把相邻两行粘成一行，违规报告里的 `line` 仍然能
     让人直接翻回原文件那一行。
 
-    剥（而不是替换成 U+FFFD）是有意的：NUL 正是能把 `/Users/dingbingcang/…`
-    劈成 `/Users` + NUL + `bingbingcang/…` 藏起来的那个字节，
+    剥（而不是替换成 U+FFFD）是有意的：NUL 正是能把机器家目录前缀
+    （形如 user-home-macos 那一档）劈成两截藏起来的那个字节，
     **剥掉才拼得回来**——替换成一个正常字符就拼不回来了。
     """
     for line in raw.splitlines():
