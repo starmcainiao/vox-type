@@ -113,7 +113,7 @@ class TestRateValueBehavior(unittest.TestCase):
 
         WHY 这里不再断言 `isinstance(val, int)`（T62 / AC4）：
           `int` 不是 TTS 速率接口的契约，只是**某个量纲下的实现细节**。
-          本仓两个适配器用的是**不同量纲**，且都对：
+          本仓适配器用的是**不同量纲**，且都对（举两例，非穷举）：
             - macsay（`tts_macsay`）：绝对语速，单位 wpm → 150 / 200 / 300，整数；
             - omlx  （`tts_omlx`）  ：倍率（乘法），     → 0.85 / 1.0 / 1.25，浮点。
           原断言 `assertIsInstance(val, int)` 把 macsay 的量纲当成了接口契约，
@@ -196,7 +196,7 @@ class TestRateValueBehavior(unittest.TestCase):
         """未知档位必须抛该适配器自己声明的 TtsError。
 
         异常类按适配器逐个解析（见 `adapter_error_type` 的注释）：
-        本仓两个适配器的 TtsError 不是同一个类，`core/` 也没有统一的 TTS 异常，
+        本仓各适配器的 TtsError 不是同一个类，`core/` 也没有统一的 TTS 异常，
         所以套件不 import 某一个适配器的那份来套所有适配器。
         """
         for tts in self.adapters:

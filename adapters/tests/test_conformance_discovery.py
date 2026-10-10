@@ -11,7 +11,7 @@ adapters.tests.test_conformance_discovery — tts-* 适配器的**自动发现**
      以及 `asr_*/` 都不是 TTS 适配器，前缀匹配就把它们挡在外面；`adapter.py` 缺失的
      `tts_*/` 目录不算适配器（否则一个还没写完的空目录会让整套件炸掉）。
 
-两条导入路径都支持（这是两个既有适配器写出来的**事实**，不是偏好）：
+两条导入路径都支持（这是既有适配器写出来的**事实**，不是偏好）：
   - `adapters.tts_macsay.adapter` —— 类在 `adapter.py` 里；
   - `adapters.tts_omlx`          —— 类由包级 `__init__` 导出，`adapter.py` 里没有同名符号。
 定位类**不按名字**（按名字找就得为这两种布局各写一条分叉），
@@ -70,9 +70,9 @@ def _find_adapter_class(module: Any) -> Any:
     """在适配器模块里定位适配器类。
 
     判据只有一条：**模块命名空间里恰好有一个类同时具备 `REQUIRED_MEMBERS` 三者**。
-    不依赖类名、不依赖模块名、不依赖 `__all__`——因为两个既有适配器把类放在不同位置
+    不依赖类名、不依赖模块名、不依赖 `__all__`——因为既有适配器把类放在不同位置
     （`tts_macsay` 放在 `adapter.py`，`tts_omlx` 由包级 `__init__` 导出），
-    按名字找必然要写分叉；按「成员齐备」找是这两个适配器**都满足**的形态约束
+    按名字找必然要写分叉；按「成员齐备」找是这些适配器**都满足**的形态约束
     （`adapters/AGENTS.md §②` 要求声明 `name` / `rate_map`），再加 `rate_value`。
 
     两个失败方向都响亮抛错，不猜：
@@ -124,7 +124,7 @@ def tts_adapter_dirs(base: Path | None = None) -> List[str]:
 def _dir_of(cls: Any) -> str:
     """从适配器类反查它所在的适配器目录名（`adapters.<dir>` 的那一段）。
 
-    `cls.__module__` 对两个既有适配器分别是
+    `cls.__module__` 对既有适配器（举两例）分别是
     `adapters.tts_macsay.adapter` 与 `adapters.tts_omlx.adapter`
     （后者由包级 `__init__` 导出，但类**定义**仍在 adapter.py 里），
     取 `<pkg>.adapter` 的 `<pkg>` 再取最后一段即得目录名。
@@ -143,8 +143,8 @@ def adapter_error_type(target: Any) -> type:
     这条错误信息盖掉（实测：AC2 的假适配器就是这样把报错变成了 AttributeError）。
 
     为什么不能在整个套件里 import 一个共享的 TtsError：
-    本仓两个适配器各自定义了自己的 TtsError（`tts_macsay/adapter.py` 与
-    `tts_omlx/transport.py`，两者**不是**同一个类），而 `core/` 没有统一的
+    本仓各适配器各自定义了自己的 TtsError（如 `tts_macsay/adapter.py` 与
+    `tts_omlx/transport.py` 就**不是**同一个类），而 `core/` 没有统一的
     TTS 异常。若套件只 import 其中一个，另一个适配器抛自己的 TtsError 时
     `assertRaises` 就永远匹配不上——套件要么假失败、要么被迫把适配器改成
     抛别人的异常类。后者会改适配器对外行为（T62 明令禁止），

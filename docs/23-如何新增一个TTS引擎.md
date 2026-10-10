@@ -30,7 +30,7 @@ docstring 明写「不含 TTS（adapters/）」）。契约真正的载体是**�
 - 实际调用形式是**位置参数带路径**：`self.adapter.synthesize(text, target, rate_key)`
   （`runtime/executor.py:249-254`）。所以你的签名必须是
   `synthesize(self, text: str, out_path, rate_key: str = "normal") -> None`——
-  **写文件，不返回音频**（两个现有实例都返回 `None`：`adapters/tts_macsay/adapter.py:63`、
+  **写文件，不返回音频**（现有实例都返回 `None`：`adapters/tts_macsay/adapter.py:63`、
   `adapters/tts_omlx/adapter.py:108`）。
 
 产物格式是**被下游硬读的常量**，不是建议：`16kHz / 单声道 / 16-bit`。
@@ -87,7 +87,7 @@ AGENTS.md §② 没写它，但你照样得给。
 
 **如实说**：`tools/structure_budget/check.py` 里没有任何 `requires_core` / semver 解析
 （全文件无此字样），全仓也没有「大版本不匹配即报错」的实现——现状是**只有**一致性测试断言它
-非空（`adapters/tests/test_conformance.py:55-62`）。写 `"^0.1"` 是对的（与两个现有适配器一致），
+非空（`adapters/tests/test_conformance.py:55-62`）。写 `"^0.1"` 是对的（与现有适配器一致），
 但「不匹配即报错」目前是一个**尚未落地的验收条款**，不要以为声明了就有人替你校验。
 
 ### `capabilities`：写了不被读
