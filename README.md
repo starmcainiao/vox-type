@@ -120,15 +120,18 @@ sh bin/vox verify /tmp/vox-demo/heat-kefu
 
 # 4) 跑全量测试（十一个测试根；不装任何第三方依赖）
 #    单一真源是 tools/run_all_tests.py —— 十一个根的 tests 包名全撞，必须逐根隔离子进程跑，
-#    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。上面 Status 一节的
-#    测试数就是这条命令的输出抄件；要数字请重跑它，不要抄文档。
+#    末行打印分项口径（ran / skipped / executed / failed）与失败根点名。
+#    本仓不载测试条数：要数字就跑这条命令，不要抄文档（T79 已删掉全部抄件，
+#    理由见 docs/13 顶部——同一批数字曾散在五处，没有一个还对得上实跑）。
 python3 tools/run_all_tests.py
-# → ran=1649 skipped=0 executed=1649 failed=1 failures=1 errors=0 roots=11
-#   （本机实跑抄件，2026-09-28。skipped=0 只在本机成立：换环境会变，要数字请重跑这条命令。）
-#   ⚠️ 那条 failed=1 是 `packs` 根的**同源指纹断言**在按设计报警：它盯着仓外可选的
-#     kefu-agent 集成源 yaml（见下方 Status 一节）。那个 yaml 一改，这条断言就红 ——
-#     那是「预铸资产与源话术不同源了」的门禁在报警，不是测试坏了。公开仓不含该 yaml，
-#     克隆者只会看到 skip，不会看到 failed。
+# 末行形如（**样例而非契约**，条数随各层增删与环境变化，真值由本命令当场产出）：
+#   ran=… skipped=… executed=… failed=… failures=… errors=… roots=11
+#   FAILED roots: <根名>（全绿时为 (none)）
+#   ⚠️ 若 packs 根报 failed，先看 Status 一节：那条通常是**同源指纹断言**在按设计报警
+#     （它盯着仓外可选的 kefu-agent 集成源 yaml；那个 yaml 一改就红）——那是「预铸资产与
+#     源话术不同源了」在报警，不是测试坏了。公开仓不含该 yaml，克隆者只会看到 skip。
+#   ⚠️ 若 compiler / cli 整片红，先归因环境：质检门静音阈值按某个 macOS 版本的 say 标定，
+#     OS 升级后会顶穿，处置见 docs/06 §6.1.3.1（设 VOX_MAX_TAIL_SILENCE_MS 覆盖）。
 ```
 
 > **macOS `say` 应急（可选）**：已有 macOS 且暂不接 TTS 端点时，可在 `pack build` 命令上**省略**
@@ -195,17 +198,23 @@ python3 tools/run_all_tests.py
 
 ## Status（全部实测，口径见 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) / [`docs/13`](docs/13-未完成清单.md)）
 
-- **测试：11 个测试根，当前 `ran=1649 failed=1`**（2026-09-28 本机实测；`skipped` 随环境变，不是契约）。
-  那 1 条是下述同源指纹断言在按设计报警，**其余全绿**；公开仓不含被监视的 yaml，克隆者看到的是 `failed=0`。
-  唯一出处 = 命令，重跑它拿你自己的数：`python3 tools/run_all_tests.py`
-  yaml 可达 × PyYAML 四组合口径表与各根 skip 条件见 [`tools/README.md`](tools/README.md)；该表未覆盖、故在此保留：
-  本机 oMLX `:10099` 端点离线时对应 `adapters` 冒烟用例会 skip；CI 为 Python 3.12/3.13/3.14 三档矩阵，跑前先构建 heat-kefu 包让真包断言生效。
-  skip 不是失败，也不是「没跑」，但**它确实意味着那批断言没被验证**。
-  **唯一会报 `failed=1` 的情形**：`packs` 根的同源指纹断言（`test_yaml_fingerprint_unchanged`）盯着
+- **测试：11 个测试根；本仓不抄写任何测试条数**——数字随用例增删与宿主机环境漂移，
+  抄件必然过期（本仓已因此栽过：同一批数字在 README 与 `docs/13` 里各存一份、互相矛盾）。
+  **唯一出处 = 命令**，重跑它拿你自己的数：`python3 tools/run_all_tests.py`（末行给分项口径）。
+  克隆者在 CI（Python 3.12/3.13/3.14 三档矩阵）上看到的是全绿。
+  `skipped` 随环境变、不是契约：本机 oMLX `:10099` 离线或缺 ffmpeg 时 `adapters` 部分用例会 skip；
+  CI 跑前先构建 heat-kefu 包让真包断言生效。skip 不是失败，也不是「没跑」，
+  但**它确实意味着那批断言没被验证**。
+  **宿主机相关的一条**：`compiler` 质检门的头/尾静音阈值按某个 macOS 版本的 `say` 实测标定
+  （`docs/06 §6.1.3`），而 `say` 的静音填充随 OS 升级变化。若你的机器上 `say` 尾静音超过缺省 150ms，
+  预铸会 fail-closed、测试会红——**这是环境漂移不是代码回归**，设
+  `VOX_MAX_TAIL_SILENCE_MS`（及 `VOX_MAX_HEAD_SILENCE_MS`）显式覆盖即可，详见
+  [`docs/06 §6.1.3.1`](docs/06-预铸与执行-补定口径.md)。
+  **唯一会长期红的的情形**：`packs` 根的同源指纹断言（`test_yaml_fingerprint_unchanged`）盯着
   `adapters/framework_kefu` 所依赖的 kefu-agent 仓内 yaml 的 sha256；那个 yaml 一改，它就红。
   **那是「预铸资产与源话术不同源了」的门禁在按设计报警，不是测试坏了**（纪律 D4）——处置要由维护者
   决定是否接受新的同源基线，执行方与本文均无权自行改那个常量。公开仓不含该 yaml，克隆者只会看到 skip。
-  2026-09-23 清掉 **4 条 TTL 遗留用例**（夹具吃墙钟 + `executor._diagnose` 判据源不一致，见 [`docs/13`](docs/13-未完成清单.md) §五#22）后**本仓首次全绿**。`bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
+  `bin/vox` 五命令可用；业务包 3 个 + 前置包 demo 1 个（新增业务 = 新增目录，零内核改动）；
 - 离线对拍：预铸命中首响 P50 **0.232 ms**（n=20）vs 同引擎实时合成 **586.7 ms**（n=36）；
   慢路 **515.3 ms**（n=20）；出处 [`docs/09`](docs/09-链路级语音对拍-本地客服智能体.md) 实测表；
 - **真链路命中**：通过适配器接入开源客服框架（不改对方仓库），实弹 4 轮——

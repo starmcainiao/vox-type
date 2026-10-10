@@ -713,20 +713,16 @@ class TestDefaultVoiceSmoke(unittest.TestCase):
     不伪造通过。
     """
 
-    def _service_up(self) -> bool:
-        import socket
-        try:
-            with socket.create_connection(("127.0.0.1", 10099), timeout=2):
-                return True
-        except OSError:
-            return False
-
     def test_default_voice_produces_contract_wav(self):
         """合成一句 → 16kHz/单声道/16-bit WAV，且 runtime.audio.read_wav 能读。"""
-        if not self._service_up():
-            self.skipTest("本机 oMLX :10099 未运行（默认音色冒烟需要真服务）")
         tmp = tempfile.mkdtemp()
         try:
+            # 顺序要紧：**先**清干净 env，**再**探可用性。T79 实测的反例是原实现把
+            # _service_up()（裸 socket 打 10099）放在清 env 之前——开发机上 export 过
+            # VOX_TTS_ENDPOINT 时，探的是那个地址、打的却是缺省地址，两处可以不是一处；
+            # 而那条手写的 _service_up 还是探活逻辑的**第二份**，只探端口不探模型，
+            # 于是「端口通但模型不在」这一档照跑并炸在 404 上。
+            # 现在改调适配器自己的 `OmlxTts.probe_availability()`：单一权威、覆盖全部前置条件。
             # 非克隆 env 全部清掉（含 VOX_TTS_ENDPOINT / VOX_TTS_VOICE）：冒烟必须打本机缺省端点、
             # 用缺省音色，否则开发机上 export 过的地址会把这条用例悄悄指向别处。
             keys = ("VOX_TTS_REF", "VOX_TTS_REF_TEXT", "VOX_TTS_MODEL", "VOX_FFMPEG",
@@ -735,6 +731,11 @@ class TestDefaultVoiceSmoke(unittest.TestCase):
             for k in saved:
                 os.environ.pop(k, None)
             try:
+                available, reason = OmlxTts.probe_availability()
+                if not available:
+                    # skip 消息必须点名缺什么（与一致性套件同纪律）：只写「跳过」等于把
+                    # 「这台机器上验不了」伪装成「验过了」。
+                    self.skipTest(f"默认音色冒烟的前置条件不满足（{reason}）")
                 tts = OmlxTts(timeout_seconds=600)
                 self.assertEqual(tts.voice, "default")
                 out = Path(tmp) / "smoke.wav"

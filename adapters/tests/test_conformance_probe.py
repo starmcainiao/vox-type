@@ -34,6 +34,7 @@ T78 加的那一层：hook 回答的是「此刻能不能**真**合成」，前�
 env 一律就地还原（含「原本没设」）：漏还原会把后续用例悄悄指向别处。
 """
 
+import json
 import os
 import shutil
 import socket
@@ -167,8 +168,65 @@ class TestDiscoveredAdaptersDefaultToAvailable(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 真适配器那条 hook：探的必须是「无参构造会打的那个端点」
 # ---------------------------------------------------------------------------
-class TestOmlxTtsProbe(unittest.TestCase):
-    """`OmlxTts.probe_availability`：与 __init__ 同一条 env 回落链，探打同一个地址。"""
+def _fake_http_server(handler):
+    """起一个最小 HTTP 服务，返回 `(base_url, stop)`；`handler(path) -> (status_line, body)`。
+
+    为什么需要真的应答而不用裸 socket：T79 的探针会 `GET /v1/models`，裸 socket 连请求都
+    读不走（探针会超时降级），那就测不出「清单里有没有那个模型」这一档了。
+    只服务探针的这一个 GET，不实现 POST /v1/audio/speech——**不是**替身引擎，
+    不参与任何合成断言（那条纪律见本仓「反空转」）。
+
+    纯标准库 `http.server`，起在 127.0.0.1 的临时端口上，stop() 必定回收。
+    """
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler 约定的命名
+            status, body = handler(self.path)
+            raw = body if isinstance(body, bytes) else str(body).encode()
+            self.send_response(int(status.split()[1]))
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *args):  # 静音：stderr 噪声会污染测试输出
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+
+    def stop():
+        srv.shutdown()
+        srv.server_close()
+        thread.join(timeout=5)
+
+    return f"http://127.0.0.1:{srv.server_address[1]}", stop
+
+
+def _fake_models_server(model_ids):
+    """起一个只在 `GET /v1/models` 上返回给定模型清单的服务，返回 `(base_url, stop)`。"""
+    payload = {"object": "list", "data": [{"id": mid, "object": "model"} for mid in model_ids]}
+
+    def handler(path):
+        if path.rstrip("/").endswith("/v1/models"):
+            return "HTTP/1.1 200 OK", json.dumps(payload)
+        return "HTTP/1.1 404 Not Found", "{}"
+
+    return _fake_http_server(handler)
+
+
+class _OmlxProbeTestBase(unittest.TestCase):
+    """真适配器探针用例的公共装置：env 逐字还原 + 假 ffmpeg 挂在 PATH 前部。
+
+    **只放装置，不放任何用例**——它不是 `unittest.TestCase` 的测试目标
+    （名字以下划线开头，loadTestsFromModule 不会收它），子类各自定义自己的用例。
+    这一点是刻意的：早先让 `TestOmlxTtsModelProbe` 直接继承 `TestOmlxTtsProbe`，
+    结果父类 7 条用例在子类里被**重复跑了一遍**（子类 11 条 = 父类 7 + 新增 4），
+    计数虚高且同一断言跑两遍。「共享装置」与「继承测试用例」必须分开。
+    """
 
     def setUp(self):
         # 记下原值（None = 原本没设），tearDown 逐字还原。PATH 一并管起来：假 ffmpeg 靠
@@ -205,7 +263,11 @@ class TestOmlxTtsProbe(unittest.TestCase):
 
     @staticmethod
     def _listening():
-        """起一个临时回环监听，返回 (base_url, socket)；调用方在 finally 里 close。"""
+        """起一个临时回环监听，返回 (base_url, socket)；调用方在 finally 里 close。
+
+        裸 socket **不**应答 HTTP：探针的 `GET /v1/models` 会读不到东西而降级为
+        「不判不可用」。要测「清单里有没有那个模型」那一档，用 `_fake_models_server`。
+        """
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
@@ -218,6 +280,10 @@ class TestOmlxTtsProbe(unittest.TestCase):
             holder.bind(("127.0.0.1", 0))
             port = holder.getsockname()[1]
         return f"http://127.0.0.1:{port}"
+
+
+class TestOmlxTtsProbe(_OmlxProbeTestBase):
+    """`OmlxTts.probe_availability`：与 __init__ 同一条 env 回落链，探打同一个端点。"""
 
     def test_reachable_endpoint_is_available(self):
         """连得上的端点 + 解析得到 ffmpeg → (True, "")。
@@ -355,6 +421,92 @@ class TestOmlxTtsProbe(unittest.TestCase):
             )
         finally:
             listener.close()
+
+
+class TestOmlxTtsModelProbe(_OmlxProbeTestBase):
+    """T79：探针必须连**模型名**一起探——端点通不代表模型在。
+
+    这一族的缺陷是同一个失效面的第三层：T77 只探端点（漏 ffmpeg，T78 补），
+    T78 补齐 ffmpeg 后仍漏模型。实测 2026-10-10 本机 oMLX 上默认模型已不在清单里，
+    探针却报「可用」→ 套件照跑 → 3 条用例炸在 HTTP 404 上。
+
+    继承 `_OmlxProbeTestBase`（只含装置的基类）而非 `TestOmlxTtsProbe`：
+    后者带用例，继承它会让那 7 条在子类里重跑一遍、计数虚高。
+    """
+
+    def _serving(self, model_ids):
+        """起一个**真的会应答 GET /v1/models** 的本地服务，返回 (base_url, stop)。"""
+        return _fake_models_server(model_ids)
+
+    def test_model_absent_is_unavailable_and_names_env(self):
+        """清单里没有该模型 → (False, …)，reason 点名模型与 VOX_TTS_MODEL。"""
+        base, stop = self._serving(["some-other-model"])
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_TTS_MODEL"] = "vox-absent-model"
+            ok, reason = OmlxTts.probe_availability()
+        finally:
+            stop()
+        self.assertFalse(
+            ok,
+            f"模型不在清单仍报可用 = 探针只覆盖了一半前置条件，实际 {reason!r}",
+        )
+        self.assertIn("vox-absent-model", reason)
+        self.assertIn("VOX_TTS_MODEL", reason, f"reason 必须点名修法，实际 {reason!r}")
+
+    def test_model_present_is_available(self):
+        """清单里有该模型 → (True, "")，不因新增的模型检查而误判。"""
+        base, stop = self._serving(["vox-present-model", "other"])
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_TTS_MODEL"] = "vox-present-model"
+            ok, reason = OmlxTts.probe_availability()
+        finally:
+            stop()
+        self.assertTrue(ok, f"模型在清单里应报可用，实际 {reason!r}")
+        self.assertEqual(reason, "")
+
+    def test_unlistable_service_is_not_judged_unavailable(self):
+        """拿不到清单（老服务无 /v1/models / 返回非 JSON）→ **不判不可用**。
+
+        方向与 ffmpeg/端点相反是有意的：探针只负责给出**确定的**不该跑，
+        不负责替服务方猜测。这一档宁可放行去撞 synthesize 自己的响亮错误，
+        也不能因为「查不到证据」就把一个能用的适配器判死。
+        """
+        for label, handler in (
+            ("404 无此端点", lambda body: ("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", b"")),
+            ("非 JSON 垃圾", lambda body: ("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello", b"")),
+        ):
+            with self.subTest(服务=label):
+                base, stop = _fake_http_server(handler)
+                try:
+                    os.environ["VOX_TTS_ENDPOINT"] = base
+                    os.environ["VOX_TTS_MODEL"] = "vox-anything"
+                    ok, reason = OmlxTts.probe_availability()
+                finally:
+                    stop()
+                self.assertTrue(
+                    ok,
+                    f"{label} 不该被判不可用（探针不能凭缺证据判死），实际 {reason!r}",
+                )
+
+    def test_negative_control_ffmpeg_still_judged_when_model_absent(self):
+        """负控：模型不在**不会掩盖** ffmpeg 缺失——两条原因都要报出来。
+
+        「只报第一个原因」会让人补完一个再跑一遍才发现另一个，白来回一趟。
+        """
+        base, stop = self._serving(["some-other-model"])
+        try:
+            os.environ["VOX_TTS_ENDPOINT"] = base
+            os.environ["VOX_TTS_MODEL"] = "vox-absent-model"
+            os.environ["VOX_FFMPEG"] = "vox-no-such-ffmpeg"
+            ok, reason = OmlxTts.probe_availability()
+        finally:
+            stop()
+        self.assertFalse(ok)
+        self.assertIn("ffmpeg", reason, f"模型原因不得掩盖 ffmpeg 原因，实际 {reason!r}")
+        self.assertIn("VOX_TTS_MODEL", reason, f"模型原因必须仍在，实际 {reason!r}")
+        self.assertIn("; ", reason, "两条原因应用 '; ' 分隔")
 
 
 if __name__ == "__main__":

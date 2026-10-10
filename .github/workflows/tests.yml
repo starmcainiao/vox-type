@@ -7,10 +7,18 @@ on:
 
 jobs:
   unittest:
-    # macOS runner：本项目 TTS 引擎实现为 macOS say（零第三方依赖的前提），
+    # ⚠️ runner **钉死 macos-15**，不用 macos-latest（T79，2026-10-10）。
+    # 理由：macsay 适配器 = macOS `say`，而 `say` 的头/尾静音填充随 macOS 版本变化，
+    # 编译器质检门的静音阈值正是按该行为标定的（docs/06 §6.1.3）。
+    # 用 latest 的后果是「流水线随 runner 升级无预警地红/绿」，且无从归因——
+    # 本仓已因同类漂移栽过（阈值 vs macOS 27，见下方 env）。
+    # 升级 runner 时必须**同时重测并更新那组 env**，不许只改镜像了事。
+    #
+    # 本项目 TTS 引擎实现为 macOS say（零第三方依赖的前提），
     # cli/adapters 的预铸夹具需要真实 TTS 可用；Linux runner 无 say → 夹具失败。
-    # 注：本卡（T49）明确不动 runs-on（治理项见 docs/13 §五#27）。
-    runs-on: macos-latest
+    # 注：本卡（T49）明确不动 runs-on 的选型本身（治理项见 docs/13 §五#27），
+    # T79 只把「漂移的 latest」换成「钉死的版本」，不改变 macOS/Linux 的取舍。
+    runs-on: macos-15
     strategy:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
@@ -35,13 +43,43 @@ jobs:
 
       # 保留：packs 根的真包断言依赖它（不构建则诚实 skip）。
       # 注意这一条仍走 macsay 适配器（本卡不改，属既有行为）。
+      # T79：这一步也要跑质检门，故与下方全量测试用**同一组**阈值 env——
+      # 两处各写一份正是本仓栽过的「同一件事记在多处」（docs/13 顶部）。
       - name: 构建 heat-kefu 包（packs 的真包断言依赖它；不构建则诚实 skip）
+        env:
+          VOX_MAX_TAIL_SILENCE_MS: "250"
+          VOX_MAX_HEAD_SILENCE_MS: "100"
         run: sh bin/vox pack build packs/heat_kefu --out packs/heat_kefu_build/heat-kefu-1
+
+      # ── 质检门阈值的宿主机口径（T79，2026-10-10）─────────────────────
+      # 为什么需要这一段：编译器质检门的头/尾静音阈值是**按某台机器某个 macOS 版本的
+      # `say` 实测标定**的（docs/06 §6.1.3 按 macOS 14 的尾静音 31.2ms 留 5 倍余量钉 150ms）。
+      # `say` 的静音填充随 OS 升级而变：macOS 27.0.1 实测尾静音 155–187ms（P50 179ms），
+      # 余量被吃光 → 预铸 fail-closed → compiler/cli 两条根整片红。
+      # 这是**宿主机行为漂移穿透阈值**，不是代码回归（本机 3.14 复现、CI 3.12 同形）。
+      #
+      # 为什么不用 `macos-latest` 兜着：latest 会随 GitHub 换镜像而漂移，届时
+      # 「上个月还绿的流水线今天红了」且无从归因。显式声明本流水线所依赖的引擎行为，
+      # 阈值跟着镜像一起被钉住；真要升级 runner，这里必须同时重测阈值（不许默默跟）。
+      #
+      # ⚠️ 这一段是**环境声明**，不是「把门禁放宽」：质检门本身的拒收语义一字未改，
+      #    下面的值就是本机 2026-10-10 对 macOS 27 实测分布（max 186.8ms）留的余量。
+      #    若 runner 换版本导致覆盖值也不够，红灯必须响——那说明引擎行为又变了。
+      - name: 声明质检门阈值口径（尾静音随宿主机 say 行为漂移，见上方注释）
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner: ${{ matrix.os || 'macos-15' }} / python ${{ matrix.python-version }}"
+          echo "VOX_MAX_TAIL_SILENCE_MS=250  # 实测 macOS 27: max 186.8ms，留约 1.3 倍余量"
+          echo "VOX_MAX_HEAD_SILENCE_MS=100  # 实测 macOS 27: max 23.0ms，留 4 倍余量（= 缺省值，显式写出便于审计）"
 
       # 测试跑批改走单一真源（T48）：删掉手抄的逐目录 shell 循环。
       # 之前 CI 与 CONTRIBUTING.md 各抄一份，两处会漂移。
       # run_all_tests.py 失败时非零退出并逐个点名 FAILED 根，无静默通过路径。
       - name: 全量测试（单一真源 tools/run_all_tests.py，零第三方依赖）
+        env:
+          VOX_MAX_TAIL_SILENCE_MS: "250"
+          VOX_MAX_HEAD_SILENCE_MS: "100"
         run: python3 tools/run_all_tests.py
 
       # ── 关卡 2/3：CLI 冒烟 + 退出码契约 ────────────────────────────────

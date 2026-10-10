@@ -63,6 +63,21 @@ RETRYABLE_ERRNOS = {
 FIX_HINT = ("端点不可用；请确认服务已在跑（或换一个在跑的端点），"
             "再以 env 指定：export VOX_TTS_ENDPOINT=http://<host>:<port>")
 
+# T79（2026-10-10）：模型不在服务端时的修复指引。
+# 为什么单列一条：DEFAULT_MODEL 是写死在 adapter.py 的**默认值**，而服务端装了什么模型
+# 是**宿主机状态**——两者会漂移（实测 2026-10-10：本机 oMLX 上
+# `Qwen3-TTS-12Hz-0.6B-Base-bf16` 已不在 `/v1/models`，只剩 `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`）。
+# 此前这类失败只报一句 "HTTP 404" + 服务端原文，用户看不出「这是模型名不对，改 env 即可」，
+# 于是 3 条适配器测试红着，没人知道是一行 env 能解决的事。
+# 模型名进 env 的唯一入口就是 VOX_TTS_MODEL（与 voice / endpoint 同一套约定）。
+MODEL_FIX_HINT = ("该模型名在服务端不存在（模型清单与本适配器默认值不匹配）；"
+                  "用 env 指定服务端实际提供的模型：export VOX_TTS_MODEL=<model-id>"
+                  "（可用 curl <base>/v1/models 查看；无需改代码、无需重铸包）")
+# 「服务端说了模型不存在」的判据标记：OpenAI 兼容服务普遍用这一措辞，
+# 但实现不一（有写 "not found"、有写 "does not exist"），故按小写子串匹配。
+# 注意这是**归类**用的辅助判据，不是重试判据——重试仍只看 HTTP 状态码（_retryable）。
+MODEL_MISSING_MARKERS = ("model '", "model \"", "not found", "does not exist", "unknown model")
+
 
 class OmlxTtsTransport:
     # /v1/audio/speech 的 HTTP 传输：POST 请求体 → 读响应字节 → 有界重试。
@@ -168,6 +183,15 @@ class OmlxTtsTransport:
                 snippet = exc.read()[:200].decode("utf-8", "replace")
             except (OSError, HttpLibError):
                 snippet = ""
+            # T79：4xx 且响应体点名「模型」→ 归类为「模型名不对」，附 VOX_TTS_MODEL 指引。
+            # 判据只用状态码 + 子串，**不改重试语义**（4xx 本来就不重试，见 _retryable），
+            # 也**不吞掉服务端原文**：片段照原样带出，用户仍能看到服务端的真实措辞与可用清单。
+            # 只在 4xx 上加这层归类——5xx 是引擎瞬时态（要重试），指向模型只会误导。
+            if exc.code < 500 and any(m in snippet.lower() for m in MODEL_MISSING_MARKERS):
+                raise TtsError(
+                    f"TTS 服务端不认这个模型（HTTP {exc.code}）→ {self._endpoint}："
+                    f"{exc.reason} {snippet!r}——{MODEL_FIX_HINT}"
+                ) from exc
             raise TtsError(f"TTS 服务端返回 HTTP {exc.code}（urllib.error.HTTPError）→ {self._endpoint}: {exc.reason} {snippet!r}") from exc
         except BaseException as exc:
             # 必须 `from exc` 挂住原异常：_retryable 靠 __cause__ 里的**类型**判可重试，

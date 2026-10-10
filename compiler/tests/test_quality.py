@@ -11,11 +11,14 @@ compiler.tests.test_quality — 质检门的度量 + 判据测试
 
 import array
 import math
+import os
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
+from compiler import quality
 from compiler.quality import AudioStats, QualityError, check_quality, measure
 
 
@@ -194,6 +197,123 @@ class TestTailSilenceOverThreshold(_TmpDirTestBase):
         self.assertEqual(len(tail_issues), 1, f"应只有尾静音一条: {issues}")
         self.assertIn("150", tail_issues[0])
         self.assertIn("313.0", tail_issues[0])
+
+
+class TestSilenceThresholdEnvOverride(_TmpDirTestBase):
+    """尾/头静音阈值的显式环境覆盖（T79，2026-10-10）。
+
+    背景：阈值按 macOS 14 的 `say` 实测（尾 31.2ms）留 5 倍余量钉成 150ms；
+    macOS 27 实测尾静音 155–187ms，余量被吃光 → 全仓 fail-closed。
+    处置是给一个**显式、默认不变、非法值抛错**的覆盖口，而不是直接改常量。
+
+    本类锁三条性质：
+      ① 不设 = 与从前逐字节一致（缺省行为零变化）；
+      ② 设了确实改变判定，且**报告消息点名「用了哪套阈值」**——
+         否则读报告的人会把「放宽后的绿」误当成「按基线口径的绿」；
+      ③ **负控**：放宽尾静音绝不能顺手放过别的判据（削波/峰值/头静音照样拒），
+         更不能把非法值静默吞掉当默认值。
+    """
+
+    def _tail_silence_samples(self, ms: float) -> array.array:
+        return (
+            array.array("h", b"\x00\x00" * HEAD_ZERO)
+            + _tone(AMP_OK, TONE_SAMPLES)
+            + array.array("h", b"\x00\x00" * int(ms / 1000.0 * SR))
+        )
+
+    def test_unset_env_is_byte_identical_to_default(self):
+        """① 不设变量 → 仍按缺省 150ms 判，消息里不出现覆盖说明。"""
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(quality.TAIL_SILENCE_ENV, None)
+            p = _write_wav(self.tmp_dir / "t.wav", self._tail_silence_samples(313))
+            issues = check_quality(measure(p))
+        tail_issues = [i for i in issues if "尾静音" in i]
+        self.assertEqual(len(tail_issues), 1, f"缺省应仍拦 313ms: {issues}")
+        self.assertIn("150", tail_issues[0])
+        self.assertNotIn(quality.TAIL_SILENCE_ENV, tail_issues[0])
+
+    def test_raising_override_admits_asset_and_names_threshold(self):
+        """② 放宽到 400ms → 313ms 通过；覆盖不足时消息点名变量名与缺省值。"""
+        with mock.patch.dict(os.environ, {quality.TAIL_SILENCE_ENV: "400"}, clear=False):
+            # 400ms 覆盖：313ms 现在合规
+            p_ok = _write_wav(self.tmp_dir / "ok.wav", self._tail_silence_samples(313))
+            self.assertEqual(
+                [i for i in check_quality(measure(p_ok)) if "尾静音" in i], [],
+                "覆盖生效后 313ms 不应再报尾静音",
+            )
+            # 450ms 仍超 400ms 覆盖 → 拒，且消息必须说明用的是哪套阈值
+            p_bad = _write_wav(self.tmp_dir / "bad.wav", self._tail_silence_samples(450))
+            tail_issues = [i for i in check_quality(measure(p_bad)) if "尾静音" in i]
+        self.assertEqual(len(tail_issues), 1, f"超覆盖值仍须拦: {tail_issues}")
+        self.assertIn("400", tail_issues[0])
+        self.assertIn(quality.TAIL_SILENCE_ENV, tail_issues[0])
+        self.assertIn("150", tail_issues[0])
+
+    def test_negative_control_override_does_not_mask_other_criteria(self):
+        """③ 负控：把尾静音放到天荒地老，削波/峰值越带/头静音照样被拒。"""
+        with mock.patch.dict(os.environ, {quality.TAIL_SILENCE_ENV: "99999"}, clear=False):
+            # (a) 削波：注入满幅样本
+            clipped = array.array("h", [32767] * 5) + _tone(AMP_OK, 100)
+            p1 = _write_wav(self.tmp_dir / "clip.wav", clipped)
+            self.assertTrue(
+                any("削波" in i for i in check_quality(measure(p1))),
+                "放宽尾静音不得放过削波件",
+            )
+            # (b) 峰值越带：峰值远低于 -20 dBFS
+            quiet = array.array("h", b"\x00\x00" * HEAD_ZERO) + _tone(300, 2000)
+            p2 = _write_wav(self.tmp_dir / "quiet.wav", quiet)
+            self.assertTrue(
+                any("峰值越带" in i for i in check_quality(measure(p2))),
+                "放宽尾静音不得放过峰值越带件",
+            )
+            # (c) 头静音独立判定：尾静音覆盖**不牵连**头静音阈值
+            head_long = (
+                array.array("h", b"\x00\x00" * int(0.5 * SR))
+                + _tone(AMP_OK, 2000)
+                + array.array("h", b"\x00\x00" * 10)
+            )
+            p3 = _write_wav(self.tmp_dir / "head.wav", head_long)
+            head_issues = [i for i in check_quality(measure(p3)) if "头静音" in i]
+            self.assertEqual(len(head_issues), 1, f"头静音仍须按 100ms 独立拒: {head_issues}")
+            self.assertIn("100", head_issues[0])
+
+    def test_illegal_override_raises_instead_of_silently_defaulting(self):
+        """③ 负控：非法覆盖值抛 QualityError，不静默当默认值。
+
+        「配错了」和「没配」必须分得开——静默回落正是本仓 D4 要禁的那类静默降级。
+        """
+        for bad in ("abc", "-1", "0", "nan", "inf"):
+            with self.subTest(value=bad):
+                with mock.patch.dict(os.environ, {quality.TAIL_SILENCE_ENV: bad}, clear=False):
+                    p = _write_wav(self.tmp_dir / "t.wav", self._tail_silence_samples(313))
+                    with self.assertRaises(QualityError) as ctx:
+                        check_quality(measure(p))
+                    self.assertIn(quality.TAIL_SILENCE_ENV, str(ctx.exception))
+                    self.assertIn(repr(bad), str(ctx.exception))
+
+    def test_blank_value_falls_back_to_default(self):
+        """空串/纯空白按「没配」处理（不是非法值），走缺省判定。"""
+        for blank in ("", "   "):
+            with self.subTest(value=repr(blank)):
+                with mock.patch.dict(os.environ, {quality.TAIL_SILENCE_ENV: blank}, clear=False):
+                    p = _write_wav(self.tmp_dir / "t.wav", self._tail_silence_samples(313))
+                    tail_issues = [i for i in check_quality(measure(p)) if "尾静音" in i]
+                self.assertEqual(len(tail_issues), 1, f"空值应回落缺省: {tail_issues}")
+                self.assertIn("150", tail_issues[0])
+
+    def test_head_override_is_independent(self):
+        """头静音有自己的覆盖口，与尾静音互不影响。"""
+        with mock.patch.dict(os.environ, {quality.HEAD_SILENCE_ENV: "600"}, clear=False):
+            head_long = (
+                array.array("h", b"\x00\x00" * int(0.5 * SR))
+                + _tone(AMP_OK, 2000)
+                + array.array("h", b"\x00\x00" * 10)
+            )
+            p = _write_wav(self.tmp_dir / "head.wav", head_long)
+            self.assertEqual(
+                [i for i in check_quality(measure(p)) if "头静音" in i], [],
+                "头静音覆盖生效后 500ms 头静音应通过",
+            )
 
 
 class TestClipping(_TmpDirTestBase):
