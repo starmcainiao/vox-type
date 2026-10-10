@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 
 from adapters.asr_omlx import AsrError, OmlxAsr
+from adapters.asr_omlx import adapter as omlx_asr_adapter
 
 WAV_BYTES = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 36
 TEXT = "今天下午三点提醒你开会。"
@@ -252,6 +253,31 @@ class AdapterConfigTest(unittest.TestCase):
         """真机适配器必须显式声明 synthetic=False（T08b 审计 #2：忘打标记的替身会被误认为真机）。"""
         self.assertIs(OmlxAsr().synthetic, False)
         self.assertEqual(OmlxAsr().name, "omlx-asr")
+
+    def test_model_version_tracks_the_model_actually_used(self):
+        """T79（2026-10-10）：`model_version` 必须**跟着实际用的模型走**。
+
+        缺陷：`model_version` 此前是类属性、值恒为 `DEFAULT_MODEL`，而构造参数 `model=`
+        只写进 `self.model`（请求体用对了）。`eval/readback` 报告的 env 段取的正是
+        `model_version`——于是实测 `--model Qwen3-ASR-1.7B-bf16` 跑完，
+        报告仍写 `Qwen3-ASR-0.6B-8bit`。**出处写错比没有出处更坏**：读报告的人会信它。
+        这条用例钉住「两者恒等」，否则改回类属性即红。
+        """
+        for model in ("Qwen3-ASR-0.6B-8bit", "Qwen3-ASR-1.7B-bf16", "some-future-asr"):
+            with self.subTest(model=model):
+                asr = OmlxAsr(model=model)
+                self.assertEqual(asr.model_version, model)
+                self.assertEqual(asr.model_version, asr.model)
+
+    def test_default_construction_keeps_default_model_version(self):
+        """不传 model 时仍等于缺省值（旧行为不变，故本条无风险）。"""
+        self.assertEqual(OmlxAsr().model_version, OmlxAsr().model)
+        self.assertEqual(OmlxAsr().model_version, omlx_asr_adapter.DEFAULT_MODEL)
+
+    def test_model_version_is_per_instance_not_leaking_across(self):
+        """负控：上一条用例设过的模型不得漏进下一个实例（类属性共享的典型症状）。"""
+        OmlxAsr(model="leaked-model")
+        self.assertNotEqual(OmlxAsr().model_version, "leaked-model")
 
 
 class LocalFileErrorTest(unittest.TestCase):

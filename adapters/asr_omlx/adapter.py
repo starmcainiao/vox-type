@@ -107,6 +107,14 @@ class OmlxAsr:
         self.model = model
         self.timeout = timeout_seconds
         self._opener = opener
+        # T79（2026-10-10）：`model_version` 此前是**类属性**，值恒为 DEFAULT_MODEL。
+        # 于是 `OmlxAsr(model="X")` 只改了 self.model（请求体用对了），
+        # 而 `model_version` 仍是缺省那个——`eval/readback` 正是取 model_version 写进
+        # 报告 env 的，于是报告里的「ASR 模型出处」与实际转写用的模型**不是同一个**。
+        # 实测：`--model Qwen3-ASR-1.7B-bf16` 跑完，报告 env 仍写 Qwen3-ASR-0.6B-8bit。
+        # 这违反 D6「数字必须有出处」——**出处写错比没有出处更坏**（读报告会信它）。
+        # 改法：实例化时同步成实际使用的模型；不传 model 时与缺省同值，故旧行为不变。
+        self.model_version = model
 
     def endpoint(self) -> str:
         """返回完整转写端点 URL（base_url + 协议路径）。

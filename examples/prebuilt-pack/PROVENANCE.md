@@ -10,16 +10,16 @@
 | `pack_id` | `heat-kefu-prebuilt-10`（**子集独立身份**，与全量包 `heat-kefu` 不通用、不撞号） |
 | `pack_version` / `protocol_version` / `ruleset_version` | `1` / `0.1` / `v1` |
 | `voice` | `default`（oMLX **默认音色，非克隆**） |
-| `model_version` | `Qwen3-TTS-12Hz-0.6B-Base-bf16`（= `adapters.tts_omlx.OmlxTts.DEFAULT_MODEL`） |
-| `created_at` | `2026-09-24T08:04:49+00:00`（以 `manifest.json` 为准） |
+| `model_version` | `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`（= `adapters.tts_omlx.OmlxTts.DEFAULT_MODEL`） |
+| `created_at` | `2026-10-10T10:27:33+00:00`（以 `manifest.json` 为准；**T79 重铸**，见下） |
 | 音频规格 | 16 kHz / 单声道 / 16-bit PCM（`runtime.audio` 契约） |
-| 体积 | 音频 784,028 字节（10 个 wav）；整目录 **799,100 字节**（`du -sk` 804 KB，含清单 / 台账 / 本文件），远低于卡的 3 MB 上限 |
+| 体积 | 音频 813,582 字节（10 个 wav）；整目录 **817,266 字节**（含清单 / 台账 / 本文件），远低于卡的 3 MB 上限 |
 
 ### 口径：小模型、非克隆、非 `say`
 
 依卡 §四.1「**不得用 `say` 生成任何入库音频**」，本包**不使用** macOS `say`：
 
-- **引擎**：`adapters.tts_omlx:OmlxTts` → oMLX `Qwen3-TTS-12Hz-0.6B-Base-bf16`。**小模型**。
+- **引擎**：`adapters.tts_omlx:OmlxTts` → oMLX `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`。**小模型**。
 - **音色**：`voice=default`（生成时 `VOX_TTS_VOICE` 未设，回落 `DEFAULT_VOICE="default"`）。
 - **非克隆**：生成时 `VOX_TTS_REF` 与 `VOX_TTS_REF_TEXT` **均未设**（每次构建前显式 `unset`），
   因此 `OmlxTts.voice` 不走 `clone-<sha256>` 分支。
@@ -46,12 +46,12 @@ CLI 缺省适配器冻结为 `adapters.tts_macsay:MacSayTts`（`cli/commands/__i
 `PASS=0 / PARTIAL=3 / FAIL=4` 映射）。
 这条闸是本仓「禁止静默换声音」的既有设计，不是缺陷。
 
-## 二、生成环境（2026-09-24，本机 macOS arm64）
+## 二、生成环境（**2026-10-10 T79 重铸**，本机 macOS 27.0.1 arm64）
 
 - **适配器**：`adapters.tts_omlx:OmlxTts`（OpenAI 兼容 `/v1/audio/speech` 客户端；
   走缺省基址 `http://127.0.0.1:10099`，适配器不写死地址）。
-- **模型**：oMLX `Qwen3-TTS-12Hz-0.6B-Base-bf16`。**小模型、非克隆。**
-- **环境**：`python3` 3.14.6、`ffmpeg`（`/opt/homebrew/bin/ffmpeg`；服务端 24 kHz →
+- **模型**：oMLX `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`。**小模型、非克隆。**
+- **环境**：`python3` 3.14.7、`macOS 27.0.1`、`ffmpeg`（`/opt/homebrew/bin/ffmpeg`；服务端 24 kHz →
   适配器内降到 16 kHz / 单声道 / 16-bit）。
 
 ### 生成命令（原样）
@@ -84,20 +84,20 @@ sh bin/vox pack build /tmp/vox_prebuilt_src \
 
 `★` = `examples/plan.json` 的 key（自证必需）；`farewell` 同时是 `script.json` 的
 `terminal_keys`。`text` 逐字取自 `packs/heat_kefu/phrases.json`，未改一字。
-`duration_ms` 是**本次采样值**（采样型引擎会漂移，见 §五）。
+`duration_ms` 是**本次采样值**（采样型引擎会漂移，见 §五；**T79 重铸后全部更新过一次**）。
 
 | # | key | text | `manifest.json` 的 `fingerprint` | `duration_ms`（本次采样） |
 |---|---|---|---|---|
-| 1 ★ | `opening__1` | 您好，我是供热智能客服小暖。 | `fc8097d3763973fd` | 2784 |
-| 2 ★ | `opening__2` | 报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。 | `84392223402c7a2b` | 8127 |
-| 3 ★ | `transfer_ready` | 已为您转接人工坐席，请稍候。 | `299e94b7e394f5f2` | 2777 |
-| 4 ★ | `farewell` | 好的，再见，祝您生活愉快！ | `7543de62dc32de91` | 2510 |
-| 5 | `work_order_empty` | 暂无工单记录。 | `8ba5edbeb4a9a52c` | 1074 |
-| 6 | `clarify_repair__1` | 您是要报修吗？ | `afcbcfbb17fbde7f` | 1152 |
-| 7 | `repair_confirm_question__1` | 信息是否正确？ | `a31c484dde72bf9f` | 1389 |
-| 8 | `chat_smalltalk__2` | 请问有什么可以帮您？ | `7a1f27a637aabda2` | 1566 |
-| 9 | `repair_ask_natural_userNo__1` | 您的户号是多少？ | `ccba9d28fd5da785` | 1363 |
-| 10 | `repair_ask_desc` | 请简单描述一下具体情况。 | `f806210d7ac8d416` | 1745 |
+| 1 ★ | `opening__1` | 您好，我是供热智能客服小暖。 | `fc8097d3763973fd` | 2789 |
+| 2 ★ | `opening__2` | 报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。 | `84392223402c7a2b` | 8773 |
+| 3 ★ | `transfer_ready` | 已为您转接人工坐席，请稍候。 | `299e94b7e394f5f2` | 2283 |
+| 4 ★ | `farewell` | 好的，再见，祝您生活愉快！ | `7543de62dc32de91` | 2725 |
+| 5 | `work_order_empty` | 暂无工单记录。 | `8ba5edbeb4a9a52c` | 1042 |
+| 6 | `clarify_repair__1` | 您是要报修吗？ | `afcbcfbb17fbde7f` | 999 |
+| 7 | `repair_confirm_question__1` | 信息是否正确？ | `a31c484dde72bf9f` | 1524 |
+| 8 | `chat_smalltalk__2` | 请问有什么可以帮您？ | `7a1f27a637aabda2` | 1661 |
+| 9 | `repair_ask_natural_userNo__1` | 您的户号是多少？ | `ccba9d28fd5da785` | 1384 |
+| 10 | `repair_ask_desc` | 请简单描述一下具体情况。 | `f806210d7ac8d416` | 2229 |
 
 **关于「manifest 的 sha256 与音频逐一对应」**：资产格式冻结在 `assets/pack.py`，
 清单里的指纹字段就叫 `fingerprint`，取
@@ -129,7 +129,7 @@ sh bin/vox verify examples/prebuilt-pack     # rc=0 → 清单与音频内容逐
      若沿用 `heat-kefu`，10 句子集与 69 句全量包将同 `pack_id` + 同 `pack_version`，
      两个不同产物撞同一身份，属静默隐患）；
    - `voice`：`Tingting` → `default`（对齐 oMLX 默认音色）；
-   - `model_version`：`macos-say` → `Qwen3-TTS-12Hz-0.6B-Base-bf16`
+   - `model_version`：`macos-say` → `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`
      （**必须**等于 `OmlxTts.model_version` 的实际值，否则运行时 `engine_mismatch`）。
 5. **自校验**：`sh bin/vox pack check /tmp/vox_prebuilt_src` → **rc=0**
    （`phrases=10 units=10 violations=0 pack_validate=0 passed=true`）。
@@ -139,7 +139,7 @@ sh bin/vox verify examples/prebuilt-pack     # rc=0 → 清单与音频内容逐
 
 ## 五、可复现口径（明示）
 
-**本包非字节级可复现。** `Qwen3-TTS-12Hz-0.6B-Base-bf16` 是**采样型**神经 TTS 引擎：
+**本包非字节级可复现。** `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit` 是**采样型**神经 TTS 引擎：
 同一文本、同一模型、同一音色，两次合成的音频字节**不会相同**；`compiler` 的头静音超限
 有界重采也是采样过程。本包在 2026-09-24 一天内重铸过多次，10 条 `fingerprint`
 **逐条不变**，而 `duration_ms` 与字节数在毫秒/字节级漂移——这正是本节的实证。
@@ -156,7 +156,14 @@ sh bin/vox verify examples/prebuilt-pack     # rc=0 → 清单与音频内容逐
 ### 重铸命令
 
 ```sh
-# 需要：本机 oMLX 起 TTS 服务（Qwen3-TTS-12Hz-0.6B-Base-bf16）+ ffmpeg
+# 需要：本机 oMLX 起 TTS 服务（mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit）+ ffmpeg
+#
+# ⚠️ T79 记的坑：本节原命令是 `rm -rf /tmp/vox_prebuilt_src examples/prebuilt-pack`，
+# 而 **PROVENANCE.md 就在 examples/prebuilt-pack/ 里**——照抄执行会把本说明书一并删掉
+# （T79 实测踩到，靠提交前的备份捞回）。正确做法：**只清产物、不清本文件**——
+#   rm -rf examples/prebuilt-pack/audio examples/prebuilt-pack/manifest.json \
+#          examples/prebuilt-pack/prebake_ledger.json
+# 或先 `cp PROVENANCE.md /tmp/` 再铸、铸完放回。**永远不要对装着本文件的目录用 `rm -rf`。**
 # 不要：macOS 的 say（本卡禁止用它生成入库音频）
 rm -rf /tmp/vox_prebuilt_src examples/prebuilt-pack && mkdir -p /tmp/vox_prebuilt_src
 #   ……按 §四 裁剪规则重建 phrases.json / script.json / pack.json……

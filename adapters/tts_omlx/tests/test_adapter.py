@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 from adapters.tts_omlx import OmlxTts, TtsError
+from adapters.tts_omlx import adapter as omlx_adapter
 from adapters.tts_omlx.transport import (FIX_HINT, MAX_RETRIES, OmlxTtsTransport)
 import adapters.tts_omlx.adapter as adapter_module
 from adapters.tts_omlx.transport import OmlxTtsTransport
@@ -295,7 +296,7 @@ class TestAttributes(TmpDir):
     def test_name_and_model_version_nonempty(self):
         """name / model_version 非空，二者都参与资产指纹。"""
         self.assertEqual(self.default_tts().name, "omlx-tts")
-        self.assertEqual(self.default_tts().model_version, "Qwen3-TTS-12Hz-0.6B-Base-bf16")
+        self.assertEqual(self.default_tts().model_version, omlx_adapter.DEFAULT_MODEL)
 
     def test_requires_core_declared(self):
         """requires_core 必须声明（与 tts_macsay 同口径）。"""
@@ -569,7 +570,7 @@ class TestClonePath(TmpDir):
     def test_clone_changes_model_version(self):
         """克隆音色的 model_version 必须是 clone 专用值（与默认音色资产不互通）。"""
         ref = self.write_ref()
-        self.assertEqual(self.default_tts().model_version, "Qwen3-TTS-12Hz-0.6B-Base-bf16")
+        self.assertEqual(self.default_tts().model_version, omlx_adapter.DEFAULT_MODEL)
         os.environ["VOX_TTS_REF"] = str(ref)
         os.environ["VOX_TTS_REF_TEXT"] = "转写"
         self.assertEqual(OmlxTts().model_version, "qwen3-tts-0.6b-base-clone")
@@ -1061,8 +1062,9 @@ class TestRetrySemantics(TmpDir):
         stderr, _ = self.capture_stderr(lambda: tts.synthesize("进度行校验", out))
         self.assertTrue(out.is_file(), "进度行不得改变成功路径")
         lines = [l for l in stderr.splitlines() if l.startswith("[prebake] ")]
-        self.assertEqual(lines, ["[prebake] 1/? voice=default model=Qwen3-TTS-12Hz-0.6B-Base-bf16"],
-                         f"单次合成应恰好一条进度行且字段齐全，实际 stderr={stderr!r}")
+        self.assertEqual(
+            lines, [f"[prebake] 1/? voice=default model={omlx_adapter.DEFAULT_MODEL}"],
+            f"单次合成应恰好一条进度行且字段齐全，实际 stderr={stderr!r}")
 
     def test_prebake_progress_goes_to_stderr_not_stdout(self):
         """进度走 stderr：stdout 保持只有机器可读产物。两个流必须**同时**截住才有意义。"""

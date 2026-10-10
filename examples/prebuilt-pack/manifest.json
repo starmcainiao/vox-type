@@ -4,8 +4,8 @@
   "protocol_version": "0.1",
   "ruleset_version": "v1",
   "voice": "default",
-  "model_version": "Qwen3-TTS-12Hz-0.6B-Base-bf16",
-  "created_at": "2026-09-24T08:04:49.967973+00:00",
+  "model_version": "mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit",
+  "created_at": "2026-10-10T10:27:33.333252+00:00",
   "assets": [
     {
       "key": "transfer_ready",
@@ -13,9 +13,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "已为您转接人工坐席，请稍候。",
-      "fingerprint": "299e94b7e394f5f2",
-      "path": "audio/299e94b7e394f5f2.wav",
-      "duration_ms": 2777
+      "fingerprint": "e9de8ba5580f9faf",
+      "path": "audio/e9de8ba5580f9faf.wav",
+      "duration_ms": 2283
     },
     {
       "key": "farewell",
@@ -23,9 +23,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "好的，再见，祝您生活愉快！",
-      "fingerprint": "7543de62dc32de91",
-      "path": "audio/7543de62dc32de91.wav",
-      "duration_ms": 2510
+      "fingerprint": "880f8cdc30fddd53",
+      "path": "audio/880f8cdc30fddd53.wav",
+      "duration_ms": 2725
     },
     {
       "key": "work_order_empty",
@@ -33,9 +33,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "暂无工单记录。",
-      "fingerprint": "8ba5edbeb4a9a52c",
-      "path": "audio/8ba5edbeb4a9a52c.wav",
-      "duration_ms": 1074
+      "fingerprint": "9b651d9186e3ecd9",
+      "path": "audio/9b651d9186e3ecd9.wav",
+      "duration_ms": 1042
     },
     {
       "key": "repair_ask_desc",
@@ -43,9 +43,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "请简单描述一下具体情况。",
-      "fingerprint": "f806210d7ac8d416",
-      "path": "audio/f806210d7ac8d416.wav",
-      "duration_ms": 1745
+      "fingerprint": "4897227cf3f2fc5c",
+      "path": "audio/4897227cf3f2fc5c.wav",
+      "duration_ms": 2229
     },
     {
       "key": "opening__1",
@@ -53,9 +53,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "您好，我是供热智能客服小暖。",
-      "fingerprint": "fc8097d3763973fd",
-      "path": "audio/fc8097d3763973fd.wav",
-      "duration_ms": 2784
+      "fingerprint": "57b02883fe4c876c",
+      "path": "audio/57b02883fe4c876c.wav",
+      "duration_ms": 2789
     },
     {
       "key": "opening__2",
@@ -63,9 +63,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "报修、查账单缴费、供暖政策咨询，都可以直接跟我说，比如“我要报修”或“查一下账单”。",
-      "fingerprint": "84392223402c7a2b",
-      "path": "audio/84392223402c7a2b.wav",
-      "duration_ms": 8127
+      "fingerprint": "eaaccad899702d72",
+      "path": "audio/eaaccad899702d72.wav",
+      "duration_ms": 8773
     },
     {
       "key": "chat_smalltalk__2",
@@ -73,9 +73,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "请问有什么可以帮您？",
-      "fingerprint": "7a1f27a637aabda2",
-      "path": "audio/7a1f27a637aabda2.wav",
-      "duration_ms": 1566
+      "fingerprint": "bb7f5b2abd164d54",
+      "path": "audio/bb7f5b2abd164d54.wav",
+      "duration_ms": 1661
     },
     {
       "key": "clarify_repair__1",
@@ -83,19 +83,19 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "您是要报修吗？",
-      "fingerprint": "afcbcfbb17fbde7f",
-      "path": "audio/afcbcfbb17fbde7f.wav",
-      "duration_ms": 1152
+      "fingerprint": "08d42026218446c3",
+      "path": "audio/08d42026218446c3.wav",
+      "duration_ms": 999
     },
     {
       "key": "repair_confirm_question__1",
       "part_index": 0,
       "rate_key": "normal",
       "variant": 0,
-      "text": "信息是否正确？",
-      "fingerprint": "a31c484dde72bf9f",
-      "path": "audio/a31c484dde72bf9f.wav",
-      "duration_ms": 1389
+      "text": "以上信息是否正确？",
+      "fingerprint": "ad6a5c8c034b7a89",
+      "path": "audio/ad6a5c8c034b7a89.wav",
+      "duration_ms": 1524
     },
     {
       "key": "repair_ask_natural_userNo__1",
@@ -103,9 +103,9 @@
       "rate_key": "normal",
       "variant": 0,
       "text": "您的户号是多少？",
-      "fingerprint": "ccba9d28fd5da785",
-      "path": "audio/ccba9d28fd5da785.wav",
-      "duration_ms": 1363
+      "fingerprint": "240c21daee4dff5f",
+      "path": "audio/240c21daee4dff5f.wav",
+      "duration_ms": 1384
     }
   ]
 }

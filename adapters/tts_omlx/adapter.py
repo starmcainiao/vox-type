@@ -31,7 +31,21 @@ BASE_URL = "http://127.0.0.1:10099"
 # 探活超时（秒）随探针实现一起搬到 probe.py（T79）——常量跟着用它的那份代码走，
 # 不留一份「没人用的副本」在 adapter 里（那正是本仓反复栽的双份真相）。
 SPEECH_ENDPOINT = "/v1/audio/speech"
-DEFAULT_MODEL = "Qwen3-TTS-12Hz-0.6B-Base-bf16"
+# T79（2026-10-10）改默认值。**这不是「升级模型」，是「换一个仍然存在的模型」**：
+# 原值 `Qwen3-TTS-12Hz-0.6B-Base-bf16` 已不在本机 oMLX 的 `/v1/models` 里（宿主机状态漂移，
+# 该仓没有任何机制能感知——这正是 probe.py 补上模型检查的原因）。
+# 候选实测（2026-10-10，6 条 `packs/fin-cs` 真实话术）：
+#   · `mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit`  6/6 成功，回读 CER mean=0.0 / max=0.0
+#     （三个 ASR 交叉验：Qwen3-ASR-0.6B / 1.7B 均 0.0；whisper-large-v3-turbo mean 0.0556）
+#   · `Voxtral-4B-TTS-2603-mlx-4bit`                 0/6，服务端恒 500（不兼容本协议）
+#   ⇒ 本机唯一可用者即本值。
+# ⚠️ `docs/13 §五#23` 曾记「1.7B 档产出退化：ASR 回读乱码、ref_text 混入输出」——
+#   该记录是 2026-09-23 在**克隆路径**（参考音频 + ref_text）下的实测，
+#   **默认音色路径上的同档今日未见退化**。克隆路径是否仍退化**未复测**，故 #23 不整条关闭。
+# 改这个值 = `model_version` 变 = **全部既有资产指纹失效、须重铸**（AGENTS.md §⑥ 的既定机制）。
+# 随仓示例包 `examples/prebuilt-pack` 的 manifest/ledger 已同步本值，
+# 否则 CI 关卡 2 的「零引擎调用」断言会因 engine_mismatch 报 rc=5。
+DEFAULT_MODEL = "mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit"
 CLONE_MODEL_VERSION = "qwen3-tts-0.6b-base-clone"
 DEFAULT_VOICE = "default"
 DEFAULT_FFMPEG = "ffmpeg"
