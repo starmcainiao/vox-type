@@ -1,0 +1,15 @@
+{
+  "command": "run",
+  "pack_dir": "examples/prebuilt-pack",
+  "plan_id": "vox-cli",
+  "turn_id": 1,
+  "hit_count": 0,
+  "miss_count": 0,
+  "fallback_count": 0,
+  "tts_calls": 0,
+  "first_audio_ms": 0,
+  "total_duration_ms": 0,
+  "out_path": null,
+  "events": [],
+  "aborted": "plan 单元 #1 未命中（key='this_key_does_not_exist_zzz'，reason=key_not_prebaked）：allow_fallback=False → 中止整条 plan（fail-closed：不写输出文件、不播其他话术）"
+}

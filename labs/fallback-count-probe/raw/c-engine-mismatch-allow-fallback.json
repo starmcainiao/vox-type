@@ -1,0 +1,28 @@
+{
+  "command": "run",
+  "pack_dir": "examples/prebuilt-pack",
+  "plan_id": "vox-cli",
+  "turn_id": 1,
+  "hit_count": 0,
+  "miss_count": 0,
+  "fallback_count": 1,
+  "tts_calls": 1,
+  "first_audio_ms": 742.2671669628471,
+  "total_duration_ms": 3229,
+  "out_path": "/tmp/vox-t89-wav.88v0Cw/c.wav",
+  "events": [
+    {
+      "ts": "2026-10-12T16:22:11.288346Z",
+      "turn_id": 1,
+      "plan_id": "vox-cli",
+      "key": "this_key_does_not_exist_zzz",
+      "part": 1,
+      "rate": "normal",
+      "variant": null,
+      "reason": "engine_mismatch",
+      "pack_version": "1",
+      "first_audio_ms": 742.2671669628471,
+      "fallback": true
+    }
+  ]
+}

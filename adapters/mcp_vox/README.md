@@ -86,11 +86,11 @@ MCP 没有薄壳，所以这步得自己做——`PYTHONPATH` 是**唯一**的�
   完整理由见 [`docs/24`](../../docs/24-接入形态与评判.md) §四定案 6。
 - 工具内部错误 → `tools/call` 的 `isError: true`（不崩、不吐栈）。
 
-## 四、三个工具的出参
+## 四、四个工具的出参
 
 `tools/list` 返回工具名与 `inputSchema`；`tools/call` 的结果包在
 `result.content[0].text` 里，**那是又一个 JSON 字符串**（宿主要再解析一次）。
-三个工具都没有 path 字段、没有音频字节——这是有意设计，见下节。
+四个工具都没有 path 字段、没有音频字节——这是有意设计，见下节。
 
 ### `vox_lookup`
 
@@ -176,3 +176,68 @@ printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"v
 
 MCP 的正确用法是：**查**（这条话术铸了没有？）、**排**（这批 key 哪些没铸？）、
 **验**（这个包还合规吗？），然后宿主拿结论去做播报决策。
+
+## 六、`pack_dir` 的两种口径（**别记反**）
+
+| 工具 | `pack_dir` 指哪 | 为什么 |
+|---|---|---|
+| `vox_lookup` / `vox_plan` / `vox_pack_check` | **铸出来的资产包**（有 `manifest.json`） | 它们查的是**音频资产** |
+| `vox_plan_from_state` | **包源目录**（有 `trigger.json`） | 它查的是**规则**，而 `trigger.json` 不进资产包 |
+
+`vox_lookup` / `vox_plan` / `vox_pack_check` 三条工具的 `pack_dir` **一律只认铸出来的资产包**
+（目录里有 `manifest.json`）。`packs/<业务>/` 那种**包源目录**（有 `phrases.json`、
+**没有** `manifest.json`）传进来会校验不过。
+
+注意与 CLI 的差别：`vox pack check packs/heat_kefu`（**CLI**）是能吃包源目录的（走
+`compiler` 的源格式校验），但 **MCP 工具不吃**——`adapters` 不允许 import `compiler`
+（`adapters/AGENTS.md` §⑤），所以 MCP 这边**只加提示、不扩语义**。
+
+`vox_pack_check` 拿到包源目录时，会在 `violations` **末尾追加**一条指路提示（原有违规项、
+`passed`、`isError` 都不变，`isError` 仍为 `true`）：
+
+```
+这是包源目录（有 phrases.json、没有 manifest.json）；vox_pack_check 只认铸出来的资产包。
+请先跑 `sh bin/vox pack build <包源目录> --out <输出目录>`，再把 <输出目录> 传进来。
+```
+
+既没有 `manifest.json` 也没有 `phrases.json` 的目录**不会**拿到这条提示（不是包源目录，
+就只说 `缺少 manifest.json`）；正常资产包走通时 `violations` 仍是 `[]`。
+
+## 七、`vox_plan_from_state`（T86）：给 `trigger/` 一条产品出口
+
+**它是什么**：把 `trigger/` 的「状态快照 → 播报计划」接成 MCP 工具。
+在此之前那条线**能力完整但没有任何出口**——`docs/24 §五#5` 的复跑判据
+`grep -rn --include='*.py' "^from trigger" . | grep -v "^./trigger"` 只命中 `labs/ticket-source/`。
+
+入参：`pack_dir`（**包源目录**，须含 `trigger.json`）、`state`（扁平快照，字段须在
+`trigger.json` 的 `state_fields` 里声明）、可选 `turn_id`（参与变体稳定散列，便于重放）。
+
+| 场景 | `result.content[0].text` 的字段 | `isError` |
+|---|---|---|
+| 命中规则 | `trigger_id`、`rule_id`、`plan:[{action,key,rate,variant,slots}]`、`keys`、`chars`、`budget_chars`、`plan_id` | `false` |
+| `state` 含**未声明字段** | `error`（`StateError: state 含未声明字段: ['xxx']（…已声明的字段为 […]）`） | `true` |
+| **无兜底规则且无规则匹配** | `error`（`TriggerError: …（trigger_id='…'）…`） | `true` |
+| 单轮**超预算** | `error`（`BudgetError: …`，含实际字数与预算值） | `true` |
+| 目录里**没有 `trigger.json`** | `error`（点名该路径，并说明资产包不含 `trigger.json`） | `true` |
+
+**判定口径全部复用 `trigger/` 的公开 API**（`load_trigger` / `build_plan`），
+本适配器**不复制任何规则匹配或预算逻辑**；依赖授权见 `adapters/AGENTS.md §⑨.5`。
+同样**不出音频字节**——它只回答"这一轮该说哪些 key"，出音仍归进程内 adapter。
+
+实测（仓库根，`packs/demo-brief`）：
+
+```sh
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vox_plan_from_state","arguments":{"pack_dir":"packs/demo-brief","state":{"ticket_id":"WB-DEMO-0001","ticket_status":"处理中","days_left":5,"overdue_days":0,"is_overdue":false,"assignee_confirmed":true}}}}' \
+  | python3 -m adapters.mcp_vox
+# → {"trigger_id": "demo-brief.ticket-reminder", "rule_id": "greeting",
+#    "plan": [{"action": "SAY", "key": "greeting_ticket", "rate": "normal", "variant": 0, "slots": {}}],
+#    "keys": ["greeting_ticket"], "chars": 11, "budget_chars": 60,
+#    "plan_id": "demo-brief.ticket-reminder:None"}
+```
+
+> **已知小瑕疵**：不传 `turn_id` 时 `plan_id` 会是 `"<trigger_id>:None"`——这是
+> `trigger.build_plan` 的既有派生口径（`plan_id = f"{trigger_id}:{turn_id}"`），
+> 本工具**原样透传、不自行发明**。宿主若需要可关联的 `plan_id`，请显式传 `turn_id`。

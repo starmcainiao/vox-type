@@ -89,11 +89,17 @@ class TestInitialize(ServerTestCase):
 
 
 class TestToolsList(ServerTestCase):
-    def test_three_tools_with_input_schema(self):
+    def test_four_tools_with_input_schema(self):
+        """工具集合必须**恰好**是这四个（T86 起为 4 个）。
+
+        这是**严格相等**断言，不是"至少包含"：少一个说明注册丢了，
+        多一个说明有人加了工具却没同步本测试与 `adapters/AGENTS.md §⑨` 的依赖登记。
+        """
         tools = self.session.request("tools/list")["result"]["tools"]
         by_name = {tool["name"]: tool for tool in tools}
         self.assertEqual(
-            set(by_name), {"vox_lookup", "vox_plan", "vox_pack_check"}
+            set(by_name),
+            {"vox_lookup", "vox_plan", "vox_pack_check", "vox_plan_from_state"},
         )
         for name, tool in by_name.items():
             self.assertIn("description", tool)
@@ -102,6 +108,11 @@ class TestToolsList(ServerTestCase):
             self.assertIn("properties", schema)
             self.assertIn("pack_dir", schema["properties"], name)
         self.assertIn("keys", by_name["vox_plan"]["inputSchema"]["properties"])
+        # T86 的新工具：入参必须同时要求 pack_dir 与 state
+        self.assertEqual(
+            set(by_name["vox_plan_from_state"]["inputSchema"]["required"]),
+            {"pack_dir", "state"},
+        )
 
 
 class TestVoxLookup(ServerTestCase):

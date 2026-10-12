@@ -1,0 +1,27 @@
+===== a-unknown-key-allow-fallback =====
+cmd: sh bin/vox run <仓库根>/labs/fallback-count-probe/plan_unknown_key.json --pack examples/prebuilt-pack --adapter adapters.tts_omlx:OmlxTts --allow-fallback --out /tmp/vox-t89-wav.88v0Cw/a.wav --json
+rc: 0
+--- stderr ---
+[prebake] 1/? voice=default model=mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit
+run: 通过（hit=0 miss=1 fallback=0 tts_calls=1 first_audio_ms=2689.3 out=/private/tmp/vox-t89-wav.88v0Cw/a.wav）
+
+===== b-unknown-key-fail-closed =====
+cmd: sh bin/vox run <仓库根>/labs/fallback-count-probe/plan_unknown_key.json --pack examples/prebuilt-pack --adapter adapters.tts_omlx:OmlxTts --out /tmp/vox-t89-wav.88v0Cw/b.wav --json
+rc: 5
+--- stderr ---
+run: 已按 fail-closed 中止（plan 单元 #1 未命中（key='this_key_does_not_exist_zzz'，reason=key_not_prebaked）：allow_fallback=False → 中止整条 plan（fail-closed：不写输出文件、不播其他话术））
+已按 fail-closed 中止（退出码 5）
+
+===== c-engine-mismatch-allow-fallback =====
+cmd: sh bin/vox run <仓库根>/labs/fallback-count-probe/plan_unknown_key.json --pack examples/prebuilt-pack --allow-fallback --out /tmp/vox-t89-wav.88v0Cw/c.wav --json
+rc: 0
+--- stderr ---
+run: 通过（hit=0 miss=0 fallback=1 tts_calls=1 first_audio_ms=742.3 out=/private/tmp/vox-t89-wav.88v0Cw/c.wav）
+
+===== d-unknown-key-allow-fallback-rerun =====
+cmd: sh bin/vox run <仓库根>/labs/fallback-count-probe/plan_unknown_key.json --pack examples/prebuilt-pack --adapter adapters.tts_omlx:OmlxTts --allow-fallback --out /tmp/vox-t89-wav.88v0Cw/d.wav --json
+rc: 0
+--- stderr ---
+[prebake] 1/? voice=default model=mlx-community:Qwen3-TTS-12Hz-1.7B-Base-8bit
+run: 通过（hit=0 miss=1 fallback=0 tts_calls=1 first_audio_ms=1333.6 out=/private/tmp/vox-t89-wav.88v0Cw/d.wav）
+

@@ -42,7 +42,11 @@ add_reason() {
 # run <标签> <期望rc> <实际rc> <命令…>：跑命令，抓 rc，只留结论行（不刷满整屏 JSON）
 run_step() {
     step="$1"; want_rc="$2"; shift 2
+    printf '  … 正在跑 %s（引擎类步骤可能要几十秒到几分钟，中途没有输出属正常，不要 Ctrl+C）\n' "$step"
+    _t0="$(date +%s)"
     out="$("$@" 2>&1)"; rc=$?
+    _t1="$(date +%s)"
+    printf '  … %s 结束（耗时 %s 秒）\n' "$step" "$((_t1 - _t0))"
     line="$(printf '%s\n' "$out" | grep -E '^(pack check:|pack build:|run:|bench:|verify:|通过|不通过)' | head -1)"
     [ -z "$line" ] && line="$(printf '%s\n' "$out" | tail -1)"
     if [ "$rc" = "$want_rc" ]; then

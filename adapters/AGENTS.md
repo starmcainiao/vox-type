@@ -104,6 +104,18 @@
    §⑨.1 的豁免清单不变。**重试纪律**：归一自检失败的有界重试沿用 `transport.MAX_RETRIES` /
    `RETRY_DELAYS`，每次重采写 stderr 留痕，超限仍 fail-closed（确定性失败一次都不重试）。
 
+5. **依赖授权：`mcp_vox/` 对 `trigger/` 的公开面（T86，2026-10-12 登记）**——第 4 个工具
+   `vox_plan_from_state` 要把「状态 → plan」这条能力接给外部 agent，因此允许 `mcp_vox` 依赖
+   `trigger/` 的**公开 `__all__`**（`load_trigger` / `build_plan`，及其透传的
+   `TriggerError` / `StateError` / `BudgetError`）。
+   **边界仍硬**：只走公开名，不得 import 下划线私有名；不得由此把 `trigger` 拉进 `runtime/`；
+   本工具**只出控制面**（plan 与元数据），**不出音频字节**——出音仍归进程内 adapter；
+   且它**不复制任何规则匹配/预算逻辑**（判定口径的单一来源是 `trigger/`）。
+   理由：`trigger/` 是"接缝之上"的扩展区部件（`docs/10 §10.1`），MCP 是控制面出口，
+   两者同属扩展区，**不构成"内核反向依赖 trigger"**（后者才是禁止的，见 `trigger/AGENTS.md §⑤.4`）。
+   它同时是 `docs/26` 候选队列第 1 条「给 `trigger/` 一条产品出口」的 **MCP 路线**落地
+   （CLI `run --state` 那条要动冻结区 `cli/`，不在本卡）。
+
 本节登记经第十五批后全仓结构审计（三审计员）发现并补账；原 §⑤ 字面对 framework_kefu 不再单独适用。
 
 ## ⑩ 结构预算（T21 登记，机器可读）
