@@ -744,7 +744,7 @@ def run_bench(config: BenchConfig) -> Dict[str, Any]:
     adapter = config.adapter
     # WHY: 不依赖单一属性——忘记打 synthetic 标记的替身适配器会被误认为真机数据，
     #      导致时序数字被报告背书为真机（T08 卡 §224 明令禁止）。
-    #      三重检查：
+    #      四重检查：
     #        ① adapter.synthetic is True（显式标记，如 OfflineTts）；
     #        ② 模块名以 eval. 开头（unittest discover 前缀场景）；
     #        ③ 源文件位于 eval 包目录下（unittest discover -s eval 无前缀场景）；

@@ -16,7 +16,7 @@
 | 端到端预铸 | `sh bin/vox pack build ... --adapter adapters.tts_piper:PiperTts` | **`total=3 synthesized=3 clean=True passed=True`** |
 | 产物质检 | `sh bin/vox verify /tmp/pe/built` | **rc=0** |
 | 零引擎播放 | `sh bin/vox run ... --adapter adapters.tts_piper:PiperTts` | **`hit=2 miss=0 fallback=0 tts_calls=0`** |
-| 全量测试（对照） | `python3 tools/run_all_tests.py` | 11 根里 10 根过；`cli` 根 22 条失败**全部**是夹具依赖 macOS `say`（`docs/13 §五#27` 的已知耦合，非本实验引入） |
+| 全量测试（对照） | `python3 tools/run_all_tests.py` | **11 根全过**（T82 后复跑，`failed=0`；此前 `cli` 根 22 条红系夹具依赖 macOS `say` 的耦合 `docs/13 §五#27`，已解耦） |
 
 ## 二、复现：构建容器与模型
 

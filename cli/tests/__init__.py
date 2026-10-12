@@ -5,9 +5,12 @@ cli/tests — CLI 测试包（共享夹具集中在这里，避免四个测试�
   - 测试必须调用**产品 API**：`cli.main.main` / 各命令函数 / `compiler.load_source`，
     不在测试里复制判定逻辑、也不自己解析 CLI 参数。
   - 一律 `tempfile`，不往 `packs/**` 或仓库内写任何产物。
-  - 极小包夹具只有 2 条资产（2 phrase × 1 variant × 1 rate），一条 `say` 调用一条——
+  - 极小包夹具只有 2 条资产（2 phrase × 1 variant × 1 rate），一条资产一次替身合成调用——
     `packs/repair` 是 54 条，单测里跑它太慢；夹具只钉契约，不钉体量。
     端到端体量回归由 `packs/repair` 的手跑验收覆盖。
+  - 预铸缺省走**平台无关替身**（FIXTURE_ADAPTER_SPEC，见 fixture_tts.py）：macOS `say`
+    只在 macOS 存在，夹具不得按平台分叉（docs/13 §五#27）；真机引擎的可用性由其自身
+    测试与 CI 预铸步骤覆盖，不在这里。
 """
 
 import contextlib
@@ -24,6 +27,12 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 # 真实业务包：验收用的活体回归用例（只读，测试不得修改它）
 PACKS_REPAIR: Path = REPO_ROOT / "packs" / "repair"
+
+# 夹具预铸的缺省适配器：平台无关替身（定义见 cli/tests/fixture_tts.py）。
+# WHY 不用产品缺省（adapters.tts_macsay:MacSayTts）：`say` 只在 macOS 存在，
+# Linux/CI 上整片红（docs/13 §五#27）；替身身份与 TINY_PACK_JSON 声明一致，
+# 运行时引擎一致性检查照常生效（替身不是绕过检查，只是换个能合成的引擎）。
+FIXTURE_ADAPTER_SPEC: str = "cli.tests.fixture_tts:FixtureTts"
 
 
 # ---------------------------------------------------------------------------
@@ -100,11 +109,16 @@ def build_tiny_pack(
     src: Path,
     out: Path,
     *,
-    adapter: Optional[str] = None,
+    adapter: Optional[str] = FIXTURE_ADAPTER_SPEC,
     allow_partial: bool = False,
     as_json: bool = True,
 ) -> Tuple[int, str, str]:
-    """用产品 CLI 预铸极小包，返回 (退出码, stdout, stderr)。"""
+    """用产品 CLI 预铸极小包，返回 (退出码, stdout, stderr)。
+
+    adapter 缺省 = FIXTURE_ADAPTER_SPEC（平台无关替身，Linux/CI 可跑）；
+    显式传 "" 表示不带 --adapter（走产品缺省适配器，仅 macOS 可合成）；
+    负例用例传具体坏 spec。
+    """
     argv = ["pack", "build", str(src), "--out", str(out)]
     if adapter:
         argv += ["--adapter", adapter]

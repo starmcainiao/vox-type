@@ -62,7 +62,7 @@ def write_corpus(path: Path, units=None) -> Path:
 class BenchCliBase(CliTestBase):
     """共享夹具：极小包预铸产物 + 一份对齐的语料。
 
-    包与语料按类建一次（每条用例都会预铸一次真机 `say`，逐条重建太慢）；
+    包与语料按类建一次（预铸走平台无关替身，逐条重建太慢）；
     用例不得修改 pack_dir（所有写操作都走各自的 --out）。
     """
 

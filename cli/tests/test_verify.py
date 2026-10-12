@@ -37,7 +37,7 @@ SUPPORTED_KINDS = ("asset_pack", "pack_source", "eval_report")
 
 
 class VerifyBase(CliTestBase):
-    """共享夹具：极小包源 + 它的已铸产物（预铸一次真机 say，类级复用）。"""
+    """共享夹具：极小包源 + 它的已铸产物（预铸一次夹具替身，类级复用）。"""
 
     @classmethod
     def setUpClass(cls):

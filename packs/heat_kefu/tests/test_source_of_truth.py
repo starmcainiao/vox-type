@@ -174,7 +174,9 @@ YAML_RUNNABLE = _yaml_guard() is None  # 类级 skipUnless 的条件（恒为 bo
 #   旧基线指纹值**不在本文件保留**（T53 AC2 要求零命中，避免两份"当前有效"指纹并存）。
 #   本包拆句清单目前是**人工产物**（见 packs/AGENTS.md「拆句清单的来源与漂移处理」），
 #   下次上游再改仍需按 T53 的同一顺序重做；方案 A（拆句从 yaml 现算）未做。
-YAML_SHA256 = "d893fee86625b26c1e327236146e3d02c07dafae3ec3e3f18cb4ee1a2c9fc652"
+# 2026-10-11 T83 重对账：上游 099394a（BK#108）再 +1 key（transfer_ready_again，未铸留挂）；
+#   既有 77 key 零失配，增量极小 → 直接重签（明细见 admission.md §0.3）。
+YAML_SHA256 = "efd2acc0e90958f785c2ecb91a607fc157b95fa66084ba98a4854dbdb7568a2b"
 
 
 # ---------------------------------------------------------------------------

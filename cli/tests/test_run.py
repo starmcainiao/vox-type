@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 
 from cli.tests import (
+    FIXTURE_ADAPTER_SPEC,
     CliTestBase,
     assert_json_stdout,
     assert_not_json,
@@ -145,13 +146,13 @@ class TestRunFailClosed(RunTestBase):
         self.assertIn("fail-closed", err)
 
     def test_run_say_live_with_fallback_returns_0(self):
-        """开 --allow-fallback：rc 0，miss_count=1，现场合成 1 次。"""
+        """开 --allow-fallback：rc 0，miss_count=1，现场合成 1 次（替身引擎，平台无关）。"""
         plan = self.write_plan(PLAN_LIVE)
         out = self.tmp / "out" / "fallback.wav"
 
         rc, stdout, _ = run_cli(
             ["run", str(plan), "--pack", str(self.pack_dir), "--out", str(out),
-             "--allow-fallback", "--json"]
+             "--allow-fallback", "--adapter", FIXTURE_ADAPTER_SPEC, "--json"]
         )
 
         self.assertEqual(rc, 0)

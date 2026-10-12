@@ -11,9 +11,9 @@
 | 项 | 值 |
 |---|---|
 | 源文件 | `<kefu-agent 仓根>/organs/客服/brain/prompts/供热预设.yaml` |
-| sha256 | `d893fee86625b26c1e327236146e3d02c07dafae3ec3e3f18cb4ee1a2c9fc652` |
-| 大小 | 23561 bytes / 329 行 |
-| top-level key | 77（scalar 68 + dict 9） |
+| sha256 | `efd2acc0e90958f785c2ecb91a607fc157b95fa66084ba98a4854dbdb7568a2b` |
+| 大小 | 23850 bytes / 331 行 |
+| top-level key | 78（scalar 69 + dict 9） |
 
 > **2026-09-28 T53 重对账**：本指纹由 T31 基线指纹（kefu 侧基线 commit `3b296a2`）更新而来。
 > 旧指纹值**不在本文档保留**（T53 AC2 要求零命中——两份"当前有效"指纹并存 = 门禁名存实亡）；
@@ -26,7 +26,7 @@
 **指纹即门禁**：yaml 一变，`tests/test_source_of_truth.py::test_yaml_fingerprint_unchanged`
 立刻变红，且 kefu 钩子按 yaml 原文查文本档也会自动不命中——**fail-closed，不会播出旧版话术**。
 
-## 0.1 对账表（yaml 77 top-level key 全覆盖）
+## 0.1 对账表（yaml 78 top-level key 全覆盖）
 
 | 归类 | 数量 | 说明 |
 |---|---|---|
@@ -35,16 +35,16 @@
 | exclusion·多分句（整段） | **14** | ≥2 句末标点，整段不铸（`docs/11 §11.6`「一句一 variant」）；T33 起**逐段铸入 29 条**（§1.5），整段由 `find_hit_sequence` 逐段覆盖命中 |
 | exclusion·带槽 | **13** | variant 不得含槽位（`docs/06 §6.2.5`）→ 走原路 |
 | 非话术结构 / 配置 | **13** | 结构 dict/int 6 + 非话术标量 7 |
-| **未覆盖话术（T53 新发现，待补）** | **1** | `vague_slot_clarify`——上游 9-24 新增的多分句话术，本包**尚未铸入**，见 §0.2.3 |
-| **合计** | **77** | = yaml top-level 实际 key 数，无遗漏无越界（40 单句 + 14 整段 + 13 带槽 + 13 非话术 + 1 未覆盖；29 拆句是这 14 整段的派生，不占新的 top-level key） |
+| **未覆盖话术（T53/T83 新发现，待补）** | **2** | `vague_slot_clarify`（T53，多分句）、`transfer_ready_again`（T83，单句）——上游新增、本包**尚未铸入**，见 §0.2.3 / §0.3 |
+| **合计** | **78** | = yaml top-level 实际 key 数，无遗漏无越界（40 单句 + 14 整段 + 13 带槽 + 13 非话术 + 2 未覆盖；29 拆句是这 14 整段的派生，不占新的 top-level key） |
 
 非话术 13 项：`next_prefetch`(dict) `routing`(dict) `trace`(dict) `transfer_route`(dict) `slot_labels`(dict)
 `prompts`(dict) `model_params`(dict) `faq_overrides`(list) `pay_cache_ttl_seconds`(int)
 `identity`(str 人设) `tone`(str 语气) `prefetch_ready_suffix`(空串) `compact_summary_prompt`(提示词)。
 
-⚠️ **本表原口径「无遗漏」已不成立**：T53 对账发现上游新增了 1 条**话术** key（`vague_slot_clarify`），
-本包未铸入。补铸需要同时改 `script.json`（`test_script_covers_all_baked_keys` 断言
-「剧本覆盖全部包内 key」），而 `script.json` **不在 T53 白名单**内 → 留挂，详见 §0.2.3。
+⚠️ **本表原口径「无遗漏」已不成立**：T53/T83 对账累计发现上游新增 **2 条话术** key（`vague_slot_clarify`、`transfer_ready_again`），
+本包均未铸入。补铸需要同时改 `script.json`（`test_script_covers_all_baked_keys` 断言
+「剧本覆盖全部包内 key」），而 `script.json` **不在 T53 / T83 卡白名单**内 → 留挂，详见 §0.2.3 / §0.3。
 
 ### 与 T31b 卡面清单的出入（以实测判据为准，卡已授权）
 
@@ -148,6 +148,40 @@ T51 修好路径探测后门禁立刻开火 6 条红。**这 6 条红是正确�
 这是 T31b 就存在的**发布树红线问题**（`docs/13 §八#20` / T53 红线「yaml 正文不入产出物」），
 不是 T53 引入的。T53 **只**把已失效的那 3 条节选撤下并换成元数据，没有扩大也没有清扫其余 24 条。
 全量清扫建议另开卡。
+
+## 0.3 T83 重对账记录（2026-10-11）
+
+上游在 T53 基线（`e16a777`）之后再改 1 次本 yaml：**`099394a`**（2026-09-28，BK#108
+「重复请求转人工」），sha256 已随之改变（现值见 §0）。对账结论：**增量极小，重签即可，无需重铸**。
+
+### 0.3.1 变更面（逐字节对账）
+
+| 项 | 结果 |
+|---|---|
+| diff 体积 | +3 行 / −0 行（2 行注释 + 1 个 key，`git show 099394a` 独立复核） |
+| 新增 key | `transfer_ready_again`（33 字 / 1 句末标点 / 0 槽位——按判据属**可铸单句**） |
+| 既有 key | 77 个 top-level 全部逐字节未变（BAKED/SEQ/SLOT 清单零失配） |
+
+### 0.3.2 处置
+
+- **指纹重签**：`YAML_SHA256` 更新为 `efd2acc0…`（tests 常量与 §0 同源更新；顺序=先对账后重签）。
+- **新 key 留挂**：`transfer_ready_again` **不铸入**（登记为未覆盖第 2 条；铸入需同时改
+  `phrases.json` 与 `script.json`（均不在 T83 卡白名单），处置口径同 §0.2.3）。
+  建议后续单独开「补铸」内容卡，把 `vague_slot_clarify` 与 `transfer_ready_again` 一并处理。
+- **⚠️ 卡面数字更正（T83 验收方复算，`packs/AGENTS.md §⑥.5` 第 3 步）**：T83 卡写
+  「23850 bytes / **332** 行」，实为 **331 行**（`wc -l`）。**卡与旧值都多算 1 行**——
+  旧值记的 `329 行` 对应的旧文件实为 328 行。本文件按**实测值**写 331。
+  同批复算其余项与卡一致：sha256 `efd2acc0…` ✓ / 23850 bytes ✓ /
+  `len(yaml.safe_load(...))` = 78 ✓ / 类型分布 str 68 + int 1 = scalar 69、dict 8 + list 1 = dict 9 ✓。
+  **口径**：行数一律以 `wc -l`（换行符计数）为准，不以「编辑器显示行号」为准。
+
+### 0.3.3 复跑证据
+
+- 重签前：`python3 -m unittest discover -s packs` → 36 条中**唯一**失败 = 指纹断言（预期红）。
+- 门禁自证（`packs/AGENTS.md §⑥.5` 第 4 步）：向 `phrases.json` 的 `farewell` variant
+  尾部注入一个句号 → **6 条判红**（含 `test_one_char_tamper_is_detected`）；
+  还原后仅剩指纹 1 条红 → 重签转绿。**注入验证判红能力未被削弱**。
+- 重签后：同命令 → 36 条全绿（`OK`）。
 
 ## 1. 必铸 40（逐字铸入，一个标点不改）
 
@@ -287,8 +321,8 @@ check rc 0、violations 0。
 | 拆句铸入（T33） | 29 |
 | 不铸带槽 | 13 |
 | 非话术结构 / 配置 | 13 |
-| 未覆盖话术（T53 留挂，见 §0.2.3） | 1 |
-| **合计** | **77**（= yaml top-level key 数，守恒） |
+| 未覆盖话术（T53/T83 留挂，见 §0.2.3 / §0.3） | 2 |
+| **合计** | **78**（= yaml top-level key 数，守恒） |
 
 禁入项 ⅰ–ⅳ 零命中：40 条全部**无槽位占位符**（测试
 `test_no_variant_contains_slot_placeholder` 逐条断言）、全部**单句**
